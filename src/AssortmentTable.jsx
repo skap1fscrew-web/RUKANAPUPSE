@@ -75,6 +75,7 @@ const AB_FIELDS = [
 ];
 
 const RNP_TASKS = [
+  { id: "orders",   label: "Кол-во заказов", kind: "wbOrders" },
   { id: "internal", label: "Внутренняя реклама", kind: "singleCost", cost: true },
   { id: "vykupy",   label: "Выкупы", kind: "twoRow", top: "entries", cost: true, fields: VYKUP_FIELDS },
   { id: "bloggers", label: "Блогеры", kind: "twoRow", top: "entries", cost: true, fields: BLOGGER_FIELDS },
@@ -204,6 +205,7 @@ const SWATCHES = [
   "#0ea5e9", "#ec4899", "#84cc16", "#a3a3a3",
 ];
 
+
 /* ----------------------------------------------------------------------------
    Утилиты
 ---------------------------------------------------------------------------- */
@@ -308,6 +310,10 @@ export default function AssortmentTable() {
   const [showBloggerDB, setShowBloggerDB] = useState(false);
   const [showRazdachDB, setShowRazdachDB] = useState(false);
   const [colSettings, setColSettings] = useState(false);
+  const [wbApiKey, setWbApiKey] = useState("");
+  const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
+  const [wbLoading, setWbLoading] = useState(false);
+  const [wbSettingsOpen, setWbSettingsOpen] = useState(false);
   const [panelW, setPanelW] = useState(0);
 
   const fileInputRef = useRef(null);
@@ -346,6 +352,7 @@ export default function AssortmentTable() {
           if (settings.rnp.days) setRnpDays(settings.rnp.days);
           syncedRef.current.settings.rnp = JSON.stringify(settings.rnp);
         }
+        if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = JSON.stringify(settings.wbApiKey); }
       } catch (e) { console.error("Ошибка загрузки:", e); }
       setLoaded(true);
     })();
@@ -378,7 +385,7 @@ export default function AssortmentTable() {
   useEffect(() => {
     if (!loaded) return;
     const t = setTimeout(async () => {
-      const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, rnp: { startDate: rnpStartDate, days: rnpDays } };
+      const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, rnp: { startDate: rnpStartDate, days: rnpDays } };
       for (const [key, value] of Object.entries(items)) {
         const js = JSON.stringify(value);
         if (syncedRef.current.settings[key] !== js) {
@@ -389,7 +396,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -413,6 +420,7 @@ export default function AssortmentTable() {
         else if (key === "purchases") setPurchases(value);
         else if (key === "bloggerDB") setBloggerDB(value);
         else if (key === "razdachDB") setRazdachDB(value);
+        else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "rnp") { if (value.startDate) setRnpStartDate(value.startDate); if (value.days) setRnpDays(value.days); }
       },
     });
@@ -534,6 +542,30 @@ export default function AssortmentTable() {
     editRnp(pid, (r) => ({ ...r, budget: { ...r.budget, allocated: val } }));
 
   const toggleExpand = (id) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
+
+  // Загрузка заказов из WB API
+  const fetchWbOrders = async () => {
+    if (!wbApiKey) { setWbSettingsOpen(true); return; }
+    setWbLoading(true);
+    try {
+      const resp = await fetch(
+        `https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: wbApiKey, dateFrom: rnpStartDate }),
+        }
+      );
+      if (!resp.ok) throw new Error(await resp.text());
+      const data = await resp.json();
+      // data = { "supplierArticle:YYYY-MM-DD": count }
+      setWbOrders(data);
+    } catch (e) {
+      console.error("WB API ошибка:", e);
+      alert("Ошибка загрузки заказов: " + e.message);
+    }
+    setWbLoading(false);
+  };
   const expandAll = () => setExpanded(Object.fromEntries(products.map((p) => [p.id, true])));
   const collapseAll = () => setExpanded({});
   const statusColor = (name) => statuses.find((s) => s.name === name)?.color || "#a3a3a3";
@@ -678,6 +710,9 @@ export default function AssortmentTable() {
           <div className="flex items-center gap-2">
             {activeTab === "promotion" && (
               <>
+                <button onClick={() => setWbSettingsOpen(true)} title="Настройки WB API" className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white px-2.5 py-1.5 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700">
+                  <Settings2 size={16} />
+                </button>
                 <button onClick={() => setShowBloggerDB(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100">
                   База блогеров
                 </button>
@@ -913,6 +948,9 @@ export default function AssortmentTable() {
                                     onSetBudget={(v) => setRnpBudget(p.id, v)}
                                     onOpenPopup={(task, dateKey) => setGanttModal({ productId: p.id, mode: "popup", task, dateKey })}
                                     onOpenDB={(task) => setGanttModal({ productId: p.id, mode: "db", task })}
+                                    wbOrders={wbOrders}
+                                    wbLoading={wbLoading}
+                                    onFetchWb={fetchWbOrders}
                                   />
                                 )
                               )}
@@ -1009,17 +1047,45 @@ export default function AssortmentTable() {
             { id: "inst", label: "Инстаграм", type: "link" },
             { id: "tg", label: "Телеграм", type: "link" },
             { id: "rating", label: "Рейтинг", type: "stars" },
+            { id: "comment", label: "Комментарий", type: "text" },
           ]}
           rows={razdachDB}
-          setRows={setRazdachDB}
           onClose={() => setShowRazdachDB(false)}
         />
+      )}
+
+      {wbSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={() => setWbSettingsOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-neutral-900">Настройки WB API</h2>
+              <button onClick={() => setWbSettingsOpen(false)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+            </div>
+            <p className="mb-3 text-sm text-neutral-500">
+              Ключ берётся в кабинете ВБ → Настройки → Доступ к API → категория «Статистика». Ключ хранится в базе, доступен только вашей команде.
+            </p>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">API-ключ (Статистика)</label>
+            <input
+              value={wbApiKey}
+              onChange={(e) => setWbApiKey(e.target.value)}
+              type="password"
+              placeholder="eyJhbGci..."
+              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"
+              style={{ fontFamily: "monospace" }}
+            />
+            <div className="mt-4 flex items-center justify-between">
+              <button onClick={() => { setWbSettingsOpen(false); fetchWbOrders(); }} disabled={!wbApiKey} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+                Сохранить и загрузить
+              </button>
+              <span className="text-xs text-neutral-400">{wbApiKey ? "✓ ключ задан" : "ключ не задан"}</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-/* Обёртка, позволяющая вернуть две <tr> из map без лишней разметки */
 function FragmentRow({ children }) {
   return <>{children}</>;
 }
@@ -1324,7 +1390,7 @@ function PlanBlock({ group, warehouses, sizes, onAddSize, onRemoveSize, onSetSiz
    Блок «РНП» — диаграмма Ганта (задачи × дни) + Фонд маркетинга. Один на товар.
 ---------------------------------------------------------------------------- */
 
-function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB }) {
+function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, onFetchWb }) {
   const [fillMode, setFillMode] = useState(false);
   const [fillColor, setFillColor] = useState(FILL_COLORS[0]);
   const [bd, setBd] = useState(null); // позиция окна разбивки затрат
@@ -1391,6 +1457,17 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
     const isToday = d.key === today;
     const base = { width: DAY_W, minWidth: DAY_W, position: "relative", borderTop: "1px solid #f5f5f5", borderLeft: isToday ? "1px solid #ea580c" : "1px solid #f5f5f5", borderRight: isToday ? "1px solid #ea580c" : "none", background: baseBg };
 
+    if (task.kind === "wbOrders") {
+      const code = product.code || product.wb || "";
+      const count = wbOrders[`${code}:${d.key}`] || wbOrders[`${product.wb}:${d.key}`] || 0;
+      return (
+        <td key={d.key} style={{ ...base, background: count > 0 ? "#f0fdf4" : baseBg }}>
+          <div className="px-1 py-0.5 text-center text-xs font-semibold text-neutral-700" style={{ minHeight: 26, fontVariantNumeric: "tabular-nums" }}>
+            {count > 0 ? count : <span className="text-neutral-300">—</span>}
+          </div>
+        </td>
+      );
+    }
     if (task.kind === "singleCost") {
       const val = cells[`${task.id}:cost:${d.key}`] ?? "";
       const has = val !== "" && toNum(val) > 0;
@@ -1544,6 +1621,10 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
                       <div className="flex items-center gap-1.5">
                         {(task.top === "entries" || task.kind === "rangeTask") ? (
                           <button onClick={() => onOpenDB(task)} className="text-left text-xs font-semibold text-orange-700 hover:underline" title="Открыть базу записей">{task.label}</button>
+                        ) : task.kind === "wbOrders" ? (
+                          <button onClick={onFetchWb} className="text-left text-xs font-semibold text-orange-700 hover:underline" title={wbLoading ? "Загрузка…" : "Обновить заказы из WB"}>
+                            {wbLoading ? "Загрузка…" : task.label} ↻
+                          </button>
                         ) : (
                           <span className="text-xs font-medium text-neutral-700">{task.label}</span>
                         )}
