@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, Minus, ArrowRight,
@@ -74,7 +75,6 @@ const AB_FIELDS = [
 ];
 
 const RNP_TASKS = [
-  { id: "orders",   label: "Кол-во заказов", kind: "wbOrders" },
   { id: "internal", label: "Внутренняя реклама", kind: "singleCost", cost: true },
   { id: "vykupy",   label: "Выкупы", kind: "twoRow", top: "entries", cost: true, fields: VYKUP_FIELDS },
   { id: "bloggers", label: "Блогеры", kind: "twoRow", top: "entries", cost: true, fields: BLOGGER_FIELDS },
@@ -204,8 +204,6 @@ const SWATCHES = [
   "#0ea5e9", "#ec4899", "#84cc16", "#a3a3a3",
 ];
 
-const STORAGE_KEY = "assortment:v3";
-
 /* ----------------------------------------------------------------------------
    Утилиты
 ---------------------------------------------------------------------------- */
@@ -283,24 +281,6 @@ function fileToThumb(file, max = 240) {
   });
 }
 
-async function loadState() {
-  try {
-    if (typeof window === "undefined" || !window.storage) return null;
-    const r = await window.storage.get(STORAGE_KEY);
-    return r ? JSON.parse(r.value) : null;
-  } catch {
-    return null;
-  }
-}
-async function saveState(data) {
-  try {
-    if (typeof window === "undefined" || !window.storage) return;
-    await window.storage.set(STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    /* без хранилища — работаем в памяти */
-  }
-}
-
 /* ----------------------------------------------------------------------------
    Главный компонент
 ---------------------------------------------------------------------------- */
@@ -328,54 +308,116 @@ export default function AssortmentTable() {
   const [showBloggerDB, setShowBloggerDB] = useState(false);
   const [showRazdachDB, setShowRazdachDB] = useState(false);
   const [colSettings, setColSettings] = useState(false);
-  const [wbApiKey, setWbApiKey] = useState("");
-  const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
-  const [wbLoading, setWbLoading] = useState(false);
-  const [wbSettingsOpen, setWbSettingsOpen] = useState(false);
   const [panelW, setPanelW] = useState(0);
 
   const fileInputRef = useRef(null);
   const uploadTarget = useRef(null);
   const scrollRef = useRef(null);
 
-  // загрузка
+  const syncedRef = useRef({ products: new Map(), settings: {} });
+  const dirtyRef = useRef({ products: new Set(), settings: new Set() });
+
+  // UI-настройки (личные) — localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("rnp-ui");
+      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks })); } catch {}
+  }, [enabled, activeTab, hiddenTasks]);
+
+  // загрузка из Supabase
   useEffect(() => {
     (async () => {
-      const s = await loadState();
-      if (s) {
-        if (Array.isArray(s.products)) setProducts(s.products.map(normalizeProduct));
-        if (Array.isArray(s.statuses) && s.statuses.length) setStatuses(s.statuses);
-        if (s.metricsByGroup) {
-          setMetricsByGroup({ ...DEFAULT_METRICS_BY_GROUP, ...s.metricsByGroup });
-        } else if (Array.isArray(s.metrics) && s.metrics.length) {
-          setMetricsByGroup((m) => ({ ...m, external: s.metrics }));
+      try {
+        const { products: prods, settings } = await fetchAll();
+        const norm = (prods || []).map(normalizeProduct);
+        setProducts(norm);
+        norm.forEach((p) => syncedRef.current.products.set(p.id, JSON.stringify(p)));
+        if (Array.isArray(settings.statuses) && settings.statuses.length) { setStatuses(settings.statuses); syncedRef.current.settings.statuses = JSON.stringify(settings.statuses); }
+        if (Array.isArray(settings.warehouses) && settings.warehouses.length) { setWarehouses(settings.warehouses); syncedRef.current.settings.warehouses = JSON.stringify(settings.warehouses); }
+        if (Array.isArray(settings.purchases)) { setPurchases(settings.purchases); syncedRef.current.settings.purchases = JSON.stringify(settings.purchases); }
+        if (Array.isArray(settings.bloggerDB)) { setBloggerDB(settings.bloggerDB); syncedRef.current.settings.bloggerDB = JSON.stringify(settings.bloggerDB); }
+        if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = JSON.stringify(settings.razdachDB); }
+        if (settings.rnp) {
+          if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
+          if (settings.rnp.days) setRnpDays(settings.rnp.days);
+          syncedRef.current.settings.rnp = JSON.stringify(settings.rnp);
         }
-        if (s.enabled) setEnabled((e) => ({ ...e, ...s.enabled }));
-        if (Array.isArray(s.warehouses) && s.warehouses.length) setWarehouses(s.warehouses);
-        if (Array.isArray(s.purchases)) setPurchases(s.purchases);
-        if (s.rnpStartDate) setRnpStartDate(s.rnpStartDate);
-        if (s.rnpDays) setRnpDays(s.rnpDays);
-        if (s.hiddenTasks) setHiddenTasks(s.hiddenTasks);
-        if (Array.isArray(s.bloggerDB)) setBloggerDB(s.bloggerDB);
-        if (Array.isArray(s.razdachDB)) setRazdachDB(s.razdachDB);
-        if (s.wbApiKey) setWbApiKey(s.wbApiKey);
-        if (s.activeTab) setActiveTab(s.activeTab);
-      } else {
-        setProducts([
-          normalizeProduct({ code: "А-1024", wb: "184523901", name: "Худи оверсайз, хлопок", status: "В продаже", cost: "780" }),
-          normalizeProduct({ code: "А-1025", wb: "201845567", name: "Лонгслив базовый", status: "Новинка", cost: "420" }),
-        ]);
-      }
+      } catch (e) { console.error("Ошибка загрузки:", e); }
       setLoaded(true);
     })();
   }, []);
 
-  // автосохранение
+  // сохранение товаров (построчно, только изменённые)
   useEffect(() => {
     if (!loaded) return;
-    const t = setTimeout(() => saveState({ products, statuses, metricsByGroup, warehouses, purchases, rnpStartDate, rnpDays, hiddenTasks, bloggerDB, razdachDB, wbApiKey, enabled, activeTab }), 400);
+    const t = setTimeout(async () => {
+      const cur = new Map(products.map((p) => [p.id, p]));
+      for (const p of products) {
+        const js = JSON.stringify(p);
+        if (syncedRef.current.products.get(p.id) !== js) {
+          dirtyRef.current.products.add(p.id);
+          const { error } = await upsertProduct(p);
+          if (!error) { syncedRef.current.products.set(p.id, js); dirtyRef.current.products.delete(p.id); }
+        }
+      }
+      for (const id of Array.from(syncedRef.current.products.keys())) {
+        if (!cur.has(id)) {
+          const { error } = await deleteProductRow(id);
+          if (!error) syncedRef.current.products.delete(id);
+        }
+      }
+    }, 600);
     return () => clearTimeout(t);
-  }, [products, statuses, metricsByGroup, warehouses, purchases, rnpStartDate, rnpDays, hiddenTasks, bloggerDB, razdachDB, enabled, activeTab, loaded]);
+  }, [products, loaded]);
+
+  // сохранение общих настроек
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(async () => {
+      const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, rnp: { startDate: rnpStartDate, days: rnpDays } };
+      for (const [key, value] of Object.entries(items)) {
+        const js = JSON.stringify(value);
+        if (syncedRef.current.settings[key] !== js) {
+          dirtyRef.current.settings.add(key);
+          const { error } = await upsertSetting(key, value);
+          if (!error) { syncedRef.current.settings[key] = js; dirtyRef.current.settings.delete(key); }
+        }
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, rnpStartDate, rnpDays, loaded]);
+
+  // realtime — чужие изменения
+  useEffect(() => {
+    const unsub = subscribe({
+      onProduct: (p) => {
+        const np = normalizeProduct(p);
+        const js = JSON.stringify(np);
+        if (syncedRef.current.products.get(np.id) === js) return;
+        if (dirtyRef.current.products.has(np.id)) return;
+        syncedRef.current.products.set(np.id, js);
+        setProducts((prev) => { const i = prev.findIndex((x) => x.id === np.id); if (i === -1) return [...prev, np]; const c = prev.slice(); c[i] = np; return c; });
+      },
+      onProductDelete: (id) => { if (dirtyRef.current.products.has(id)) return; syncedRef.current.products.delete(id); setProducts((prev) => prev.filter((x) => x.id !== id)); },
+      onSetting: (key, value) => {
+        const js = JSON.stringify(value);
+        if (syncedRef.current.settings[key] === js) return;
+        if (dirtyRef.current.settings.has(key)) return;
+        syncedRef.current.settings[key] = js;
+        if (key === "statuses") setStatuses(value);
+        else if (key === "warehouses") setWarehouses(value);
+        else if (key === "purchases") setPurchases(value);
+        else if (key === "bloggerDB") setBloggerDB(value);
+        else if (key === "razdachDB") setRazdachDB(value);
+        else if (key === "rnp") { if (value.startDate) setRnpStartDate(value.startDate); if (value.days) setRnpDays(value.days); }
+      },
+    });
+    return unsub;
+  }, []);
 
   // ширина видимой области для раскрытой панели
   useEffect(() => {
@@ -492,30 +534,6 @@ export default function AssortmentTable() {
     editRnp(pid, (r) => ({ ...r, budget: { ...r.budget, allocated: val } }));
 
   const toggleExpand = (id) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
-
-  // Загрузка заказов из WB API
-  const fetchWbOrders = async () => {
-    if (!wbApiKey) { setWbSettingsOpen(true); return; }
-    setWbLoading(true);
-    try {
-      const resp = await fetch(
-        `https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: wbApiKey, dateFrom: rnpStartDate }),
-        }
-      );
-      if (!resp.ok) throw new Error(await resp.text());
-      const data = await resp.json();
-      // data = { "supplierArticle:YYYY-MM-DD": count }
-      setWbOrders(data);
-    } catch (e) {
-      console.error("WB API ошибка:", e);
-      alert("Ошибка загрузки заказов: " + e.message);
-    }
-    setWbLoading(false);
-  };
   const expandAll = () => setExpanded(Object.fromEntries(products.map((p) => [p.id, true])));
   const collapseAll = () => setExpanded({});
   const statusColor = (name) => statuses.find((s) => s.name === name)?.color || "#a3a3a3";
@@ -660,9 +678,6 @@ export default function AssortmentTable() {
           <div className="flex items-center gap-2">
             {activeTab === "promotion" && (
               <>
-                <button onClick={() => setWbSettingsOpen(true)} title="Настройки WB API" className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white px-2.5 py-1.5 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700">
-                  <Settings2 size={16} />
-                </button>
                 <button onClick={() => setShowBloggerDB(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100">
                   База блогеров
                 </button>
@@ -898,9 +913,6 @@ export default function AssortmentTable() {
                                     onSetBudget={(v) => setRnpBudget(p.id, v)}
                                     onOpenPopup={(task, dateKey) => setGanttModal({ productId: p.id, mode: "popup", task, dateKey })}
                                     onOpenDB={(task) => setGanttModal({ productId: p.id, mode: "db", task })}
-                                    wbOrders={wbOrders}
-                                    wbLoading={wbLoading}
-                                    onFetchWb={fetchWbOrders}
                                   />
                                 )
                               )}
@@ -997,45 +1009,17 @@ export default function AssortmentTable() {
             { id: "inst", label: "Инстаграм", type: "link" },
             { id: "tg", label: "Телеграм", type: "link" },
             { id: "rating", label: "Рейтинг", type: "stars" },
-            { id: "comment", label: "Комментарий", type: "text" },
           ]}
           rows={razdachDB}
+          setRows={setRazdachDB}
           onClose={() => setShowRazdachDB(false)}
         />
-      )}
-
-      {wbSettingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={() => setWbSettingsOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-neutral-900">Настройки WB API</h2>
-              <button onClick={() => setWbSettingsOpen(false)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
-            </div>
-            <p className="mb-3 text-sm text-neutral-500">
-              Ключ берётся в кабинете ВБ → Настройки → Доступ к API → категория «Статистика». Ключ хранится в базе, доступен только вашей команде.
-            </p>
-            <label className="block text-xs font-medium text-neutral-500 mb-1">API-ключ (Статистика)</label>
-            <input
-              value={wbApiKey}
-              onChange={(e) => setWbApiKey(e.target.value)}
-              type="password"
-              placeholder="eyJhbGci..."
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"
-              style={{ fontFamily: "monospace" }}
-            />
-            <div className="mt-4 flex items-center justify-between">
-              <button onClick={() => { setWbSettingsOpen(false); fetchWbOrders(); }} disabled={!wbApiKey} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
-                Сохранить и загрузить
-              </button>
-              <span className="text-xs text-neutral-400">{wbApiKey ? "✓ ключ задан" : "ключ не задан"}</span>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
 }
 
+/* Обёртка, позволяющая вернуть две <tr> из map без лишней разметки */
 function FragmentRow({ children }) {
   return <>{children}</>;
 }
@@ -1340,7 +1324,7 @@ function PlanBlock({ group, warehouses, sizes, onAddSize, onRemoveSize, onSetSiz
    Блок «РНП» — диаграмма Ганта (задачи × дни) + Фонд маркетинга. Один на товар.
 ---------------------------------------------------------------------------- */
 
-function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, onFetchWb }) {
+function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB }) {
   const [fillMode, setFillMode] = useState(false);
   const [fillColor, setFillColor] = useState(FILL_COLORS[0]);
   const [bd, setBd] = useState(null); // позиция окна разбивки затрат
@@ -1407,17 +1391,6 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
     const isToday = d.key === today;
     const base = { width: DAY_W, minWidth: DAY_W, position: "relative", borderTop: "1px solid #f5f5f5", borderLeft: isToday ? "1px solid #ea580c" : "1px solid #f5f5f5", borderRight: isToday ? "1px solid #ea580c" : "none", background: baseBg };
 
-    if (task.kind === "wbOrders") {
-      const code = product.code || product.wb || "";
-      const count = wbOrders[`${code}:${d.key}`] || wbOrders[`${product.wb}:${d.key}`] || 0;
-      return (
-        <td key={d.key} style={{ ...base, background: count > 0 ? "#f0fdf4" : baseBg }}>
-          <div className="px-1 py-0.5 text-center text-xs font-semibold text-neutral-700" style={{ minHeight: 26, fontVariantNumeric: "tabular-nums" }}>
-            {count > 0 ? count : <span className="text-neutral-300">—</span>}
-          </div>
-        </td>
-      );
-    }
     if (task.kind === "singleCost") {
       const val = cells[`${task.id}:cost:${d.key}`] ?? "";
       const has = val !== "" && toNum(val) > 0;
@@ -1571,10 +1544,6 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
                       <div className="flex items-center gap-1.5">
                         {(task.top === "entries" || task.kind === "rangeTask") ? (
                           <button onClick={() => onOpenDB(task)} className="text-left text-xs font-semibold text-orange-700 hover:underline" title="Открыть базу записей">{task.label}</button>
-                        ) : task.kind === "wbOrders" ? (
-                          <button onClick={onFetchWb} className="text-left text-xs font-semibold text-orange-700 hover:underline" title={wbLoading ? "Загрузка…" : "Обновить заказы из WB"}>
-                            {wbLoading ? "Загрузка…" : task.label} ↻
-                          </button>
                         ) : (
                           <span className="text-xs font-medium text-neutral-700">{task.label}</span>
                         )}
