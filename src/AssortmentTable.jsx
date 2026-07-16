@@ -555,7 +555,7 @@ export default function AssortmentTable() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: wbApiKey, dateFrom: rnpStartDate }),
+          body: JSON.stringify({ apiKey: wbApiKey, dateFrom: rnpStartDate, nmIds: products.map(p => parseInt(p.wb)).filter(n => n > 0) }),
         }
       );
       console.log("[WB] Ответ:", resp.status, resp.statusText);
