@@ -545,9 +545,11 @@ export default function AssortmentTable() {
 
   // Загрузка заказов из WB API
   const fetchWbOrders = async () => {
-    if (!wbApiKey) { setWbSettingsOpen(true); return; }
+    console.log("[WB] fetchWbOrders вызван, wbApiKey:", wbApiKey ? `задан (${wbApiKey.length} символов)` : "ПУСТО");
+    if (!wbApiKey) { console.log("[WB] Ключ пуст → открываю модалку настроек"); setWbSettingsOpen(true); return; }
     setWbLoading(true);
     try {
+      console.log("[WB] Отправляю запрос, dateFrom:", rnpStartDate);
       const resp = await fetch(
         `https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders`,
         {
@@ -556,12 +558,13 @@ export default function AssortmentTable() {
           body: JSON.stringify({ apiKey: wbApiKey, dateFrom: rnpStartDate }),
         }
       );
+      console.log("[WB] Ответ:", resp.status, resp.statusText);
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
-      // data = { "supplierArticle:YYYY-MM-DD": count }
+      console.log("[WB] Получено записей:", Object.keys(data).length);
       setWbOrders(data);
     } catch (e) {
-      console.error("WB API ошибка:", e);
+      console.error("[WB] Ошибка:", e);
       alert("Ошибка загрузки заказов: " + e.message);
     }
     setWbLoading(false);
