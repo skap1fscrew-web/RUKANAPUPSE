@@ -551,6 +551,21 @@ export default function AssortmentTable() {
 
   const toggleExpand = (id) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
 
+  // Сколько раз блогер встречается в записях «Блогеры» по всем товарам
+  const bloggerIntegrationCount = (name) => {
+    const target = (name || "").trim();
+    if (!target) return 0;
+    let n = 0;
+    for (const p of products) {
+      const entries = p.rnp?.entries || {};
+      for (const [k, arr] of Object.entries(entries)) {
+        if (!k.startsWith("bloggers:") || k.endsWith(":_ranges")) continue;
+        for (const e of arr || []) if ((e.who || "").trim() === target) n++;
+      }
+    }
+    return n;
+  };
+
   // Загрузка заказов из WB API
   const fetchWbOrders = async () => {
     if (!wbApiKey) { setWbSettingsOpen(true); return; }
@@ -1079,7 +1094,7 @@ export default function AssortmentTable() {
             { id: "inst", label: "Инстаграм", type: "link" },
             { id: "tg", label: "Телеграм", type: "link" },
             { id: "tiktok", label: "Тикток", type: "link" },
-            { id: "count", label: "Кол-во интеграций", type: "num" },
+            { id: "count", label: "Кол-во интеграций", type: "calc", fn: (r) => bloggerIntegrationCount(r.name) },
             { id: "rating", label: "Рейтинг", type: "stars" },
             { id: "price", label: "Стоимость поста", type: "num" },
           ]}
@@ -2051,7 +2066,7 @@ function RefDB({ title, fields, rows, setRows, onClose }) {
 
   const add = () => {
     const r = { id: uid() };
-    fields.forEach((f) => { r[f.id] = f.type === "select" ? (f.options[0]?.value ?? "") : ""; });
+    fields.forEach((f) => { if (f.type === "calc") return; r[f.id] = f.type === "select" ? (f.options[0]?.value ?? "") : ""; });
     setRows((prev) => [...prev, r]);
   };
   const set = (id, field, val) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: val } : r)));
@@ -2124,6 +2139,10 @@ function RefDB({ title, fields, rows, setRows, onClose }) {
                             </select>
                           );
                         })()
+                      ) : f.type === "calc" ? (
+                        <div className="px-1.5 py-1 text-right text-sm font-semibold text-neutral-700" style={{ fontVariantNumeric: "tabular-nums" }}>
+                          {f.fn(r) || <span className="font-normal text-neutral-300">0</span>}
+                        </div>
                       ) : f.type === "num" ? (
                         <input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} inputMode="decimal" className={inp + " text-right"} style={{ fontVariantNumeric: "tabular-nums" }} />
                       ) : (
