@@ -354,6 +354,7 @@ export default function AssortmentTable() {
           syncedRef.current.settings.rnp = JSON.stringify(settings.rnp);
         }
         if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = JSON.stringify(settings.wbApiKey); }
+        if (settings.wbOrders && typeof settings.wbOrders === "object") { setWbOrders(settings.wbOrders); syncedRef.current.settings.wbOrders = JSON.stringify(settings.wbOrders); }
       } catch (e) { console.error("Ошибка загрузки:", e); }
       setLoaded(true);
     })();
@@ -386,7 +387,7 @@ export default function AssortmentTable() {
   useEffect(() => {
     if (!loaded) return;
     const t = setTimeout(async () => {
-      const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, rnp: { startDate: rnpStartDate, days: rnpDays } };
+      const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, rnp: { startDate: rnpStartDate, days: rnpDays } };
       for (const [key, value] of Object.entries(items)) {
         const js = JSON.stringify(value);
         if (syncedRef.current.settings[key] !== js) {
@@ -397,7 +398,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -422,6 +423,7 @@ export default function AssortmentTable() {
         else if (key === "bloggerDB") setBloggerDB(value);
         else if (key === "razdachDB") setRazdachDB(value);
         else if (key === "wbApiKey") setWbApiKey(value);
+        else if (key === "wbOrders") setWbOrders(value || {});
         else if (key === "rnp") { if (value.startDate) setRnpStartDate(value.startDate); if (value.days) setRnpDays(value.days); }
       },
     });
@@ -550,27 +552,36 @@ export default function AssortmentTable() {
     const nmIdList = products.map((p) => parseInt(p.wb)).filter((n) => n > 0);
     if (nmIdList.length === 0) { alert("Нет артикулов ВБ — заполните столбец «Артикул ВБ»."); return; }
 
+    const iso = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
     // список дней: от начала РНП до сегодня (не дальше)
     const allDays = [];
     const cur = new Date(rnpStartDate + "T00:00:00");
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayStr = iso(today);
     for (let i = 0; i < rnpDays && cur <= today; i++) {
-      allDays.push(
-        `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`
-      );
+      allDays.push(iso(cur));
       cur.setDate(cur.getDate() + 1);
     }
     if (allDays.length === 0) { alert("Нечего загружать: период начинается в будущем."); return; }
 
-    setWbLoading(true);
-    setWbProgress({ done: 0, total: allDays.length });
+    const merged = { ...wbOrders };
 
-    const merged = {};
+    // Сегодня грузим всегда (день ещё не закрыт), прошлые дни — только если их нет в кеше.
+    const daysToFetch = allDays.filter(
+      (day) => day === todayStr || nmIdList.some((nm) => merged[`${nm}:${day}`] === undefined)
+    );
+    if (daysToFetch.length === 0) return;
+
+    setWbLoading(true);
+    setWbProgress({ done: 0, total: daysToFetch.length });
+
     const failed = [];
 
-    for (let i = 0; i < allDays.length; i++) {
-      const day = allDays[i];
+    for (let i = 0; i < daysToFetch.length; i++) {
+      const day = daysToFetch[i];
       try {
         const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders", {
           method: "POST",
@@ -586,14 +597,14 @@ export default function AssortmentTable() {
       } catch (e) {
         failed.push(day);
       }
-      setWbProgress({ done: i + 1, total: allDays.length });
+      setWbProgress({ done: i + 1, total: daysToFetch.length });
       await new Promise((r) => setTimeout(r, 250)); // бережём лимит WB
     }
 
     setWbLoading(false);
     setWbProgress(null);
     if (failed.length) {
-      alert(`Не удалось загрузить ${failed.length} из ${allDays.length} дней: ${failed.join(", ")}. Нажмите ↻ ещё раз — недостающие дни догрузятся.`);
+      alert(`Не удалось загрузить ${failed.length} из ${daysToFetch.length} дней: ${failed.join(", ")}. Нажмите ↻ ещё раз — недостающие дни догрузятся.`);
     }
   };
   const expandAll = () => setExpanded(Object.fromEntries(products.map((p) => [p.id, true])));
