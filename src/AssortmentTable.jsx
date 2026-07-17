@@ -45,8 +45,13 @@ const VYKUP_FIELDS = [
   { id: "note", label: "Примечание", type: "text" },
   { id: "cost", label: "Затраты, ₽", type: "cost" },
 ];
+const BLOGGER_STATUSES = [
+  { value: "новый", color: "#6366f1" },
+  { value: "работаем", color: "#10b981" },
+  { value: "не работаем", color: "#a3a3a3" },
+];
 const BLOGGER_FIELDS = [
-  { id: "who", label: "Исполнитель", type: "text" },
+  { id: "who", label: "Исполнитель", type: "ref", source: "bloggerDB" },
   { id: "link", label: "Ссылка на пост", type: "link" },
   { id: "format", label: "Формат", type: "choice", options: ["инста пост", "инста сторис", "рилс", "тг пост", "тикток"] },
   { id: "integ", label: "Интеграция, ₽", type: "cost" },
@@ -1046,6 +1051,7 @@ export default function AssortmentTable() {
               state={{ task: ganttModal.task, dateKey: ganttModal.dateKey }}
               cells={gp.rnp.cells || {}}
               entries={gp.rnp.entries || {}}
+              refSources={{ bloggerDB, razdachDB }}
               onSetCell={(k, v) => setRnpCell(gp.id, k, v)}
               onSetEntries={(k, arr) => setRnpEntries(gp.id, k, arr)}
               onClose={close}
@@ -1056,6 +1062,7 @@ export default function AssortmentTable() {
             task={ganttModal.task}
             entries={gp.rnp.entries || {}}
             startDate={rnpStartDate}
+            refSources={{ bloggerDB, razdachDB }}
             onSetEntries={(k, arr) => setRnpEntries(gp.id, k, arr)}
             onClose={close}
           />
@@ -1068,6 +1075,7 @@ export default function AssortmentTable() {
           fields={[
             { id: "image", label: "Фото", type: "image" },
             { id: "name", label: "Исполнитель", type: "text" },
+            { id: "status", label: "Статус", type: "select", options: BLOGGER_STATUSES },
             { id: "inst", label: "Инстаграм", type: "link" },
             { id: "tg", label: "Телеграм", type: "link" },
             { id: "tiktok", label: "Тикток", type: "link" },
@@ -1092,6 +1100,7 @@ export default function AssortmentTable() {
             { id: "comment", label: "Комментарий", type: "text" },
           ]}
           rows={razdachDB}
+          setRows={setRazdachDB}
           onClose={() => setShowRazdachDB(false)}
         />
       )}
@@ -1722,7 +1731,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
     </div>
   );
 }
-function GanttPopup({ state, cells, entries, onSetCell, onSetEntries, onClose }) {
+function GanttPopup({ state, cells, entries, refSources = {}, onSetCell, onSetEntries, onClose }) {
   const { task, dateKey } = state;
   const isReviews = task.kind === "reviews";
   const entryKey = `${task.id}:${dateKey}`;
@@ -1746,6 +1755,33 @@ function GanttPopup({ state, cells, entries, onSetCell, onSetEntries, onClose })
   };
 
   const renderField = (e, f) => {
+    if (f.type === "ref") {
+      const rows = refSources[f.source] || [];
+      const listId = `dl-${task.id}-${f.id}`;
+      const picked = rows.find((r) => (r.name || "") === (e[f.id] || ""));
+      const st = picked && BLOGGER_STATUSES.find((s) => s.value === picked.status);
+      return (
+        <div className="flex items-center gap-1.5">
+          <input
+            value={e[f.id] ?? ""}
+            onChange={(ev) => setField(e.id, f.id, ev.target.value)}
+            list={listId}
+            placeholder={rows.length ? "Выберите из базы или введите" : f.label}
+            className="rounded-lg w-full border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"
+          />
+          <datalist id={listId}>
+            {rows.filter((r) => r.name).map((r) => (
+              <option key={r.id} value={r.name}>{r.status || ""}</option>
+            ))}
+          </datalist>
+          {st && (
+            <span className="rounded-full shrink-0 px-2 py-0.5 text-xs font-medium" style={{ background: st.color + "1f", color: st.color }}>
+              {st.value}
+            </span>
+          )}
+        </div>
+      );
+    }
     if (f.type === "text")
       return <input value={e[f.id] ?? ""} onChange={(ev) => setField(e.id, f.id, ev.target.value)} placeholder={f.label} className="rounded-lg w-full border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />;
     if (f.type === "link")
@@ -1830,7 +1866,7 @@ function GanttPopup({ state, cells, entries, onSetCell, onSetEntries, onClose })
 }
 
 /* Окно-база: все записи задачи по товару в виде редактируемой таблицы */
-function EntriesDB({ task, entries, startDate, onSetEntries, onClose }) {
+function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, onClose }) {
   const fields = task.fields || [];
   const costFields = fields.filter((f) => f.type === "cost");
   const isRange = task.kind === "rangeTask";
@@ -1900,6 +1936,20 @@ function EntriesDB({ task, entries, startDate, onSetEntries, onClose }) {
   const cellEditor = (date, rec, f) => {
     const val = rec[f.id];
     const set = (v) => updateField(date, rec.id, f.id, v);
+    if (f.type === "ref") {
+      const rows = refSources[f.source] || [];
+      const listId = `dbdl-${task.id}-${f.id}`;
+      return (
+        <>
+          <input value={val ?? ""} onChange={(e) => set(e.target.value)} list={listId} className={inp} />
+          <datalist id={listId}>
+            {rows.filter((r) => r.name).map((r) => (
+              <option key={r.id} value={r.name}>{r.status || ""}</option>
+            ))}
+          </datalist>
+        </>
+      );
+    }
     if (f.type === "bool")
       return (
         <div className="flex gap-1">
@@ -1950,7 +2000,7 @@ function EntriesDB({ task, entries, startDate, onSetEntries, onClose }) {
                 <th className="bg-neutral-50 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", width: 44 }}>✓</th>
                 {!isRange && <th className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: 130 }}>Дата</th>}
                 {fields.map((f) => (
-                  <th key={f.id} className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: f.type === "text" || f.type === "link" ? 170 : f.type === "triple" ? 200 : f.type === "date" ? 140 : f.type === "bool" ? 118 : 120 }}>{f.label}</th>
+                  <th key={f.id} className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: f.type === "text" || f.type === "link" || f.type === "ref" ? 170 : f.type === "triple" ? 200 : f.type === "date" ? 140 : f.type === "bool" ? 118 : 120 }}>{f.label}</th>
                 ))}
                 <th className="bg-neutral-50 px-2 py-2" style={{ borderBottom: "1px solid #e5e5e5", width: 40 }} />
               </tr>
@@ -2001,7 +2051,7 @@ function RefDB({ title, fields, rows, setRows, onClose }) {
 
   const add = () => {
     const r = { id: uid() };
-    fields.forEach((f) => { r[f.id] = ""; });
+    fields.forEach((f) => { r[f.id] = f.type === "select" ? (f.options[0]?.value ?? "") : ""; });
     setRows((prev) => [...prev, r]);
   };
   const set = (id, field, val) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: val } : r)));
@@ -2033,7 +2083,7 @@ function RefDB({ title, fields, rows, setRows, onClose }) {
             <thead>
               <tr>
                 {fields.map((f) => (
-                  <th key={f.id} className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: f.type === "image" ? 64 : f.type === "link" ? 160 : f.type === "text" ? 160 : 110 }}>{f.label}</th>
+                  <th key={f.id} className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: f.type === "image" ? 64 : f.type === "link" ? 160 : f.type === "text" ? 160 : f.type === "select" ? 130 : 110 }}>{f.label}</th>
                 ))}
                 <th className="bg-neutral-50 px-2 py-2" style={{ borderBottom: "1px solid #e5e5e5", width: 40 }} />
               </tr>
@@ -2058,6 +2108,22 @@ function RefDB({ title, fields, rows, setRows, onClose }) {
                           <input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} placeholder="https://…" className={inp} />
                           {r[f.id] && <a href={r[f.id]} target="_blank" rel="noopener noreferrer" className="shrink-0 text-orange-600 hover:text-orange-800"><ArrowRight size={13} /></a>}
                         </div>
+                      ) : f.type === "select" ? (
+                        (() => {
+                          const opt = f.options.find((o) => o.value === r[f.id]) || f.options[0];
+                          return (
+                            <select
+                              value={r[f.id] ?? ""}
+                              onChange={(e) => set(r.id, f.id, e.target.value)}
+                              className="w-full cursor-pointer rounded-lg border-0 px-2 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-200"
+                              style={{ background: (opt?.color || "#a3a3a3") + "1f", color: opt?.color || "#a3a3a3" }}
+                            >
+                              {f.options.map((o) => (
+                                <option key={o.value} value={o.value} style={{ color: "#171717" }}>{o.value}</option>
+                              ))}
+                            </select>
+                          );
+                        })()
                       ) : f.type === "num" ? (
                         <input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} inputMode="decimal" className={inp + " text-right"} style={{ fontVariantNumeric: "tabular-nums" }} />
                       ) : (
