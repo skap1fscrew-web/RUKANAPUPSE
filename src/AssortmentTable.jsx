@@ -545,28 +545,26 @@ export default function AssortmentTable() {
 
   // Загрузка заказов из WB API
   const fetchWbOrders = async () => {
-    console.log("[WB] fetchWbOrders вызван, wbApiKey:", wbApiKey ? `задан (${wbApiKey.length} символов)` : "ПУСТО");
-    if (!wbApiKey) { console.log("[WB] Ключ пуст → открываю модалку настроек"); setWbSettingsOpen(true); return; }
+    if (!wbApiKey) { setWbSettingsOpen(true); return; }
+    const nmIdList = products.map(p => parseInt(p.wb)).filter(n => n > 0);
+    if (nmIdList.length === 0) { alert("Нет артикулов ВБ"); return; }
     setWbLoading(true);
     try {
-      console.log("[WB] Отправляю запрос, dateFrom:", rnpStartDate);
-      const resp = await fetch(
-        `https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: wbApiKey, dateFrom: rnpStartDate, nmIds: products.map(p => parseInt(p.wb)).filter(n => n > 0) }),
-        }
-      );
-      console.log("[WB] Ответ:", resp.status, resp.statusText);
-      if (!resp.ok) throw new Error(await resp.text());
-      const data = await resp.json();
-      console.log("[WB] Получено записей:", Object.keys(data).length);
-      setWbOrders(data);
-    } catch (e) {
-      console.error("[WB] Ошибка:", e);
-      alert("Ошибка загрузки заказов: " + e.message);
-    }
+      const allDays = [];
+      const cur = new Date(rnpStartDate + "T00:00:00");
+      const fin = new Date();
+      while (cur <= fin) { allDays.push(cur.toISOString().slice(0, 10)); cur.setDate(cur.getDate() + 1); }
+      const merged = {};
+      for (let i = 0; i < allDays.length; i += 7) {
+        const batch = allDays.slice(i, i + 7);
+        const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: wbApiKey, days: batch, nmIds: nmIdList }),
+        });
+        if (resp.ok) { const data = await resp.json(); Object.assign(merged, data); }
+      }
+      setWbOrders(merged);
+    } catch (e) { alert("Ошибка: " + e.message); }
     setWbLoading(false);
   };
   const expandAll = () => setExpanded(Object.fromEntries(products.map((p) => [p.id, true])));
