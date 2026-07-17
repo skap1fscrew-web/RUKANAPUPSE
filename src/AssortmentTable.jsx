@@ -313,6 +313,7 @@ export default function AssortmentTable() {
   const [wbApiKey, setWbApiKey] = useState("");
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
   const [wbLoading, setWbLoading] = useState(false);
+  const [wbProgress, setWbProgress] = useState(null);
   const [wbSettingsOpen, setWbSettingsOpen] = useState(false);
   const [panelW, setPanelW] = useState(0);
 
@@ -546,26 +547,54 @@ export default function AssortmentTable() {
   // Загрузка заказов из WB API
   const fetchWbOrders = async () => {
     if (!wbApiKey) { setWbSettingsOpen(true); return; }
-    const nmIdList = products.map(p => parseInt(p.wb)).filter(n => n > 0);
-    if (nmIdList.length === 0) { alert("Нет артикулов ВБ"); return; }
+    const nmIdList = products.map((p) => parseInt(p.wb)).filter((n) => n > 0);
+    if (nmIdList.length === 0) { alert("Нет артикулов ВБ — заполните столбец «Артикул ВБ»."); return; }
+
+    // список дней: от начала РНП до сегодня (не дальше)
+    const allDays = [];
+    const cur = new Date(rnpStartDate + "T00:00:00");
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < rnpDays && cur <= today; i++) {
+      allDays.push(
+        `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`
+      );
+      cur.setDate(cur.getDate() + 1);
+    }
+    if (allDays.length === 0) { alert("Нечего загружать: период начинается в будущем."); return; }
+
     setWbLoading(true);
-    try {
-      const allDays = [];
-      const cur = new Date(rnpStartDate + "T00:00:00");
-      const fin = new Date();
-      while (cur <= fin) { allDays.push(cur.toISOString().slice(0, 10)); cur.setDate(cur.getDate() + 1); }
-      const merged = {};
-      for (let i = 0; i < allDays.length; i += 7) {
-        const batch = allDays.slice(i, i + 7);
+    setWbProgress({ done: 0, total: allDays.length });
+
+    const merged = {};
+    const failed = [];
+
+    for (let i = 0; i < allDays.length; i++) {
+      const day = allDays[i];
+      try {
         const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: wbApiKey, days: batch, nmIds: nmIdList }),
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: wbApiKey, day, nmIds: nmIdList }),
         });
-        if (resp.ok) { const data = await resp.json(); Object.assign(merged, data); }
+        if (resp.ok) {
+          Object.assign(merged, await resp.json());
+          setWbOrders({ ...merged }); // показываем данные по мере загрузки
+        } else {
+          failed.push(day);
+        }
+      } catch (e) {
+        failed.push(day);
       }
-      setWbOrders(merged);
-    } catch (e) { alert("Ошибка: " + e.message); }
+      setWbProgress({ done: i + 1, total: allDays.length });
+      await new Promise((r) => setTimeout(r, 250)); // бережём лимит WB
+    }
+
     setWbLoading(false);
+    setWbProgress(null);
+    if (failed.length) {
+      alert(`Не удалось загрузить ${failed.length} из ${allDays.length} дней: ${failed.join(", ")}. Нажмите ↻ ещё раз — недостающие дни догрузятся.`);
+    }
   };
   const expandAll = () => setExpanded(Object.fromEntries(products.map((p) => [p.id, true])));
   const collapseAll = () => setExpanded({});
@@ -951,6 +980,7 @@ export default function AssortmentTable() {
                                     onOpenDB={(task) => setGanttModal({ productId: p.id, mode: "db", task })}
                                     wbOrders={wbOrders}
                                     wbLoading={wbLoading}
+                                    wbProgress={wbProgress}
                                     onFetchWb={fetchWbOrders}
                                   />
                                 )
@@ -1391,7 +1421,7 @@ function PlanBlock({ group, warehouses, sizes, onAddSize, onRemoveSize, onSetSiz
    Блок «РНП» — диаграмма Ганта (задачи × дни) + Фонд маркетинга. Один на товар.
 ---------------------------------------------------------------------------- */
 
-function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, onFetchWb }) {
+function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, wbProgress, onFetchWb }) {
   const [fillMode, setFillMode] = useState(false);
   const [fillColor, setFillColor] = useState(FILL_COLORS[0]);
   const [bd, setBd] = useState(null); // позиция окна разбивки затрат
@@ -1623,8 +1653,10 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
                         {(task.top === "entries" || task.kind === "rangeTask") ? (
                           <button onClick={() => onOpenDB(task)} className="text-left text-xs font-semibold text-orange-700 hover:underline" title="Открыть базу записей">{task.label}</button>
                         ) : task.kind === "wbOrders" ? (
-                          <button onClick={onFetchWb} className="text-left text-xs font-semibold text-orange-700 hover:underline" title={wbLoading ? "Загрузка…" : "Обновить заказы из WB"}>
-                            {wbLoading ? "Загрузка…" : task.label} ↻
+                          <button onClick={onFetchWb} disabled={wbLoading} className="text-left text-xs font-semibold text-orange-700 hover:underline disabled:opacity-60" title={wbLoading ? "Загрузка…" : "Обновить заказы из WB"}>
+                            {wbLoading
+                              ? `Загрузка ${wbProgress ? `${wbProgress.done}/${wbProgress.total}` : ""}…`
+                              : `${task.label} ↻`}
                           </button>
                         ) : (
                           <span className="text-xs font-medium text-neutral-700">{task.label}</span>
