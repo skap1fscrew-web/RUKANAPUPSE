@@ -1624,7 +1624,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
     <div>
       {/* панель управления */}
       <div className="mb-2 flex flex-wrap items-center gap-3 px-1">
-        <div className="text-sm font-bold italic" style={{ color: "#ea580c" }}>РНП</div>
+        <div className="text-sm font-semibold text-neutral-900">Дата</div>
         <label className="flex items-center gap-1 text-xs text-neutral-500">
           с
           <input type="date" value={startDate} onChange={(e) => onSetStartDate(e.target.value)} className="rounded-lg border border-neutral-200 px-1.5 py-0.5 text-xs" />
@@ -1633,14 +1633,6 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
           дней
           <input type="number" min="7" max="120" value={days} onChange={(e) => onSetDays(Math.max(7, Math.min(120, parseInt(e.target.value) || 7)))} className="rounded-lg w-16 border border-neutral-200 px-1.5 py-0.5 text-xs" />
         </label>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setFillMode((v) => !v)} className="rounded-lg border px-2.5 py-1 text-xs font-medium transition" style={fillMode ? { background: "#ea580c", color: "#fff", borderColor: "#ea580c" } : { color: "#737373", borderColor: "#e5e5e5" }}>
-            Заливка {fillMode ? "вкл" : "выкл"}
-          </button>
-          {fillMode && FILL_COLORS.map((c) => (
-            <button key={c} onClick={() => setFillColor(c)} className="h-5 w-5" style={{ background: c, boxShadow: fillColor === c ? "0 0 0 2px #fff, 0 0 0 4px #ea580c" : "none" }} />
-          ))}
-        </div>
 
         {/* Фонд маркетинга */}
         <div className="rounded-xl ml-auto inline-flex flex-wrap items-center gap-2 border border-neutral-200 bg-white px-2.5 py-1">
