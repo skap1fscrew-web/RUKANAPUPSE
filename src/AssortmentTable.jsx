@@ -399,6 +399,7 @@ export default function AssortmentTable() {
           dirtyRef.current.settings.add(key);
           const { error } = await upsertSetting(key, value);
           if (!error) { syncedRef.current.settings[key] = js; dirtyRef.current.settings.delete(key); }
+          else console.error(`[Настройки] не сохранилось «${key}»:`, error.message || error, `(размер ${js.length} симв.)`);
         }
       }
     }, 600);
@@ -623,6 +624,16 @@ export default function AssortmentTable() {
 
     setWbLoading(false);
     setWbProgress(null);
+
+    // Сохраняем кеш сразу, не полагаясь на debounce автосохранения
+    try {
+      const { error } = await upsertSetting("wbOrders", merged);
+      if (error) console.error("[WB] кеш заказов не сохранился:", error.message || error);
+      else syncedRef.current.settings.wbOrders = JSON.stringify(merged);
+    } catch (e) {
+      console.error("[WB] кеш заказов не сохранился:", e);
+    }
+
     if (failed.length) {
       alert(`Не удалось загрузить ${failed.length} из ${daysToFetch.length} дней: ${failed.join(", ")}. Нажмите ↻ ещё раз — недостающие дни догрузятся.`);
     }
