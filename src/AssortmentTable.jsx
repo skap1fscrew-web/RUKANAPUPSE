@@ -14,6 +14,15 @@ const uid = () =>
     ? crypto.randomUUID()
     : `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+// Затраты одной записи: обычные cost-поля + сумма включённого условного выкупа.
+function calcRecordCost(fields, e) {
+  return (fields || []).reduce((a, f) => {
+    if (f.type === "cost") return a + (parseFloat(String(e[f.id] ?? "").replace(/\s/g, "").replace(",", ".")) || 0);
+    if (f.type === "condCost" && e[f.toggleId]) return a + (parseFloat(String(e[f.amountId] ?? "").replace(/\s/g, "").replace(",", ".")) || 0);
+    return a;
+  }, 0);
+}
+
 // Фиксированная (примороженная) левая часть таблицы.
 const FROZEN = [
   { id: "actions", label: "", width: 44 },
@@ -50,6 +59,7 @@ const BLOGGER_STATUSES = [
   { value: "работаем", color: "#10b981" },
   { value: "не работаем", color: "#a3a3a3" },
 ];
+const REVIEW_OPTIONS = ["не оставила отзыв", "отзыв прошёл", "отзыв не прошёл"];
 const BLOGGER_FIELDS = [
   { id: "who", label: "Исполнитель", type: "ref", source: "bloggerDB" },
   { id: "link", label: "Ссылка на пост", type: "link" },
@@ -57,6 +67,8 @@ const BLOGGER_FIELDS = [
   { id: "integ", label: "Интеграция, ₽", type: "cost" },
   { id: "delivery", label: "Доставка, ₽", type: "cost" },
   { id: "prod", label: "Товар, ₽", type: "cost" },
+  { id: "buyout", label: "Выкупит товар", type: "condCost", toggleId: "buyoutOn", amountId: "buyoutSum", amountLabel: "Сумма выкупа, ₽" },
+  { id: "review", label: "Оставит отзыв", type: "condChoice", toggleId: "reviewOn", valueId: "reviewStatus", options: REVIEW_OPTIONS },
   { id: "note", label: "Примечание", type: "text" },
 ];
 
@@ -1558,7 +1570,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
   const LBL_W = 210, TOT_W = 62, SHARE_W = 56, DAY_W = 66;
   const sticky = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
 
-  const recordCost = (task, e) => (task.fields || []).reduce((a, f) => (f.type === "cost" ? a + (toNum(e[f.id]) || 0) : a), 0);
+  const recordCost = (task, e) => calcRecordCost(task.fields, e);
   const entrySum = (task, arr) => (arr || []).reduce((a, e) => a + recordCost(task, e), 0);
   const rangeEntries = (task) => entries[`${task.id}:_ranges`] || [];
   const dayCostOf = (task, dkey) => {
@@ -1825,12 +1837,12 @@ function GanttPopup({ state, cells, entries, refSources = {}, onSetCell, onSetEn
   const arr = entries[entryKey] || [];
 
   const fields = task.fields || [];
-  const costFields = fields.filter((f) => f.type === "cost");
-  const blankEntry = () => { const e = { id: uid(), done: false }; fields.forEach((f) => { e[f.id] = f.type === "bool" ? false : ""; }); return e; };
+  const costFields = fields.filter((f) => f.type === "cost" || f.type === "condCost");
+  const blankEntry = () => { const e = { id: uid(), done: false }; fields.forEach((f) => { e[f.id] = (f.type === "bool" || f.type === "condCost" || f.type === "condChoice") ? (f.type === "condChoice" ? "" : false) : ""; }); return e; };
   const addEntry = () => onSetEntries(entryKey, [...arr, blankEntry()]);
   const setField = (id, field, val) => onSetEntries(entryKey, arr.map((e) => (e.id === id ? { ...e, [field]: val } : e)));
   const removeEntry = (id) => onSetEntries(entryKey, arr.filter((e) => e.id !== id));
-  const recordCost = (e) => costFields.reduce((a, f) => a + (toNum(e[f.id]) || 0), 0);
+  const recordCost = (e) => calcRecordCost(fields, e);
   const totalCost = arr.reduce((a, e) => a + recordCost(e), 0);
 
   const optStyle = (sel, opt, choice) => {
@@ -1869,9 +1881,51 @@ function GanttPopup({ state, cells, entries, refSources = {}, onSetCell, onSetEn
         </div>
       );
     }
+    if (f.type === "condCost") {
+      const on = !!e[f.toggleId];
+      return (
+        <div className="flex flex-col gap-1.5">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-700">
+            <input type="checkbox" checked={on} onChange={(ev) => setField(e.id, f.toggleId, ev.target.checked)} className="h-4 w-4 accent-orange-600" />
+            {f.label}
+          </label>
+          {on && (
+            <div className="flex items-center gap-2 pl-6">
+              <span className="text-xs text-neutral-500">{f.amountLabel}</span>
+              <input value={e[f.amountId] ?? ""} onChange={(ev) => setField(e.id, f.amountId, ev.target.value)} inputMode="decimal" placeholder="0 ₽" className="rounded-lg w-32 border border-neutral-200 px-2.5 py-1.5 text-right text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ fontVariantNumeric: "tabular-nums" }} />
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (f.type === "condChoice") {
+      const on = !!e[f.toggleId];
+      return (
+        <div className="flex flex-col gap-1.5">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-700">
+            <input type="checkbox" checked={on} onChange={(ev) => setField(e.id, f.toggleId, ev.target.checked)} className="h-4 w-4 accent-orange-600" />
+            {f.label}
+          </label>
+          {on && (
+            <div className="flex flex-wrap gap-1 pl-6">
+              {f.options.map((opt) => {
+                const sel = e[f.valueId] === opt;
+                const good = opt.includes("прошёл") && !opt.includes("не ");
+                const bad = opt.includes("не прошёл");
+                const style = !sel ? { background: "#fff", borderColor: "#e5e5e5", color: "#a3a3a3" }
+                  : good ? { background: "#f0fdf4", borderColor: "#86efac", color: "#15803d" }
+                  : bad ? { background: "#fee2e2", borderColor: "#fca5a5", color: "#b91c1c" }
+                  : { background: "#e5e5e5", borderColor: "#d4d4d4", color: "#525252" };
+                return (
+                  <button key={opt} onClick={() => setField(e.id, f.valueId, sel ? "" : opt)} className="rounded-full border px-3 py-1 text-xs font-medium transition" style={style}>{opt}</button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
     if (f.type === "text")
-      return <input value={e[f.id] ?? ""} onChange={(ev) => setField(e.id, f.id, ev.target.value)} placeholder={f.label} className="rounded-lg w-full border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />;
-    if (f.type === "link")
       return (
         <div className="flex items-center gap-1.5">
           <input value={e[f.id] ?? ""} onChange={(ev) => setField(e.id, f.id, ev.target.value)} placeholder="https://…" className="rounded-lg w-full border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
@@ -1955,7 +2009,7 @@ function GanttPopup({ state, cells, entries, refSources = {}, onSetCell, onSetEn
 /* Окно-база: все записи задачи по товару в виде редактируемой таблицы */
 function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, onClose }) {
   const fields = task.fields || [];
-  const costFields = fields.filter((f) => f.type === "cost");
+  const costFields = fields.filter((f) => f.type === "cost" || f.type === "condCost");
   const isRange = task.kind === "rangeTask";
   const rangeKey = `${task.id}:_ranges`;
 
@@ -2000,7 +2054,7 @@ function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, on
   const addRec = () => {
     const e = { id: uid(), done: false };
     fields.forEach((f) => {
-      if (f.type === "bool") e[f.id] = false;
+      if (f.type === "bool" || f.type === "condCost") e[f.id] = false;
       else if (f.type === "date") e[f.id] = startDate;
       else e[f.id] = "";
     });
@@ -2010,7 +2064,7 @@ function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, on
       onSetEntries(`${task.id}:${startDate}`, [...arrAt(startDate), e]);
     }
   };
-  const recordCost = (e) => costFields.reduce((a, f) => a + (toNum(e[f.id]) || 0), 0);
+  const recordCost = (e) => calcRecordCost(fields, e);
   const grandTotal = rows.reduce((a, r) => a + recordCost(r.rec), 0);
 
   const inp = "w-full  border border-neutral-200 bg-white px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200";
@@ -2023,6 +2077,34 @@ function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, on
   const cellEditor = (date, rec, f) => {
     const val = rec[f.id];
     const set = (v) => updateField(date, rec.id, f.id, v);
+    if (f.type === "condCost") {
+      const on = !!rec[f.toggleId];
+      return (
+        <div className="flex items-center gap-1.5">
+          <label className="flex cursor-pointer items-center gap-1 text-xs text-neutral-600">
+            <input type="checkbox" checked={on} onChange={(ev) => updateField(date, rec.id, f.toggleId, ev.target.checked)} className="h-3.5 w-3.5 accent-orange-600" />
+            да
+          </label>
+          {on && (
+            <input value={rec[f.amountId] ?? ""} onChange={(ev) => updateField(date, rec.id, f.amountId, ev.target.value)} inputMode="decimal" placeholder="₽" className={inp + " text-right"} style={{ fontVariantNumeric: "tabular-nums", width: 80 }} />
+          )}
+        </div>
+      );
+    }
+    if (f.type === "condChoice") {
+      const on = !!rec[f.toggleId];
+      return (
+        <div className="flex items-center gap-1">
+          <input type="checkbox" checked={on} onChange={(ev) => updateField(date, rec.id, f.toggleId, ev.target.checked)} className="h-3.5 w-3.5 accent-orange-600" title="Оставит отзыв" />
+          {on && (
+            <select value={rec[f.valueId] || ""} onChange={(ev) => updateField(date, rec.id, f.valueId, ev.target.value)} className={inp}>
+              <option value="">—</option>
+              {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+        </div>
+      );
+    }
     if (f.type === "ref") {
       const rows = refSources[f.source] || [];
       const listId = `dbdl-${task.id}-${f.id}`;
@@ -2087,7 +2169,7 @@ function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, on
                 <th className="bg-neutral-50 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", width: 44 }}>✓</th>
                 {!isRange && <th className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: 130 }}>Дата</th>}
                 {fields.map((f) => (
-                  <th key={f.id} className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: f.type === "text" || f.type === "link" || f.type === "ref" ? 170 : f.type === "triple" ? 200 : f.type === "date" ? 140 : f.type === "bool" ? 118 : 120 }}>{f.label}</th>
+                  <th key={f.id} className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: f.type === "text" || f.type === "link" || f.type === "ref" ? 170 : f.type === "triple" || f.type === "condChoice" ? 200 : f.type === "date" ? 140 : f.type === "bool" ? 118 : f.type === "condCost" ? 150 : 120 }}>{f.label}</th>
                 ))}
                 <th className="bg-neutral-50 px-2 py-2" style={{ borderBottom: "1px solid #e5e5e5", width: 40 }} />
               </tr>
