@@ -1926,6 +1926,8 @@ function GanttPopup({ state, cells, entries, refSources = {}, onSetCell, onSetEn
       );
     }
     if (f.type === "text")
+      return <input value={e[f.id] ?? ""} onChange={(ev) => setField(e.id, f.id, ev.target.value)} placeholder={f.label} className="rounded-lg w-full border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />;
+    if (f.type === "link")
       return (
         <div className="flex items-center gap-1.5">
           <input value={e[f.id] ?? ""} onChange={(ev) => setField(e.id, f.id, ev.target.value)} placeholder="https://…" className="rounded-lg w-full border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
