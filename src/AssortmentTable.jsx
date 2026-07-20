@@ -670,31 +670,46 @@ export default function AssortmentTable() {
     if (daysToFetch.length === 0) return;
 
     setWbLoading(true);
-    setWbProgress({ done: 0, total: daysToFetch.length });
 
-    const failed = [];
+    // Дожимаем дни в несколько проходов: WB иногда режет по rate-limit,
+    // и часть дней падает. Повторяем, пока все не заполнятся или не кончатся попытки.
+    let queue = [...daysToFetch];
+    const totalPlanned = queue.length;
+    let doneCount = 0;
+    setWbProgress({ done: 0, total: totalPlanned });
 
-    for (let i = 0; i < daysToFetch.length; i++) {
-      const day = daysToFetch[i];
-      try {
-        const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: wbApiKey, day, nmIds: nmIdList }),
-        });
-        if (resp.ok) {
-          Object.assign(merged, await resp.json());
-          meta[day] = todayStr; // запоминаем, когда забрали этот день
-          setWbOrders({ ...merged }); // показываем данные по мере загрузки
-        } else {
-          failed.push(day);
+    for (let pass = 0; pass < 4 && queue.length > 0; pass++) {
+      const stillFailed = [];
+      const pauseBase = 250 + pass * 300; // с каждым проходом бережнее к лимиту
+
+      for (const day of queue) {
+        let ok = false;
+        for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+          try {
+            const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ apiKey: wbApiKey, day, nmIds: nmIdList }),
+            });
+            if (resp.status === 429) { await new Promise((r) => setTimeout(r, 2500)); continue; }
+            if (resp.ok) {
+              Object.assign(merged, await resp.json());
+              meta[day] = todayStr;
+              setWbOrders({ ...merged });
+              ok = true;
+            }
+          } catch (_) { /* сеть — попробуем в следующем проходе */ }
         }
-      } catch (e) {
-        failed.push(day);
+        if (ok) { doneCount++; setWbProgress({ done: doneCount, total: totalPlanned }); }
+        else stillFailed.push(day);
+        await new Promise((r) => setTimeout(r, pauseBase));
       }
-      setWbProgress({ done: i + 1, total: daysToFetch.length });
-      await new Promise((r) => setTimeout(r, 250)); // бережём лимит WB
+
+      queue = stillFailed;
+      if (queue.length > 0) await new Promise((r) => setTimeout(r, 1500)); // пауза между проходами
     }
+
+    const failed = queue; // что не добрали за все проходы
 
     setWbOrdersMeta({ ...meta });
     setWbLoading(false);
@@ -715,7 +730,7 @@ export default function AssortmentTable() {
     }
 
     if (failed.length) {
-      alert(`Не удалось загрузить ${failed.length} из ${daysToFetch.length} дней: ${failed.join(", ")}. Нажмите ↻ ещё раз — недостающие дни догрузятся.`);
+      console.warn(`[WB] не добрали ${failed.length} дней после 4 проходов: ${failed.join(", ")}`);
     }
   };
   const expandAll = () => setExpanded(Object.fromEntries(products.map((p) => [p.id, true])));
