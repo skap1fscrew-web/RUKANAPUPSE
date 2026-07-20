@@ -376,8 +376,11 @@ export default function AssortmentTable() {
         if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = JSON.stringify(settings.wbApiKey); }
         if (settings.wbOrders && typeof settings.wbOrders === "object") { setWbOrders(settings.wbOrders); syncedRef.current.settings.wbOrders = JSON.stringify(settings.wbOrders); }
         if (settings.wbOrdersMeta && typeof settings.wbOrdersMeta === "object") { setWbOrdersMeta(settings.wbOrdersMeta); syncedRef.current.settings.wbOrdersMeta = JSON.stringify(settings.wbOrdersMeta); }
-      } catch (e) { console.error("Ошибка загрузки:", e); }
-      setLoaded(true);
+        setLoaded(true); // включаем сохранение ТОЛЬКО после успешной загрузки
+      } catch (e) {
+        console.error("Ошибка загрузки — сохранение отключено, чтобы не затереть базу:", e);
+        // намеренно НЕ ставим loaded=true: пустой стартовый стейт не должен перезаписать БД
+      }
     })();
   }, []);
 
@@ -424,6 +427,15 @@ export default function AssortmentTable() {
         try {
           const js = JSON.stringify(value);
           if (syncedRef.current.settings[key] !== js) {
+            // Барьер: не затираем непустое сохранённое значение пустым.
+            // Спасает данные, если стейт неожиданно опустел (краш/сбой загрузки).
+            const prev = syncedRef.current.settings[key];
+            const nowEmpty = js === "[]" || js === "{}" || js === '""';
+            const prevNonEmpty = prev && prev !== "[]" && prev !== "{}" && prev !== '""' && prev !== "null";
+            if (nowEmpty && prevNonEmpty) {
+              console.warn(`[Настройки] пропускаю обнуление «${key}» — в базе есть данные, а стейт пуст.`);
+              continue;
+            }
             dirtyRef.current.settings.add(key);
             const { error } = await upsertSetting(key, value);
             if (!error) { syncedRef.current.settings[key] = js; dirtyRef.current.settings.delete(key); }
