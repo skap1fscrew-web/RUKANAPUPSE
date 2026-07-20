@@ -1943,6 +1943,7 @@ function GanttPopup({ state, cells, entries, refSources = {}, onSetCell, onSetEn
         </div>
       );
     // triple / choice
+    if (!Array.isArray(f.options)) return null;
     const choice = f.type === "choice";
     return (
       <div className="flex flex-wrap gap-1">
