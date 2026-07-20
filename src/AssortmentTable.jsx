@@ -317,6 +317,7 @@ export default function AssortmentTable() {
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
+  const [wbOrdersMeta, setWbOrdersMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbLoading, setWbLoading] = useState(false);
   const [wbProgress, setWbProgress] = useState(null);
   const [wbSettingsOpen, setWbSettingsOpen] = useState(false);
@@ -360,6 +361,7 @@ export default function AssortmentTable() {
         }
         if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = JSON.stringify(settings.wbApiKey); }
         if (settings.wbOrders && typeof settings.wbOrders === "object") { setWbOrders(settings.wbOrders); syncedRef.current.settings.wbOrders = JSON.stringify(settings.wbOrders); }
+        if (settings.wbOrdersMeta && typeof settings.wbOrdersMeta === "object") { setWbOrdersMeta(settings.wbOrdersMeta); syncedRef.current.settings.wbOrdersMeta = JSON.stringify(settings.wbOrdersMeta); }
       } catch (e) { console.error("Ошибка загрузки:", e); }
       setLoaded(true);
     })();
@@ -392,19 +394,23 @@ export default function AssortmentTable() {
   useEffect(() => {
     if (!loaded) return;
     const t = setTimeout(async () => {
-      const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, rnp: { startDate: rnpStartDate, days: rnpDays } };
+      const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
       for (const [key, value] of Object.entries(items)) {
-        const js = JSON.stringify(value);
-        if (syncedRef.current.settings[key] !== js) {
-          dirtyRef.current.settings.add(key);
-          const { error } = await upsertSetting(key, value);
-          if (!error) { syncedRef.current.settings[key] = js; dirtyRef.current.settings.delete(key); }
-          else console.error(`[Настройки] не сохранилось «${key}»:`, error.message || error, `(размер ${js.length} симв.)`);
+        try {
+          const js = JSON.stringify(value);
+          if (syncedRef.current.settings[key] !== js) {
+            dirtyRef.current.settings.add(key);
+            const { error } = await upsertSetting(key, value);
+            if (!error) { syncedRef.current.settings[key] = js; dirtyRef.current.settings.delete(key); }
+            else console.error(`[Настройки] не сохранилось «${key}»:`, error.message || error, `(размер ${js.length} симв.)`);
+          }
+        } catch (err) {
+          console.error(`[Настройки] сбой при сохранении «${key}»:`, err);
         }
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -430,6 +436,7 @@ export default function AssortmentTable() {
         else if (key === "razdachDB") setRazdachDB(value);
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
+        else if (key === "wbOrdersMeta") setWbOrdersMeta(value || {});
         else if (key === "rnp") { if (value.startDate) setRnpStartDate(value.startDate); if (value.days) setRnpDays(value.days); }
       },
     });
@@ -575,6 +582,12 @@ export default function AssortmentTable() {
 
     const iso = (d) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    // прибавить N дней к строке "YYYY-MM-DD" → строка
+    const addDaysStr = (dayStr, n) => {
+      const d = new Date(dayStr + "T00:00:00");
+      d.setDate(d.getDate() + n);
+      return iso(d);
+    };
 
     // список дней: от начала РНП до сегодня (не дальше)
     const allDays = [];
@@ -589,11 +602,26 @@ export default function AssortmentTable() {
     if (allDays.length === 0) { alert("Нечего загружать: период начинается в будущем."); return; }
 
     const merged = { ...wbOrders };
+    const meta = { ...wbOrdersMeta };
 
-    // Сегодня грузим всегда (день ещё не закрыт), прошлые дни — только если их нет в кеше.
-    const daysToFetch = allDays.filter(
-      (day) => day === todayStr || nmIdList.some((nm) => merged[`${nm}:${day}`] === undefined)
-    );
+    // Сколько дней после даты заказа WB считается «дозаполняющим»
+    // статистику. Пока не прошло — день не финальный.
+    const STALE_DAYS = 3;
+
+    // День финальный (можно доверять кешу навсегда), только если:
+    //  1) он есть в кеше,
+    //  2) его цифру мы забрали не раньше, чем через STALE_DAYS после самой даты дня.
+    // Это не зависит от того, как давно вы заходили: незрелый день
+    // перезапросится хоть через день, хоть через месяц — до тех пор,
+    // пока не будет получен «созревшим».
+    const isFinal = (day) => {
+      if (nmIdList.some((nm) => merged[`${nm}:${day}`] === undefined)) return false;
+      const fetchedOn = meta[day];
+      if (!fetchedOn) return false; // старый кеш без метки — перепроверить
+      return fetchedOn >= addDaysStr(day, STALE_DAYS);
+    };
+
+    const daysToFetch = allDays.filter((day) => !isFinal(day));
     if (daysToFetch.length === 0) return;
 
     setWbLoading(true);
@@ -611,6 +639,7 @@ export default function AssortmentTable() {
         });
         if (resp.ok) {
           Object.assign(merged, await resp.json());
+          meta[day] = todayStr; // запоминаем, когда забрали этот день
           setWbOrders({ ...merged }); // показываем данные по мере загрузки
         } else {
           failed.push(day);
@@ -622,14 +651,20 @@ export default function AssortmentTable() {
       await new Promise((r) => setTimeout(r, 250)); // бережём лимит WB
     }
 
+    setWbOrdersMeta({ ...meta });
     setWbLoading(false);
     setWbProgress(null);
 
-    // Сохраняем кеш сразу, не полагаясь на debounce автосохранения
+    // Сохраняем кеш и метки сразу, не полагаясь на debounce автосохранения
     try {
-      const { error } = await upsertSetting("wbOrders", merged);
-      if (error) console.error("[WB] кеш заказов не сохранился:", error.message || error);
+      const [r1, r2] = await Promise.all([
+        upsertSetting("wbOrders", merged),
+        upsertSetting("wbOrdersMeta", meta),
+      ]);
+      if (r1.error) console.error("[WB] кеш заказов не сохранился:", r1.error.message || r1.error);
       else syncedRef.current.settings.wbOrders = JSON.stringify(merged);
+      if (r2.error) console.error("[WB] метки дат не сохранились:", r2.error.message || r2.error);
+      else syncedRef.current.settings.wbOrdersMeta = JSON.stringify(meta);
     } catch (e) {
       console.error("[WB] кеш заказов не сохранился:", e);
     }
@@ -641,6 +676,19 @@ export default function AssortmentTable() {
   const expandAll = () => setExpanded(Object.fromEntries(products.map((p) => [p.id, true])));
   const collapseAll = () => setExpanded({});
   const statusColor = (name) => statuses.find((s) => s.name === name)?.color || "#a3a3a3";
+
+  // Автообновление заказов при открытии: один раз после загрузки данных,
+  // если задан ключ и есть товары. Свежие дни перезапросятся, старые — из кеша.
+  const fetchWbRef = useRef(fetchWbOrders);
+  fetchWbRef.current = fetchWbOrders;
+  const autoRefreshedRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || autoRefreshedRef.current) return;
+    if (!wbApiKey) return;
+    if (!products.some((p) => parseInt(p.wb) > 0)) return;
+    autoRefreshedRef.current = true;
+    fetchWbRef.current();
+  }, [loaded, wbApiKey, products]);
 
   /* --- группы / раскладка --- */
   const tabGroups = GROUPS.filter((g) => g.tab === activeTab);
@@ -2079,7 +2127,7 @@ function RefDB({ title, fields, rows, setRows, onClose }) {
   const onFile = async (e) => {
     const f = e.target.files?.[0]; const id = target.current; e.target.value = "";
     if (!f || !id) return;
-    try { set(id, "image", await fileToThumb(f)); } catch {}
+    try { set(id, "image", await fileToThumb(f, 96)); } catch (err) { console.error("[Фото] не удалось обработать:", err); }
   };
 
   const inp = "w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200";
