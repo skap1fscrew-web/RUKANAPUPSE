@@ -329,6 +329,8 @@ export default function AssortmentTable() {
 
   const syncedRef = useRef({ products: new Map(), settings: {} });
   const dirtyRef = useRef({ products: new Set(), settings: new Set() });
+  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [] });
+  listSettingsRef.current = { bloggerDB, razdachDB, purchases };
 
   // UI-настройки (личные) — localStorage
   useEffect(() => {
@@ -393,8 +395,19 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
+    const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+
+    // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
+    // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
+    for (const [key, value] of Object.entries(items)) {
+      try {
+        if (syncedRef.current.settings[key] !== JSON.stringify(value)) {
+          dirtyRef.current.settings.add(key);
+        }
+      } catch {}
+    }
+
     const t = setTimeout(async () => {
-      const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
       for (const [key, value] of Object.entries(items)) {
         try {
           const js = JSON.stringify(value);
@@ -403,6 +416,8 @@ export default function AssortmentTable() {
             const { error } = await upsertSetting(key, value);
             if (!error) { syncedRef.current.settings[key] = js; dirtyRef.current.settings.delete(key); }
             else console.error(`[Настройки] не сохранилось «${key}»:`, error.message || error, `(размер ${js.length} симв.)`);
+          } else {
+            dirtyRef.current.settings.delete(key);
           }
         } catch (err) {
           console.error(`[Настройки] сбой при сохранении «${key}»:`, err);
@@ -428,6 +443,12 @@ export default function AssortmentTable() {
         const js = JSON.stringify(value);
         if (syncedRef.current.settings[key] === js) return;
         if (dirtyRef.current.settings.has(key)) return;
+        // Защита: не даём входящему пустому массиву затереть непустой локальный
+        // список (эхо старого состояния во время несохранённой правки).
+        const liveLists = listSettingsRef.current;
+        if (key in liveLists && Array.isArray(value) && value.length === 0 && (liveLists[key] || []).length > 0) {
+          return;
+        }
         syncedRef.current.settings[key] = js;
         if (key === "statuses") setStatuses(value);
         else if (key === "warehouses") setWarehouses(value);
