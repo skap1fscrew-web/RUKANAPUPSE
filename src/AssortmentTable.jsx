@@ -352,7 +352,8 @@ export default function AssortmentTable() {
   const [activeTab, setActiveTab] = useState("assortment");
   const [expanded, setExpanded] = useState({});
   const [loaded, setLoaded] = useState(false);
-  const [statusMgr, setStatusMgr] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [defaultTasks, setDefaultTasks] = useState([]); // задачи по умолчанию (общие) — [{id, text}]
   const [ganttModal, setGanttModal] = useState(null);
   const [cardModal, setCardModal] = useState(null); // id товара для окна «Задачи по карточке»
   const [codeFilter, setCodeFilter] = useState("");
@@ -404,6 +405,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.purchases)) { setPurchases(settings.purchases); syncedRef.current.settings.purchases = JSON.stringify(settings.purchases); }
         if (Array.isArray(settings.bloggerDB)) { setBloggerDB(settings.bloggerDB); syncedRef.current.settings.bloggerDB = JSON.stringify(settings.bloggerDB); }
         if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = JSON.stringify(settings.razdachDB); }
+        if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
           if (settings.rnp.days) setRnpDays(settings.rnp.days);
@@ -446,7 +448,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -485,7 +487,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -515,6 +517,7 @@ export default function AssortmentTable() {
         else if (key === "purchases") setPurchases(value);
         else if (key === "bloggerDB") setBloggerDB(value);
         else if (key === "razdachDB") setRazdachDB(value);
+        else if (key === "defaultTasks") setDefaultTasks(value || []);
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
         else if (key === "wbOrdersMeta") setWbOrdersMeta(value || {});
@@ -1034,8 +1037,8 @@ export default function AssortmentTable() {
             <button onClick={exportCsv} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Download size={15} /> Экспорт CSV
             </button>
-            <button onClick={() => setStatusMgr(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
-              <Settings2 size={15} /> Статусы
+            <button onClick={() => setSettingsOpen(true)} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+              <Settings2 size={15} /> Настройки
             </button>
           </div>
         </div>
@@ -1168,8 +1171,9 @@ export default function AssortmentTable() {
                         if (f.id === "wb")
                           return <td key="wb" style={base}><CellInput value={p.wb} onChange={(v) => updateProduct(p.id, "wb", v)} placeholder="—" mono /></td>;
                         if (f.id === "name") {
-                          const ts = p.tasks || [];
-                          const done = ts.filter((t) => t.done).length;
+                          const own = p.tasks || [];
+                          const ts = own.length ? own : defaultTasks;
+                          const done = own.length ? own.filter((t) => t.done).length : 0;
                           return (
                             <td key="name" style={base}>
                               <button onClick={() => setCardModal(p.id)} className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-sm text-neutral-900 hover:text-orange-700" title="Открыть задачи по карточке">
@@ -1320,7 +1324,15 @@ export default function AssortmentTable() {
         )}
       </div>
 
-      {statusMgr && <StatusManager statuses={statuses} setStatuses={setStatuses} onClose={() => setStatusMgr(false)} />}
+      {settingsOpen && (
+        <SettingsModal
+          statuses={statuses}
+          setStatuses={setStatuses}
+          defaultTasks={defaultTasks}
+          setDefaultTasks={setDefaultTasks}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
 
       {cardModal && (() => {
         const cp = products.find((x) => x.id === cardModal);
@@ -1328,6 +1340,7 @@ export default function AssortmentTable() {
         return (
           <CardTasksModal
             product={cp}
+            defaultTasks={defaultTasks}
             onSetName={(v) => updateProduct(cp.id, "name", v)}
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
             onClose={() => setCardModal(null)}
@@ -2763,8 +2776,12 @@ function CellInput({ value, onChange, placeholder, mono }) {
    Окно «Задачи по карточке» — чек-лист задач конкретного товара
 ---------------------------------------------------------------------------- */
 
-function CardTasksModal({ product, onSetName, onSetTasks, onClose }) {
-  const tasks = product.tasks || [];
+function CardTasksModal({ product, defaultTasks, onSetName, onSetTasks, onClose }) {
+  // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
+  // Любое изменение «материализует» их в собственный список карточки.
+  const own = Array.isArray(product.tasks) ? product.tasks : [];
+  const usingDefaults = own.length === 0;
+  const tasks = usingDefaults ? (defaultTasks || []).map((t) => ({ id: t.id, text: t.text, done: false })) : own;
   const [newText, setNewText] = useState("");
   const done = tasks.filter((t) => t.done).length;
 
@@ -2779,56 +2796,64 @@ function CardTasksModal({ product, onSetName, onSetTasks, onClose }) {
   const remove = (id) => onSetTasks(tasks.filter((t) => t.id !== id));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="rounded-2xl w-full max-w-lg overflow-auto bg-white p-5 shadow-xl" style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
-              {product.code && <span className="font-semibold text-neutral-500">{product.code}</span>}
-              {product.wb && <span>· {product.wb}</span>}
-            </div>
-            <input
-              value={product.name}
-              onChange={(e) => onSetName(e.target.value)}
-              placeholder="Название товара"
-              className="w-full rounded-lg border border-transparent px-1.5 py-1 text-base font-semibold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
-            />
+    <div className="fixed inset-0 z-50 flex flex-col bg-white" onClick={(e) => e.stopPropagation()}>
+      {/* Шапка */}
+      <div className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 sm:px-8">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
+            {product.code && <span className="font-semibold text-neutral-500">{product.code}</span>}
+            {product.wb && <span>· {product.wb}</span>}
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
-        </div>
-
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-neutral-700">Задачи по карточке</h3>
-          {tasks.length > 0 && <span className="text-xs text-neutral-400">{done} из {tasks.length} выполнено</span>}
-        </div>
-
-        <div className="space-y-1.5">
-          {tasks.map((t) => (
-            <div key={t.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-1.5 hover:border-neutral-200">
-              <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} className="h-4 w-4 shrink-0 accent-green-600" />
-              <input
-                value={t.text}
-                onChange={(e) => setText(t.id, e.target.value)}
-                className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
-                style={t.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }}
-              />
-              <button onClick={() => remove(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
-            </div>
-          ))}
-          {tasks.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач пока нет. Добавьте первую ниже.</div>}
-        </div>
-
-        <div className="mt-3 flex items-center gap-2">
           <input
-            value={newText}
-            onChange={(e) => setNewText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addTask()}
-            placeholder="Новая задача…"
-            className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+            value={product.name}
+            onChange={(e) => onSetName(e.target.value)}
+            placeholder="Название товара"
+            className="w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-1 text-xl font-semibold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
-          <button onClick={addTask} disabled={!newText.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
-            <Plus size={14} /> Добавить
-          </button>
+        </div>
+        <button onClick={onClose} className="rounded-lg shrink-0 p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
+      </div>
+
+      {/* Тело — прокручиваемое, место под будущую информацию о товаре */}
+      <div className="flex-1 overflow-auto px-5 py-6 sm:px-8">
+        <div className="mx-auto max-w-2xl">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-base font-semibold text-neutral-800">Задачи по карточке</h3>
+            {tasks.length > 0 && <span className="text-xs text-neutral-400">{done} из {tasks.length} выполнено</span>}
+          </div>
+
+          {usingDefaults && tasks.length > 0 && (
+            <p className="mb-2 text-xs text-neutral-400">Задачи по умолчанию. Любое изменение сохранит их в этой карточке.</p>
+          )}
+
+          <div className="space-y-1.5">
+            {tasks.map((t) => (
+              <div key={t.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
+                <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} className="h-4 w-4 shrink-0 accent-green-600" />
+                <input
+                  value={t.text}
+                  onChange={(e) => setText(t.id, e.target.value)}
+                  className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
+                  style={t.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }}
+                />
+                <button onClick={() => remove(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+              </div>
+            ))}
+            {tasks.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач пока нет. Добавьте первую ниже.</div>}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              value={newText}
+              onChange={(e) => setNewText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addTask()}
+              placeholder="Новая задача…"
+              className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+            />
+            <button onClick={addTask} disabled={!newText.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+              <Plus size={14} /> Добавить
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -2836,53 +2861,119 @@ function CardTasksModal({ product, onSetName, onSetTasks, onClose }) {
 }
 
 /* ----------------------------------------------------------------------------
-   Управление статусами
+   Настройки: статусы + задачи по умолчанию
 ---------------------------------------------------------------------------- */
 
-function StatusManager({ statuses, setStatuses, onClose }) {
-  const [name, setName] = useState("");
-  const [color, setColor] = useState(SWATCHES[0]);
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, onClose }) {
+  const [tab, setTab] = useState("statuses");
 
-  const add = () => {
-    const trimmed = name.trim();
+  // --- статусы ---
+  const [sName, setSName] = useState("");
+  const [sColor, setSColor] = useState(SWATCHES[0]);
+  const addStatus = () => {
+    const trimmed = sName.trim();
     if (!trimmed || statuses.some((s) => s.name === trimmed)) return;
-    setStatuses((s) => [...s, { name: trimmed, color }]);
-    setName("");
+    setStatuses((s) => [...s, { name: trimmed, color: sColor }]);
+    setSName("");
   };
-  const remove = (n) => setStatuses((s) => s.filter((x) => x.name !== n));
+  const removeStatus = (n) => setStatuses((s) => s.filter((x) => x.name !== n));
+
+  // --- задачи по умолчанию ---
+  const [tText, setTText] = useState("");
+  const addDefault = () => {
+    const t = tText.trim();
+    if (!t) return;
+    setDefaultTasks((list) => [...(list || []), { id: uid(), text: t }]);
+    setTText("");
+  };
+  const setDefaultText = (id, text) => setDefaultTasks((list) => (list || []).map((x) => (x.id === id ? { ...x, text } : x)));
+  const removeDefault = (id) => setDefaultTasks((list) => (list || []).filter((x) => x.id !== id));
+
+  const TabBtn = ({ id, children }) => (
+    <button
+      onClick={() => setTab(id)}
+      className={"rounded-lg px-3 py-1.5 text-sm font-medium transition " + (tab === id ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100")}
+    >
+      {children}
+    </button>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="rounded-2xl w-full max-w-md bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-900">Статусы</h2>
-          <button onClick={onClose} className="p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+      <div className="rounded-2xl flex w-full max-w-lg flex-col overflow-hidden bg-white shadow-xl" style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+          <h2 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-900"><Settings2 size={18} /> Настройки</h2>
+          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
         </div>
 
-        <div className="mb-4 space-y-1.5">
-          {statuses.map((s) => (
-            <div key={s.name} className="flex items-center justify-between border border-neutral-100 px-3 py-2">
-              <span className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700">
-                <span className="rounded-full h-3 w-3" style={{ background: s.color }} />
-                {s.name}
-              </span>
-              <button onClick={() => remove(s.name)} className="p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить статус"><Trash2 size={15} /></button>
-            </div>
-          ))}
-          {statuses.length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Нет статусов</p>}
+        <div className="flex gap-1.5 border-b border-neutral-100 px-5 py-2.5">
+          <TabBtn id="statuses">Статусы</TabBtn>
+          <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
         </div>
 
-        <div className="bg-neutral-50 p-3">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Новый статус</p>
-          <div className="flex items-center gap-2">
-            <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Например: Под заказ" className="rounded-lg flex-1 border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
-            <button onClick={add} className="rounded-md inline-flex items-center gap-1 bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"><Plus size={15} /> Добавить</button>
-          </div>
-          <div className="mt-2 flex items-center gap-1.5">
-            {SWATCHES.map((c) => (
-              <button key={c} onClick={() => setColor(c)} className="h-6 w-6 transition" style={{ background: c, boxShadow: color === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />
-            ))}
-          </div>
+        <div className="flex-1 overflow-auto p-5">
+          {tab === "statuses" && (
+            <>
+              <div className="mb-4 space-y-1.5">
+                {statuses.map((s) => (
+                  <div key={s.name} className="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2">
+                    <span className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700">
+                      <span className="rounded-full h-3 w-3" style={{ background: s.color }} />
+                      {s.name}
+                    </span>
+                    <button onClick={() => removeStatus(s.name)} className="rounded p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить статус"><Trash2 size={15} /></button>
+                  </div>
+                ))}
+                {statuses.length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Нет статусов</p>}
+              </div>
+
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Новый статус</p>
+                <div className="flex items-center gap-2">
+                  <input value={sName} onChange={(e) => setSName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addStatus()} placeholder="Например: Под заказ" className="rounded-lg flex-1 border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
+                  <button onClick={addStatus} className="rounded-md inline-flex items-center gap-1 bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"><Plus size={15} /> Добавить</button>
+                </div>
+                <div className="mt-2 flex items-center gap-1.5">
+                  {SWATCHES.map((c) => (
+                    <button key={c} onClick={() => setSColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: sColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {tab === "tasks" && (
+            <>
+              <p className="mb-3 text-xs text-neutral-400">Эти задачи показываются в карточке, у которой ещё нет своих задач.</p>
+              <div className="mb-4 space-y-1.5">
+                {(defaultTasks || []).map((t) => (
+                  <div key={t.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-300" />
+                    <input
+                      value={t.text}
+                      onChange={(e) => setDefaultText(t.id, e.target.value)}
+                      className="min-w-0 flex-1 bg-transparent text-sm text-neutral-800 focus:outline-none"
+                    />
+                    <button onClick={() => removeDefault(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+                  </div>
+                ))}
+                {(!defaultTasks || defaultTasks.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Задач по умолчанию пока нет</p>}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  value={tText}
+                  onChange={(e) => setTText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addDefault()}
+                  placeholder="Новая задача по умолчанию…"
+                  className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                />
+                <button onClick={addDefault} disabled={!tText.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+                  <Plus size={14} /> Добавить
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
