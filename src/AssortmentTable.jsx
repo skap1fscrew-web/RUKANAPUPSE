@@ -310,6 +310,7 @@ const normalizeProduct = (p) => {
     rnp: p?.rnp || { cells: {}, entries: {}, fills: {}, flags: {}, budget: { allocated: "" } },
     calendar: normalizeCalendar(p?.calendar),
     tasks: Array.isArray(p?.tasks) ? p.tasks : [],
+    competitors: Array.isArray(p?.competitors) ? p.competitors : [],
   };
 };
 
@@ -353,7 +354,8 @@ export default function AssortmentTable() {
   const [expanded, setExpanded] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [defaultTasks, setDefaultTasks] = useState([]); // задачи по умолчанию (общие) — [{id, text}]
+  const [defaultTasks, setDefaultTasks] = useState([]); // задачи по умолчанию (общие) — [{id, text, labelId}]
+  const [taskLabels, setTaskLabels] = useState([]); // метки задач (общие) — [{id, name, color}]
   const [ganttModal, setGanttModal] = useState(null);
   const [cardModal, setCardModal] = useState(null); // id товара для окна «Задачи по карточке»
   const [codeFilter, setCodeFilter] = useState("");
@@ -406,6 +408,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.bloggerDB)) { setBloggerDB(settings.bloggerDB); syncedRef.current.settings.bloggerDB = JSON.stringify(settings.bloggerDB); }
         if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = JSON.stringify(settings.razdachDB); }
         if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
+        if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = JSON.stringify(settings.taskLabels); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
           if (settings.rnp.days) setRnpDays(settings.rnp.days);
@@ -448,7 +451,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, taskLabels, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -487,7 +490,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, taskLabels, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -518,6 +521,7 @@ export default function AssortmentTable() {
         else if (key === "bloggerDB") setBloggerDB(value);
         else if (key === "razdachDB") setRazdachDB(value);
         else if (key === "defaultTasks") setDefaultTasks(value || []);
+        else if (key === "taskLabels") setTaskLabels(value || []);
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
         else if (key === "wbOrdersMeta") setWbOrdersMeta(value || {});
@@ -548,6 +552,8 @@ export default function AssortmentTable() {
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
   const setProductTasks = (id, tasks) =>
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, tasks } : x)));
+  const setProductCompetitors = (id, competitors) =>
+    setProducts((p) => p.map((x) => (x.id === id ? { ...x, competitors } : x)));
   const removeProduct = (id) => {
     if (!confirm("Вы точно хотите удалить товар?")) return;
     setProducts((p) => p.filter((x) => x.id !== id));
@@ -1330,6 +1336,8 @@ export default function AssortmentTable() {
           setStatuses={setStatuses}
           defaultTasks={defaultTasks}
           setDefaultTasks={setDefaultTasks}
+          taskLabels={taskLabels}
+          setTaskLabels={setTaskLabels}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -1341,8 +1349,10 @@ export default function AssortmentTable() {
           <CardTasksModal
             product={cp}
             defaultTasks={defaultTasks}
+            taskLabels={taskLabels}
             onSetName={(v) => updateProduct(cp.id, "name", v)}
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
+            onSetCompetitors={(c) => setProductCompetitors(cp.id, c)}
             onClose={() => setCardModal(null)}
           />
         );
@@ -2776,24 +2786,135 @@ function CellInput({ value, onChange, placeholder, mono }) {
    Окно «Задачи по карточке» — чек-лист задач конкретного товара
 ---------------------------------------------------------------------------- */
 
-function CardTasksModal({ product, defaultTasks, onSetName, onSetTasks, onClose }) {
+function LabelSelect({ labels, value, onChange }) {
+  const cur = (labels || []).find((l) => l.id === value);
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <span className="h-2.5 w-2.5 rounded-full" style={{ background: cur ? cur.color : "#e5e5e5" }} />
+      <select
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-xs text-neutral-600 focus:border-neutral-400 focus:outline-none"
+        title="Метка"
+      >
+        <option value="">Без метки</option>
+        {(labels || []).map((l) => (
+          <option key={l.id} value={l.id}>{l.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/* --- Конкуренты (карточки ВБ) --- */
+const wbNmFromUrl = (url) => {
+  if (!url) return null;
+  const s = String(url);
+  const m = s.match(/catalog\/(\d+)/) || s.match(/(\d{5,})/);
+  return m ? m[1] : null;
+};
+const wbBasketHost = (vol) => {
+  const ranges = [
+    [143, 1], [287, 2], [431, 3], [719, 4], [1007, 5], [1061, 6], [1115, 7], [1169, 8], [1313, 9], [1601, 10],
+    [1655, 11], [1919, 12], [2045, 13], [2189, 14], [2405, 15], [2621, 16], [2837, 17], [3053, 18], [3269, 19], [3485, 20],
+    [3701, 21], [3917, 22], [4133, 23], [4349, 24], [4565, 25], [4877, 26], [5193, 27], [5509, 28], [5825, 29], [6141, 30],
+    [6457, 31], [6773, 32], [7089, 33], [7405, 34], [7721, 35], [8037, 36], [8353, 37], [8669, 38], [8985, 39], [9301, 40],
+  ];
+  for (const [max, host] of ranges) if (vol <= max) return host;
+  return 41;
+};
+// Список кандидатов URL картинки: начинаем с вычисленной корзины, затем перебираем остальные
+const wbImageCandidates = (nm) => {
+  const id = parseInt(nm, 10);
+  if (!id) return [];
+  const vol = Math.floor(id / 100000);
+  const part = Math.floor(id / 1000);
+  const guess = wbBasketHost(vol);
+  const order = [guess];
+  for (let i = 1; i <= 45; i++) if (i !== guess) order.push(i);
+  return order.map((h) => `https://basket-${String(h).padStart(2, "0")}.wbbasket.ru/vol${vol}/part${part}/${id}/images/big/1.webp`);
+};
+
+function CompetitorThumb({ url, onRemove }) {
+  const nm = wbNmFromUrl(url);
+  const cands = nm ? wbImageCandidates(nm) : [];
+  const [i, setI] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const src = cands[i];
+  return (
+    <div className="group relative">
+      <a href={url} target="_blank" rel="noreferrer" className="block aspect-[3/4] overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50" title={url}>
+        {src && !failed ? (
+          <img
+            src={src}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover"
+            onError={() => setI((x) => { if (x + 1 < cands.length) return x + 1; setFailed(true); return x; })}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center px-1 text-center text-[11px] text-neutral-400">нет превью</div>
+        )}
+      </a>
+      <button onClick={onRemove} className="rounded-md absolute right-1 top-1 bg-white/90 p-0.5 text-neutral-400 opacity-0 shadow transition hover:text-red-500 group-hover:opacity-100" title="Удалить"><X size={14} /></button>
+    </div>
+  );
+}
+
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
   const usingDefaults = own.length === 0;
-  const tasks = usingDefaults ? (defaultTasks || []).map((t) => ({ id: t.id, text: t.text, done: false })) : own;
+  const tasks = usingDefaults ? (defaultTasks || []).map((t) => ({ id: t.id, text: t.text, done: false, labelId: t.labelId || null })) : own;
   const [newText, setNewText] = useState("");
+  const [showDone, setShowDone] = useState(false);
   const done = tasks.filter((t) => t.done).length;
+
+  // id задач по умолчанию — такие задачи нельзя удалять из карточки
+  const defaultIds = new Set((defaultTasks || []).map((t) => t.id));
+  const active = tasks.filter((t) => !t.done);
+  const completed = tasks.filter((t) => t.done);
 
   const addTask = () => {
     const t = newText.trim();
     if (!t) return;
-    onSetTasks([...tasks, { id: uid(), text: t, done: false }]);
+    onSetTasks([...tasks, { id: uid(), text: t, done: false, labelId: null }]);
     setNewText("");
   };
   const toggle = (id) => onSetTasks(tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
   const setText = (id, text) => onSetTasks(tasks.map((t) => (t.id === id ? { ...t, text } : t)));
+  const setLabel = (id, labelId) => onSetTasks(tasks.map((t) => (t.id === id ? { ...t, labelId } : t)));
   const remove = (id) => onSetTasks(tasks.filter((t) => t.id !== id));
+
+  const renderRow = (t) => (
+    <div key={t.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
+      <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} className="h-4 w-4 shrink-0 accent-green-600" />
+      <input
+        value={t.text}
+        onChange={(e) => setText(t.id, e.target.value)}
+        className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
+        style={t.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }}
+      />
+      <LabelSelect labels={taskLabels} value={t.labelId} onChange={(v) => setLabel(t.id, v)} />
+      {defaultIds.has(t.id) ? (
+        <span className="h-5 w-5 shrink-0" title="Задача по умолчанию — её нельзя удалить" />
+      ) : (
+        <button onClick={() => remove(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+      )}
+    </div>
+  );
+
+  // --- конкуренты ---
+  const competitors = Array.isArray(product.competitors) ? product.competitors : [];
+  const [compUrl, setCompUrl] = useState("");
+  const addComp = () => {
+    const u = compUrl.trim();
+    if (!u || !wbNmFromUrl(u)) return;
+    onSetCompetitors([...competitors, { id: uid(), url: u }]);
+    setCompUrl("");
+  };
+  const removeComp = (id) => onSetCompetitors(competitors.filter((c) => c.id !== id));
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white" onClick={(e) => e.stopPropagation()}>
@@ -2827,20 +2948,28 @@ function CardTasksModal({ product, defaultTasks, onSetName, onSetTasks, onClose 
           )}
 
           <div className="space-y-1.5">
-            {tasks.map((t) => (
-              <div key={t.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
-                <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} className="h-4 w-4 shrink-0 accent-green-600" />
-                <input
-                  value={t.text}
-                  onChange={(e) => setText(t.id, e.target.value)}
-                  className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
-                  style={t.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }}
-                />
-                <button onClick={() => remove(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
-              </div>
-            ))}
+            {active.map((t) => renderRow(t))}
             {tasks.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач пока нет. Добавьте первую ниже.</div>}
+            {tasks.length > 0 && active.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Все задачи выполнены 🎉</div>}
           </div>
+
+          {completed.length > 0 && (
+            <div className="mt-4 border-t border-neutral-100 pt-3">
+              <button
+                onClick={() => setShowDone((v) => !v)}
+                className="flex w-full items-center gap-1.5 text-sm font-medium text-neutral-500 hover:text-neutral-700"
+              >
+                {showDone ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                Выполненные
+                <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{completed.length}</span>
+              </button>
+              {showDone && (
+                <div className="mt-2 space-y-1.5">
+                  {completed.map((t) => renderRow(t))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-3 flex items-center gap-2">
             <input
@@ -2854,6 +2983,37 @@ function CardTasksModal({ product, defaultTasks, onSetName, onSetTasks, onClose 
               <Plus size={14} /> Добавить
             </button>
           </div>
+
+          {/* Конкуренты */}
+          <div className="mt-8 border-t border-neutral-100 pt-5">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="text-base font-semibold text-neutral-800">Конкуренты</h3>
+              {competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span>}
+            </div>
+
+            {competitors.length > 0 ? (
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                {competitors.map((c) => (
+                  <CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>
+            )}
+
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                value={compUrl}
+                onChange={(e) => setCompUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addComp()}
+                placeholder="Ссылка на карточку ВБ…"
+                className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+              />
+              <button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+                <Plus size={14} /> Добавить
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2864,7 +3024,7 @@ function CardTasksModal({ product, defaultTasks, onSetName, onSetTasks, onClose 
    Настройки: статусы + задачи по умолчанию
 ---------------------------------------------------------------------------- */
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, onClose }) {
   const [tab, setTab] = useState("statuses");
 
   // --- статусы ---
@@ -2887,7 +3047,19 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, o
     setTText("");
   };
   const setDefaultText = (id, text) => setDefaultTasks((list) => (list || []).map((x) => (x.id === id ? { ...x, text } : x)));
+  const setDefaultLabel = (id, labelId) => setDefaultTasks((list) => (list || []).map((x) => (x.id === id ? { ...x, labelId } : x)));
   const removeDefault = (id) => setDefaultTasks((list) => (list || []).filter((x) => x.id !== id));
+
+  // --- метки ---
+  const [lName, setLName] = useState("");
+  const [lColor, setLColor] = useState(SWATCHES[0]);
+  const addLabel = () => {
+    const trimmed = lName.trim();
+    if (!trimmed || (taskLabels || []).some((l) => l.name === trimmed)) return;
+    setTaskLabels((list) => [...(list || []), { id: uid(), name: trimmed, color: lColor }]);
+    setLName("");
+  };
+  const removeLabel = (id) => setTaskLabels((list) => (list || []).filter((x) => x.id !== id));
 
   const TabBtn = ({ id, children }) => (
     <button
@@ -2909,6 +3081,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, o
         <div className="flex gap-1.5 border-b border-neutral-100 px-5 py-2.5">
           <TabBtn id="statuses">Статусы</TabBtn>
           <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
+          <TabBtn id="labels">Метки</TabBtn>
         </div>
 
         <div className="flex-1 overflow-auto p-5">
@@ -2954,6 +3127,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, o
                       onChange={(e) => setDefaultText(t.id, e.target.value)}
                       className="min-w-0 flex-1 bg-transparent text-sm text-neutral-800 focus:outline-none"
                     />
+                    <LabelSelect labels={taskLabels} value={t.labelId} onChange={(v) => setDefaultLabel(t.id, v)} />
                     <button onClick={() => removeDefault(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
                   </div>
                 ))}
@@ -2971,6 +3145,37 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, o
                 <button onClick={addDefault} disabled={!tText.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
                   <Plus size={14} /> Добавить
                 </button>
+              </div>
+            </>
+          )}
+
+          {tab === "labels" && (
+            <>
+              <p className="mb-3 text-xs text-neutral-400">Метки можно присваивать задачам в карточке и в задачах по умолчанию.</p>
+              <div className="mb-4 space-y-1.5">
+                {(taskLabels || []).map((l) => (
+                  <div key={l.id} className="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2">
+                    <span className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700">
+                      <span className="rounded-full h-3 w-3" style={{ background: l.color }} />
+                      {l.name}
+                    </span>
+                    <button onClick={() => removeLabel(l.id)} className="rounded p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить метку"><Trash2 size={15} /></button>
+                  </div>
+                ))}
+                {(!taskLabels || taskLabels.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Меток пока нет</p>}
+              </div>
+
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Новая метка</p>
+                <div className="flex items-center gap-2">
+                  <input value={lName} onChange={(e) => setLName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLabel()} placeholder="Например: Срочно" className="rounded-lg flex-1 border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
+                  <button onClick={addLabel} className="rounded-md inline-flex items-center gap-1 bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"><Plus size={15} /> Добавить</button>
+                </div>
+                <div className="mt-2 flex items-center gap-1.5">
+                  {SWATCHES.map((c) => (
+                    <button key={c} onClick={() => setLColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: lColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />
+                  ))}
+                </div>
               </div>
             </>
           )}
