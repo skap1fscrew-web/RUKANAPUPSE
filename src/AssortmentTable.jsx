@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
-  ChevronRight, ChevronDown, Minus, ArrowRight, Copy, ClipboardPaste,
+  ChevronRight, ChevronDown, Minus, ArrowRight, Copy,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -108,7 +108,7 @@ const RNP_COST_TASKS = RNP_TASKS.filter((t) => t.cost);
 const FILL_COLORS = ["#bbf7d0", "#fed7aa", "#fde68a", "#fecaca", "#e9d5ff", "#bae6fd"];
 
 // Календарь производства: палитра полос этапов и дефолтный набор этапов
-const CAL_STAGE_COLORS = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#10b981", "#ef4444", "#ec4899", "#14b8a6", "#6366f1"];
+const CAL_STAGE_COLORS = ["#93c5fd", "#c4b5fd", "#fcd34d", "#86efac", "#fca5a5", "#f9a8d4", "#5eead4", "#a5b4fc"];
 const DEFAULT_CAL_STAGES = ["Формирование заказа", "Производство", "Проверка качества", "Логистика", "Приёмка", "Отгрузка"];
 const makeDefaultCalendar = () => ({
   entry: "",
@@ -624,19 +624,14 @@ export default function AssortmentTable() {
     setProducts((ps) => ps.map((p) => (p.id !== pid ? p : { ...p, calendar: fn(p.calendar || { entry: "", stages: [] }) })));
   const setCalEntry = (pid, val) => editCal(pid, (c) => ({ ...c, entry: val }));
   const setCalStages = (pid, stages) => editCal(pid, (c) => ({ ...c, stages }));
-  // буфер для копирования календаря между товарами (одинаковые модели разных цветов)
-  const [calClipboard, setCalClipboard] = useState(null);
-  const copyCalendar = (pid) => {
-    const p = products.find((x) => x.id === pid);
-    if (!p) return;
-    const c = p.calendar || { entry: "", stages: [] };
-    setCalClipboard({ from: p.code || p.wb || "", entry: c.entry || "", stages: (c.stages || []).map((s) => ({ ...s })) });
-  };
-  const pasteCalendar = (pid) => {
-    if (!calClipboard) return;
-    editCal(pid, () => ({
-      entry: calClipboard.entry || "",
-      stages: (calClipboard.stages || []).map((s) => ({ ...s, id: uid() })),
+  // копировать календарь из товара-источника в целевой (одинаковые модели разных цветов)
+  const copyCalendarFrom = (targetPid, sourcePid) => {
+    const src = products.find((x) => x.id === sourcePid);
+    if (!src) return;
+    const c = src.calendar || { entry: "", stages: [] };
+    editCal(targetPid, () => ({
+      entry: c.entry || "",
+      stages: (c.stages || []).map((s) => ({ ...s, id: uid() })),
     }));
   };
 
@@ -1165,11 +1160,10 @@ export default function AssortmentTable() {
                                   <CalendarBlock
                                     key={g.id}
                                     product={p}
+                                    productList={products}
                                     onSetEntry={(v) => setCalEntry(p.id, v)}
                                     onSetStages={(stages) => setCalStages(p.id, stages)}
-                                    onCopyCal={() => copyCalendar(p.id)}
-                                    onPasteCal={() => pasteCalendar(p.id)}
-                                    clipboard={calClipboard}
+                                    onCopyFrom={(sourceId) => copyCalendarFrom(p.id, sourceId)}
                                   />
                                 ) : (
                                   <GanttBlock
@@ -1636,7 +1630,7 @@ function PlanBlock({ group, warehouses, sizes, onAddSize, onRemoveSize, onSetSiz
    до которого все этапы должны быть готовы. Подсвечиваются текущая дата и дедлайн.
 ---------------------------------------------------------------------------- */
 
-function CalendarBlock({ product, onSetEntry, onSetStages, onCopyCal, onPasteCal, clipboard }) {
+function CalendarBlock({ product, productList = [], onSetEntry, onSetStages, onCopyFrom }) {
   const cal = product.calendar || { entry: "", stages: [] };
   const stages = cal.stages || [];
   const entry = cal.entry || "";
@@ -1671,6 +1665,7 @@ function CalendarBlock({ product, onSetEntry, onSetStages, onCopyCal, onPasteCal
   const dayList = buildDays(winStart, count);
 
   const [editStage, setEditStage] = useState(null); // { id, x, y } — открытое окно настроек этапа
+  const [drag, setDrag] = useState(null); // { id, mode, startClientX, origStart, origEnd, previewStart, previewEnd }
   const LBL_W = 230;
   const DAY_W = 30;
   const openEdit = (id, ev) => {
@@ -1683,6 +1678,35 @@ function CalendarBlock({ product, onSetEntry, onSetStages, onCopyCal, onPasteCal
   const setStage = (id, field, val) => onSetStages(stages.map((s) => (s.id === id ? { ...s, [field]: val } : s)));
   const removeStage = (id) => onSetStages(stages.filter((s) => s.id !== id));
   const addStage = () => onSetStages([...stages, { id: uid(), name: "", start: "", end: "", color: CAL_STAGE_COLORS[stages.length % CAL_STAGE_COLORS.length] }]);
+
+  // Перетаскивание и изменение размера полосы этапа
+  const startDrag = (s, mode, ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const r = stageRange(s);
+    if (!r) return;
+    setDrag({ id: s.id, mode, startClientX: ev.clientX, origStart: r.start, origEnd: r.end, previewStart: r.start, previewEnd: r.end });
+  };
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e) => {
+      const delta = Math.round((e.clientX - drag.startClientX) / DAY_W);
+      let ns = drag.origStart, ne = drag.origEnd;
+      if (drag.mode === "move") { ns = addDaysStr(drag.origStart, delta); ne = addDaysStr(drag.origEnd, delta); }
+      else if (drag.mode === "start") { ns = addDaysStr(drag.origStart, delta); if (ns > ne) ns = ne; }
+      else if (drag.mode === "end") { ne = addDaysStr(drag.origEnd, delta); if (ne < ns) ne = ns; }
+      setDrag((d) => (d ? { ...d, previewStart: ns, previewEnd: ne } : d));
+    };
+    const onUp = () => {
+      setDrag((d) => {
+        if (d) onSetStages(stages.map((s) => (s.id === d.id ? { ...s, start: d.previewStart, end: d.previewEnd } : s)));
+        return null;
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [drag, stages]); // eslint-disable-line react-hooks/exhaustive-deps
+  const clampIdx = (key) => { const i = dayList.findIndex((d) => d.key === key); if (i >= 0) return i; return key < dayList[0].key ? 0 : dayList.length - 1; };
 
   const headColBg = (dKey) => (dKey === entry ? "#fef2f2" : dKey === todayStr ? "#fff7ed" : dKey && new Date(dKey + "T00:00:00").getDay() % 6 === 0 ? "#f5f5f5" : "#fafafa");
 
@@ -1704,20 +1728,24 @@ function CalendarBlock({ product, onSetEntry, onSetStages, onCopyCal, onPasteCal
           <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #dc2626" }} /> Точка входа (старт продаж)</span>
           <input type="date" value={entry} onChange={(e) => onSetEntry(e.target.value)} className={dateInput} />
         </label>
-        <div className="flex items-center gap-1.5">
-          <button onClick={onCopyCal} className="rounded-lg inline-flex items-center gap-1 border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-100" title="Скопировать этот календарь, чтобы вставить в другой товар">
-            <Copy size={13} /> Скопировать календарь
-          </button>
-          {clipboard && (
-            <button
-              onClick={() => { if (stages.length === 0 || (typeof window !== "undefined" && window.confirm("Заменить текущие этапы этого товара на скопированный календарь?"))) onPasteCal(); }}
-              className="rounded-lg inline-flex items-center gap-1 border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-              title={`Вставить календарь${clipboard.from ? ` из ${clipboard.from}` : ""} (заменит текущие этапы)`}
-            >
-              <ClipboardPaste size={13} /> Вставить{clipboard.from ? ` из ${clipboard.from}` : ""}
-            </button>
-          )}
-        </div>
+        <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-600">
+          <Copy size={13} className="text-sky-600" />
+          <select
+            value=""
+            onChange={(e) => {
+              const id = e.target.value;
+              e.target.value = "";
+              if (!id) return;
+              if (stages.length === 0 || (typeof window !== "undefined" && window.confirm("Заменить текущие этапы этого товара на календарь выбранного товара?"))) onCopyFrom(id);
+            }}
+            className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-200"
+          >
+            <option value="">Скопировать из…</option>
+            {productList.filter((x) => x.id !== product.id).map((x) => (
+              <option key={x.id} value={x.id}>{(x.code || x.wb || "—") + (x.name ? " — " + x.name : "")}</option>
+            ))}
+          </select>
+        </label>
         <span className="ml-auto flex items-center gap-3 text-xs text-neutral-400">
           <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#ea580c" }} /> сегодня</span>
           <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #dc2626" }} /> дедлайн</span>
@@ -1732,7 +1760,7 @@ function CalendarBlock({ product, onSetEntry, onSetStages, onCopyCal, onPasteCal
               {dayList.map((d) => (
                 <th key={d.key} style={{ width: DAY_W, minWidth: DAY_W, background: headColBg(d.key), ...colBorders(d.key), borderTop: d.key === todayStr || d.key === entry ? undefined : "none", position: "relative" }} className="px-0.5 py-1 text-center">
                   {d.key === entry && <div style={{ position: "absolute", top: -1, left: "50%", transform: "translateX(-50%)", color: "#dc2626", fontSize: 9, lineHeight: 1 }}>▼</div>}
-                  {d.firstOfMonth && <div className="font-bold text-sky-600" style={{ fontSize: 9 }}>{MONTHS[d.month]}</div>}
+                  {d.firstOfMonth && <div className="font-bold text-sky-600" style={{ fontSize: 9 }}>{MONTHS[d.month]} {d.key.slice(2, 4)}</div>}
                   <div className="text-xs font-semibold text-neutral-600">{String(d.day).padStart(2, "0")}</div>
                   <div className="text-neutral-400" style={{ fontSize: 9 }}>{d.wd}</div>
                 </th>
@@ -1741,39 +1769,51 @@ function CalendarBlock({ product, onSetEntry, onSetStages, onCopyCal, onPasteCal
           </thead>
           <tbody>
             {stages.map((s) => {
-              const r = stageRange(s);
               const open = editStage && editStage.id === s.id;
+              const dragging = drag && drag.id === s.id;
+              // диапазон полосы: во время перетаскивания — превью, иначе сохранённые даты
+              const r = dragging ? { start: drag.previewStart, end: drag.previewEnd } : stageRange(s);
+              let barStart = -1, barSpan = 0;
+              if (r) { const si = clampIdx(r.start), ei = clampIdx(r.end); barStart = si; barSpan = ei - si + 1; }
+              const durDays = r ? daysBetween(r.start, r.end) + 1 : 0;
+              const color = s.color || "#93c5fd";
               return (
                 <tr key={s.id}>
                   <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: "3px 6px 3px 8px" }}>
                     <div className="flex items-center gap-1.5">
-                      <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: s.color || "#0ea5e9", flexShrink: 0 }} />
+                      <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />
                       <input value={s.name} onChange={(e) => setStage(s.id, "name", e.target.value)} placeholder="Название этапа" className="min-w-0 flex-1 rounded-md bg-transparent px-1 py-1 text-xs font-medium text-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200" />
                       <button onClick={(ev) => openEdit(s.id, ev)} className="rounded-md flex h-6 w-6 shrink-0 items-center justify-center border text-neutral-500 hover:bg-neutral-50" style={open ? { borderColor: "#0ea5e9", color: "#0284c7", background: "#f0f9ff" } : { borderColor: "#e5e5e5" }} title="Настройки этапа (даты, цвет)">
                         <Settings2 size={13} />
                       </button>
                     </div>
                   </th>
-                  {dayList.map((d) => {
-                    const inRange = r && d.key >= r.start && d.key <= r.end;
-                    const isStart = r && d.key === r.start;
-                    const isEnd = r && d.key === r.end;
-                    const weekend = d.weekend;
-                    return (
-                      <td key={d.key} style={{ width: DAY_W, minWidth: DAY_W, position: "relative", borderTop: "1px solid #f5f5f5", background: weekend && !inRange ? "#fafafa" : "#fff", ...colBorders(d.key) }}>
-                        <div style={{ minHeight: 28 }} />
-                        {inRange && (
-                          <div style={{
-                            position: "absolute", top: 7, bottom: 7,
-                            left: isStart ? 3 : -1, right: isEnd ? 3 : -1,
-                            background: s.color || "#0ea5e9",
-                            borderTopLeftRadius: isStart ? 6 : 0, borderBottomLeftRadius: isStart ? 6 : 0,
-                            borderTopRightRadius: isEnd ? 6 : 0, borderBottomRightRadius: isEnd ? 6 : 0,
-                          }} />
-                        )}
-                      </td>
-                    );
-                  })}
+                  {dayList.map((d, di) => (
+                    <td key={d.key} style={{ width: DAY_W, minWidth: DAY_W, position: "relative", zIndex: di === 0 ? 2 : "auto", borderTop: "1px solid #f5f5f5", background: d.weekend ? "#fafafa" : "#fff", ...colBorders(d.key) }}>
+                      <div style={{ minHeight: 30 }} />
+                      {/* полоса рисуется один раз, в первой ячейке, и перекрывает соседние */}
+                      {di === 0 && r && barSpan > 0 && (
+                        <div
+                          onMouseDown={(ev) => startDrag(s, "move", ev)}
+                          title="Перетащите, чтобы сдвинуть; потяните за край, чтобы изменить длительность"
+                          style={{
+                            position: "absolute", top: 1, bottom: 1,
+                            left: barStart * DAY_W, width: barSpan * DAY_W,
+                            background: color, border: "1px solid rgba(0,0,0,.08)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            overflow: "hidden", cursor: dragging && drag.mode === "move" ? "grabbing" : "grab",
+                            userSelect: "none", zIndex: 3, boxShadow: dragging ? "0 2px 6px rgba(15,23,42,.25)" : "none",
+                          }}
+                        >
+                          <span style={{ fontSize: 10, fontWeight: 600, color: "#334155", whiteSpace: "nowrap", pointerEvents: "none" }}>
+                            {durDays} {durDays === 1 ? "день" : durDays >= 2 && durDays <= 4 ? "дня" : "дн"}
+                          </span>
+                          <div onMouseDown={(ev) => startDrag(s, "start", ev)} style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 6, cursor: "ew-resize" }} />
+                          <div onMouseDown={(ev) => startDrag(s, "end", ev)} style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 6, cursor: "ew-resize" }} />
+                        </div>
+                      )}
+                    </td>
+                  ))}
                 </tr>
               );
             })}
@@ -2047,7 +2087,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
               <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5" }}></th>
               {dayList.map((d) => (
                 <th key={d.key} style={{ width: DAY_W, minWidth: DAY_W, background: d.weekend ? "#f5f5f5" : "#fafafa", borderLeft: d.key === today ? "1px solid #ea580c" : "1px solid #e5e5e5", borderRight: d.key === today ? "1px solid #ea580c" : "none", borderTop: d.key === today ? "1px solid #ea580c" : "none" }} className="px-0.5 py-1 text-center">
-                  {d.firstOfMonth && <div className="font-bold text-orange-600" style={{ fontSize: 9 }}>{MONTHS[d.month]}</div>}
+                  {d.firstOfMonth && <div className="font-bold text-orange-600" style={{ fontSize: 9 }}>{MONTHS[d.month]} {d.key.slice(2, 4)}</div>}
                   <div className="text-xs font-semibold text-neutral-600">{String(d.day).padStart(2, "0")}</div>
                   <div className="text-neutral-400" style={{ fontSize: 9 }}>{d.wd}</div>
                 </th>
