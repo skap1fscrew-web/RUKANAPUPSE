@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
-  ChevronRight, ChevronDown, Minus, ArrowRight,
+  ChevronRight, ChevronDown, Minus, ArrowRight, Copy, ClipboardPaste,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -624,6 +624,21 @@ export default function AssortmentTable() {
     setProducts((ps) => ps.map((p) => (p.id !== pid ? p : { ...p, calendar: fn(p.calendar || { entry: "", stages: [] }) })));
   const setCalEntry = (pid, val) => editCal(pid, (c) => ({ ...c, entry: val }));
   const setCalStages = (pid, stages) => editCal(pid, (c) => ({ ...c, stages }));
+  // буфер для копирования календаря между товарами (одинаковые модели разных цветов)
+  const [calClipboard, setCalClipboard] = useState(null);
+  const copyCalendar = (pid) => {
+    const p = products.find((x) => x.id === pid);
+    if (!p) return;
+    const c = p.calendar || { entry: "", stages: [] };
+    setCalClipboard({ from: p.code || p.wb || "", entry: c.entry || "", stages: (c.stages || []).map((s) => ({ ...s })) });
+  };
+  const pasteCalendar = (pid) => {
+    if (!calClipboard) return;
+    editCal(pid, () => ({
+      entry: calClipboard.entry || "",
+      stages: (calClipboard.stages || []).map((s) => ({ ...s, id: uid() })),
+    }));
+  };
 
   const toggleExpand = (id) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
 
@@ -1152,6 +1167,9 @@ export default function AssortmentTable() {
                                     product={p}
                                     onSetEntry={(v) => setCalEntry(p.id, v)}
                                     onSetStages={(stages) => setCalStages(p.id, stages)}
+                                    onCopyCal={() => copyCalendar(p.id)}
+                                    onPasteCal={() => pasteCalendar(p.id)}
+                                    clipboard={calClipboard}
                                   />
                                 ) : (
                                   <GanttBlock
@@ -1618,7 +1636,7 @@ function PlanBlock({ group, warehouses, sizes, onAddSize, onRemoveSize, onSetSiz
    до которого все этапы должны быть готовы. Подсвечиваются текущая дата и дедлайн.
 ---------------------------------------------------------------------------- */
 
-function CalendarBlock({ product, onSetEntry, onSetStages }) {
+function CalendarBlock({ product, onSetEntry, onSetStages, onCopyCal, onPasteCal, clipboard }) {
   const cal = product.calendar || { entry: "", stages: [] };
   const stages = cal.stages || [];
   const entry = cal.entry || "";
@@ -1652,9 +1670,14 @@ function CalendarBlock({ product, onSetEntry, onSetStages }) {
   count = Math.max(14, Math.min(200, count));
   const dayList = buildDays(winStart, count);
 
-  const LBL_W = 150, DATE_W = 118, COLOR_W = 34, DEL_W = 30;
-  const LEFT_W = LBL_W + DATE_W * 2 + COLOR_W + DEL_W;
+  const [editStage, setEditStage] = useState(null); // { id, x, y } — открытое окно настроек этапа
+  const LBL_W = 230;
   const DAY_W = 30;
+  const openEdit = (id, ev) => {
+    const r = ev.currentTarget.getBoundingClientRect();
+    const vw = typeof window !== "undefined" ? window.innerWidth : 800;
+    setEditStage((cur) => (cur && cur.id === id ? null : { id, x: Math.min(r.right - 20, vw - 280), y: r.bottom + 6 }));
+  };
   const sticky = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
 
   const setStage = (id, field, val) => onSetStages(stages.map((s) => (s.id === id ? { ...s, [field]: val } : s)));
@@ -1674,13 +1697,27 @@ function CalendarBlock({ product, onSetEntry, onSetStages }) {
 
   return (
     <div>
-      {/* Шапка блока: точка входа (дедлайн) + легенда */}
+      {/* Шапка блока: точка входа (дедлайн) + копирование + легенда */}
       <div className="mb-2 flex flex-wrap items-center gap-3 px-1">
         <div className="text-sm font-semibold text-neutral-900">Календарь производства</div>
         <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-600">
           <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #dc2626" }} /> Точка входа (старт продаж)</span>
           <input type="date" value={entry} onChange={(e) => onSetEntry(e.target.value)} className={dateInput} />
         </label>
+        <div className="flex items-center gap-1.5">
+          <button onClick={onCopyCal} className="rounded-lg inline-flex items-center gap-1 border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-100" title="Скопировать этот календарь, чтобы вставить в другой товар">
+            <Copy size={13} /> Скопировать календарь
+          </button>
+          {clipboard && (
+            <button
+              onClick={() => { if (stages.length === 0 || (typeof window !== "undefined" && window.confirm("Заменить текущие этапы этого товара на скопированный календарь?"))) onPasteCal(); }}
+              className="rounded-lg inline-flex items-center gap-1 border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+              title={`Вставить календарь${clipboard.from ? ` из ${clipboard.from}` : ""} (заменит текущие этапы)`}
+            >
+              <ClipboardPaste size={13} /> Вставить{clipboard.from ? ` из ${clipboard.from}` : ""}
+            </button>
+          )}
+        </div>
         <span className="ml-auto flex items-center gap-3 text-xs text-neutral-400">
           <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#ea580c" }} /> сегодня</span>
           <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #dc2626" }} /> дедлайн</span>
@@ -1691,11 +1728,7 @@ function CalendarBlock({ product, onSetEntry, onSetStages }) {
         <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr>
-              <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5", textAlign: "left", padding: "4px 10px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Этап</th>
-              <th style={{ ...sticky(LBL_W, DATE_W, "#fafafa", 4), borderBottom: "1px solid #e5e5e5", padding: "4px 6px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Начало</th>
-              <th style={{ ...sticky(LBL_W + DATE_W, DATE_W, "#fafafa", 4), borderBottom: "1px solid #e5e5e5", padding: "4px 6px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Конец</th>
-              <th style={{ ...sticky(LBL_W + DATE_W * 2, COLOR_W, "#fafafa", 4), borderBottom: "1px solid #e5e5e5" }} />
-              <th style={{ ...sticky(LBL_W + DATE_W * 2 + COLOR_W, DEL_W, "#fafafa", 4), borderBottom: "1px solid #e5e5e5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)" }} />
+              <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: "4px 10px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Этап</th>
               {dayList.map((d) => (
                 <th key={d.key} style={{ width: DAY_W, minWidth: DAY_W, background: headColBg(d.key), ...colBorders(d.key), borderTop: d.key === todayStr || d.key === entry ? undefined : "none", position: "relative" }} className="px-0.5 py-1 text-center">
                   {d.key === entry && <div style={{ position: "absolute", top: -1, left: "50%", transform: "translateX(-50%)", color: "#dc2626", fontSize: 9, lineHeight: 1 }}>▼</div>}
@@ -1709,22 +1742,17 @@ function CalendarBlock({ product, onSetEntry, onSetStages }) {
           <tbody>
             {stages.map((s) => {
               const r = stageRange(s);
+              const open = editStage && editStage.id === s.id;
               return (
                 <tr key={s.id}>
-                  <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", textAlign: "left", padding: "3px 6px 3px 10px" }}>
-                    <input value={s.name} onChange={(e) => setStage(s.id, "name", e.target.value)} placeholder="Название этапа" className="w-full rounded-md bg-transparent px-1 py-1 text-xs font-medium text-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200" />
-                  </th>
-                  <th style={{ ...sticky(LBL_W, DATE_W, "#fff"), borderTop: "1px solid #f5f5f5", padding: "3px 6px" }}>
-                    <input type="date" value={s.start || ""} onChange={(e) => setStage(s.id, "start", e.target.value)} className={dateInput + " w-full"} />
-                  </th>
-                  <th style={{ ...sticky(LBL_W + DATE_W, DATE_W, "#fff"), borderTop: "1px solid #f5f5f5", padding: "3px 6px" }}>
-                    <input type="date" value={s.end || ""} onChange={(e) => setStage(s.id, "end", e.target.value)} className={dateInput + " w-full"} />
-                  </th>
-                  <th style={{ ...sticky(LBL_W + DATE_W * 2, COLOR_W, "#fff"), borderTop: "1px solid #f5f5f5", textAlign: "center" }}>
-                    <input type="color" value={s.color || "#0ea5e9"} onChange={(e) => setStage(s.id, "color", e.target.value)} title="Цвет полосы" style={{ width: 22, height: 22, padding: 0, border: "none", background: "none", cursor: "pointer" }} />
-                  </th>
-                  <th style={{ ...sticky(LBL_W + DATE_W * 2 + COLOR_W, DEL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "center" }}>
-                    <button onClick={() => removeStage(s.id)} className="rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить этап"><Trash2 size={13} /></button>
+                  <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: "3px 6px 3px 8px" }}>
+                    <div className="flex items-center gap-1.5">
+                      <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: s.color || "#0ea5e9", flexShrink: 0 }} />
+                      <input value={s.name} onChange={(e) => setStage(s.id, "name", e.target.value)} placeholder="Название этапа" className="min-w-0 flex-1 rounded-md bg-transparent px-1 py-1 text-xs font-medium text-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200" />
+                      <button onClick={(ev) => openEdit(s.id, ev)} className="rounded-md flex h-6 w-6 shrink-0 items-center justify-center border text-neutral-500 hover:bg-neutral-50" style={open ? { borderColor: "#0ea5e9", color: "#0284c7", background: "#f0f9ff" } : { borderColor: "#e5e5e5" }} title="Настройки этапа (даты, цвет)">
+                        <Settings2 size={13} />
+                      </button>
+                    </div>
                   </th>
                   {dayList.map((d) => {
                     const inRange = r && d.key >= r.start && d.key <= r.end;
@@ -1752,7 +1780,7 @@ function CalendarBlock({ product, onSetEntry, onSetStages }) {
 
             {/* строка добавления этапа */}
             <tr>
-              <th colSpan={5} style={{ ...sticky(0, LEFT_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: 0 }}>
+              <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: 0 }}>
                 <button onClick={addStage} className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-50">
                   <Plus size={13} /> Добавить этап
                 </button>
@@ -1768,6 +1796,43 @@ function CalendarBlock({ product, onSetEntry, onSetStages }) {
       {stages.length === 0 && (
         <div className="px-3 py-4 text-center text-xs text-neutral-400">Этапов пока нет. Нажмите «Добавить этап».</div>
       )}
+
+      {/* Окно настроек этапа */}
+      {editStage && (() => {
+        const s = stages.find((x) => x.id === editStage.id);
+        if (!s) return null;
+        return (
+          <>
+            <div className="fixed inset-0 z-50" onClick={() => setEditStage(null)} />
+            <div className="rounded-2xl fixed z-50 border border-neutral-200 bg-white p-3.5 shadow-xl" style={{ left: editStage.x, top: editStage.y, width: 250 }}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-semibold text-neutral-800">Настройки этапа</span>
+                <button onClick={() => setEditStage(null)} className="rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100"><X size={15} /></button>
+              </div>
+              <label className="mb-2 block text-xs font-medium text-neutral-500">
+                Начало
+                <input type="date" value={s.start || ""} onChange={(e) => setStage(s.id, "start", e.target.value)} className={dateInput + " mt-1 block w-full"} />
+              </label>
+              <label className="mb-2 block text-xs font-medium text-neutral-500">
+                Конец
+                <input type="date" value={s.end || ""} onChange={(e) => setStage(s.id, "end", e.target.value)} className={dateInput + " mt-1 block w-full"} />
+              </label>
+              <div className="mb-3 text-xs font-medium text-neutral-500">
+                Цвет полосы
+                <div className="mt-1 flex items-center gap-1.5">
+                  {CAL_STAGE_COLORS.map((c) => (
+                    <button key={c} onClick={() => setStage(s.id, "color", c)} title={c} style={{ width: 20, height: 20, borderRadius: 5, background: c, boxShadow: (s.color || "").toLowerCase() === c.toLowerCase() ? "0 0 0 2px #fff, 0 0 0 4px #0ea5e9" : "none" }} />
+                  ))}
+                  <input type="color" value={s.color || "#0ea5e9"} onChange={(e) => setStage(s.id, "color", e.target.value)} title="Свой цвет" style={{ width: 24, height: 24, padding: 0, border: "1px solid #e5e5e5", borderRadius: 5, background: "none", cursor: "pointer", marginLeft: "auto" }} />
+                </div>
+              </div>
+              <button onClick={() => { removeStage(s.id); setEditStage(null); }} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100">
+                <Trash2 size={13} /> Удалить этап
+              </button>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
