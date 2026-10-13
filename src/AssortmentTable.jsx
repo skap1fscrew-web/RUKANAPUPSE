@@ -39,6 +39,7 @@ const FROZEN = [
 const TABS = [
   { id: "assortment", label: "Ассортимент" },
   { id: "promotion", label: "Продвижение" },
+  { id: "calendar", label: "Календарь" },
   { id: "shipment", label: "План отгрузок ВБ" },
   { id: "purchases", label: "Закупки" },
 ];
@@ -105,6 +106,14 @@ const RNP_TASKS = [
 const RNP_COST_TASKS = RNP_TASKS.filter((t) => t.cost);
 
 const FILL_COLORS = ["#bbf7d0", "#fed7aa", "#fde68a", "#fecaca", "#e9d5ff", "#bae6fd"];
+
+// Календарь производства: палитра полос этапов и дефолтный набор этапов
+const CAL_STAGE_COLORS = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#10b981", "#ef4444", "#ec4899", "#14b8a6", "#6366f1"];
+const DEFAULT_CAL_STAGES = ["Формирование заказа", "Производство", "Проверка качества", "Логистика", "Приёмка", "Отгрузка"];
+const makeDefaultCalendar = () => ({
+  entry: "",
+  stages: DEFAULT_CAL_STAGES.map((name, i) => ({ id: uid(), name, start: "", end: "", color: CAL_STAGE_COLORS[i % CAL_STAGE_COLORS.length] })),
+});
 
 const DEFAULT_WAREHOUSES = [
   { id: uid(), name: "Подольск", region: "Центральный" },
@@ -196,6 +205,13 @@ const GROUPS = [
     kind: "gantt",
   },
   {
+    id: "calendar",
+    label: "Календарь",
+    accent: "#0ea5e9",
+    tab: "calendar",
+    kind: "calendar",
+  },
+  {
     id: "shipment",
     label: "План отгрузок",
     accent: "#16a34a",
@@ -277,6 +293,7 @@ const normalizeProduct = (p) => {
     blocks,
     plan: { sizes: p?.plan?.sizes || [] },
     rnp: p?.rnp || { cells: {}, entries: {}, fills: {}, flags: {}, budget: { allocated: "" } },
+    calendar: p?.calendar || makeDefaultCalendar(),
   };
 };
 
@@ -602,6 +619,12 @@ export default function AssortmentTable() {
   const setRnpBudget = (pid, val) =>
     editRnp(pid, (r) => ({ ...r, budget: { ...r.budget, allocated: val } }));
 
+  /* --- Календарь производства (данные по товару) --- */
+  const editCal = (pid, fn) =>
+    setProducts((ps) => ps.map((p) => (p.id !== pid ? p : { ...p, calendar: fn(p.calendar || { entry: "", stages: [] }) })));
+  const setCalEntry = (pid, val) => editCal(pid, (c) => ({ ...c, entry: val }));
+  const setCalStages = (pid, stages) => editCal(pid, (c) => ({ ...c, stages }));
+
   const toggleExpand = (id) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
 
   // Сколько раз блогер встречается в записях «Блогеры» по всем товарам
@@ -752,19 +775,21 @@ export default function AssortmentTable() {
 
   /* --- группы / раскладка --- */
   const tabGroups = GROUPS.filter((g) => g.tab === activeTab);
-  const visibleGroups = tabGroups.filter((g) => g.kind === "gantt" || enabled[g.id]);
+  const visibleGroups = tabGroups.filter((g) => g.kind === "gantt" || g.kind === "calendar" || enabled[g.id]);
   const columnGroups = visibleGroups.filter((g) => g.kind === "columns");
   const matrixGroups = visibleGroups.filter((g) => g.kind === "matrix");
   const planGroup = visibleGroups.find((g) => g.kind === "plan");
   const ganttGroup = visibleGroups.find((g) => g.kind === "gantt");
-  const expandableGroups = visibleGroups.filter((g) => g.kind === "matrix" || g.kind === "plan" || g.kind === "gantt");
+  const expandableGroups = visibleGroups.filter((g) => g.kind === "matrix" || g.kind === "plan" || g.kind === "gantt" || g.kind === "calendar");
   const hasExpandable = expandableGroups.length > 0;
   const allOpen = hasExpandable && products.length > 0 && products.every((p) => expanded[p.id]);
   const entryCount = (p) =>
     expandableGroups.reduce(
-      (n, g) => n + (g.kind === "matrix" ? (p.blocks[g.id]?.entries.length || 0) : g.kind === "plan" ? (p.plan?.sizes.length || 0) : 0),
+      (n, g) => n + (g.kind === "matrix" ? (p.blocks[g.id]?.entries.length || 0) : g.kind === "plan" ? (p.plan?.sizes.length || 0) : g.kind === "calendar" ? (p.calendar?.stages?.length || 0) : 0),
       0
     );
+  // есть ли переключаемые группы для выпадашки «Группы столбцов» (гант и календарь показываются всегда)
+  const toggleableGroups = tabGroups.filter((g) => g.kind !== "gantt" && g.kind !== "calendar");
 
   const frozenCols = hasExpandable
     ? [{ id: "expander", label: "", width: 40 }, ...FROZEN]
@@ -825,6 +850,15 @@ export default function AssortmentTable() {
         )
       );
       fname = "promotion";
+    } else if (activeTab === "calendar") {
+      head = ["Код", "Наименование", "Точка входа", "Этап", "Начало", "Конец"];
+      rows = products.flatMap((p) => {
+        const st = p.calendar?.stages || [];
+        const ent = p.calendar?.entry || "";
+        if (!st.length) return [[p.code, p.name, ent, "", "", ""]];
+        return st.map((s) => [p.code, p.name, ent, s.name, s.start || "", s.end || ""]);
+      });
+      fname = "calendar";
     } else {
       head = [
         "Код", "Артикул ВБ", "Наименование", "Статус",
@@ -917,7 +951,7 @@ export default function AssortmentTable() {
         </div>
 
         {/* Группы столбцов текущей вкладки — компактный dropdown */}
-        {tabGroups.length > 0 && (
+        {(toggleableGroups.length > 0 || activeTab === "promotion") && (
           <div className="mb-3 relative inline-block">
             <button
               onClick={() => setColSettings((v) => !v)}
@@ -931,7 +965,7 @@ export default function AssortmentTable() {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setColSettings(false)} />
                 <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
-                  {tabGroups.filter((g) => g.kind !== "gantt").map((g) => {
+                  {toggleableGroups.map((g) => {
                     const on = !!enabled[g.id];
                     return (
                       <label key={g.id} className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-neutral-50">
@@ -1111,6 +1145,13 @@ export default function AssortmentTable() {
                                     onAddWarehouse={addWarehouse}
                                     onRemoveWarehouse={removeWarehouse}
                                     onSetWarehouse={setWarehouse}
+                                  />
+                                ) : g.kind === "calendar" ? (
+                                  <CalendarBlock
+                                    key={g.id}
+                                    product={p}
+                                    onSetEntry={(v) => setCalEntry(p.id, v)}
+                                    onSetStages={(stages) => setCalStages(p.id, stages)}
                                   />
                                 ) : (
                                   <GanttBlock
@@ -1567,6 +1608,166 @@ function PlanBlock({ group, warehouses, sizes, onAddSize, onRemoveSize, onSetSiz
           <p className="mt-2 px-1 text-xs text-neutral-400">Добавьте размер кнопкой ниже, затем заполните распределение по складам.</p>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------------
+   Блок «Календарь» — диаграмма Ганта по этапам производства. Один на товар.
+   Этапы редактируемые (название + даты начала/конца). Точка входа — дедлайн,
+   до которого все этапы должны быть готовы. Подсвечиваются текущая дата и дедлайн.
+---------------------------------------------------------------------------- */
+
+function CalendarBlock({ product, onSetEntry, onSetStages }) {
+  const cal = product.calendar || { entry: "", stages: [] };
+  const stages = cal.stages || [];
+  const entry = cal.entry || "";
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const addDaysStr = (dayStr, n) => { const d = new Date(dayStr + "T00:00:00"); d.setDate(d.getDate() + n); return iso(d); };
+  const daysBetween = (aStr, bStr) => Math.round((new Date(bStr + "T00:00:00") - new Date(aStr + "T00:00:00")) / 86400000);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = iso(today);
+
+  // нормализованные границы этапа (на случай, если начало позже конца)
+  const stageRange = (s) => {
+    const a = s.start || s.end;
+    const b = s.end || s.start;
+    if (!a || !b) return null;
+    return a <= b ? { start: a, end: b } : { start: b, end: a };
+  };
+
+  // окно дат: от самой ранней даты до самой поздней (этапы + дедлайн + сегодня) с полями
+  const dates = [];
+  stages.forEach((s) => { const r = stageRange(s); if (r) { dates.push(r.start); dates.push(r.end); } });
+  if (entry) dates.push(entry);
+  dates.push(todayStr);
+  const minStr = dates.reduce((a, b) => (a < b ? a : b), dates[0] || todayStr);
+  const maxStr = dates.reduce((a, b) => (a > b ? a : b), dates[0] || todayStr);
+  const winStart = addDaysStr(minStr, -2);
+  const winEnd = addDaysStr(maxStr, 2);
+  let count = daysBetween(winStart, winEnd) + 1;
+  count = Math.max(14, Math.min(200, count));
+  const dayList = buildDays(winStart, count);
+
+  const LBL_W = 150, DATE_W = 118, COLOR_W = 34, DEL_W = 30;
+  const LEFT_W = LBL_W + DATE_W * 2 + COLOR_W + DEL_W;
+  const DAY_W = 30;
+  const sticky = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
+
+  const setStage = (id, field, val) => onSetStages(stages.map((s) => (s.id === id ? { ...s, [field]: val } : s)));
+  const removeStage = (id) => onSetStages(stages.filter((s) => s.id !== id));
+  const addStage = () => onSetStages([...stages, { id: uid(), name: "", start: "", end: "", color: CAL_STAGE_COLORS[stages.length % CAL_STAGE_COLORS.length] }]);
+
+  const headColBg = (dKey) => (dKey === entry ? "#fef2f2" : dKey === todayStr ? "#fff7ed" : dKey && new Date(dKey + "T00:00:00").getDay() % 6 === 0 ? "#f5f5f5" : "#fafafa");
+
+  // стили вертикальных линий: дедлайн (красная пунктирная), сегодня (оранжевая)
+  const colBorders = (dKey) => {
+    if (dKey === entry) return { borderLeft: "2px dashed #dc2626" };
+    if (dKey === todayStr) return { borderLeft: "1px solid #ea580c", borderRight: "1px solid #ea580c" };
+    return { borderLeft: "1px solid #f0f0f0" };
+  };
+
+  const dateInput = "rounded-md border border-neutral-200 px-1 py-0.5 text-xs text-neutral-700 focus:outline-none focus:ring-2 focus:ring-sky-200";
+
+  return (
+    <div>
+      {/* Шапка блока: точка входа (дедлайн) + легенда */}
+      <div className="mb-2 flex flex-wrap items-center gap-3 px-1">
+        <div className="text-sm font-semibold text-neutral-900">Календарь производства</div>
+        <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-600">
+          <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #dc2626" }} /> Точка входа (старт продаж)</span>
+          <input type="date" value={entry} onChange={(e) => onSetEntry(e.target.value)} className={dateInput} />
+        </label>
+        <span className="ml-auto flex items-center gap-3 text-xs text-neutral-400">
+          <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#ea580c" }} /> сегодня</span>
+          <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #dc2626" }} /> дедлайн</span>
+        </span>
+      </div>
+
+      <div style={{ overflowX: "auto", paddingBottom: 12 }}>
+        <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+          <thead>
+            <tr>
+              <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5", textAlign: "left", padding: "4px 10px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Этап</th>
+              <th style={{ ...sticky(LBL_W, DATE_W, "#fafafa", 4), borderBottom: "1px solid #e5e5e5", padding: "4px 6px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Начало</th>
+              <th style={{ ...sticky(LBL_W + DATE_W, DATE_W, "#fafafa", 4), borderBottom: "1px solid #e5e5e5", padding: "4px 6px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Конец</th>
+              <th style={{ ...sticky(LBL_W + DATE_W * 2, COLOR_W, "#fafafa", 4), borderBottom: "1px solid #e5e5e5" }} />
+              <th style={{ ...sticky(LBL_W + DATE_W * 2 + COLOR_W, DEL_W, "#fafafa", 4), borderBottom: "1px solid #e5e5e5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)" }} />
+              {dayList.map((d) => (
+                <th key={d.key} style={{ width: DAY_W, minWidth: DAY_W, background: headColBg(d.key), ...colBorders(d.key), borderTop: d.key === todayStr || d.key === entry ? undefined : "none", position: "relative" }} className="px-0.5 py-1 text-center">
+                  {d.key === entry && <div style={{ position: "absolute", top: -1, left: "50%", transform: "translateX(-50%)", color: "#dc2626", fontSize: 9, lineHeight: 1 }}>▼</div>}
+                  {d.firstOfMonth && <div className="font-bold text-sky-600" style={{ fontSize: 9 }}>{MONTHS[d.month]}</div>}
+                  <div className="text-xs font-semibold text-neutral-600">{String(d.day).padStart(2, "0")}</div>
+                  <div className="text-neutral-400" style={{ fontSize: 9 }}>{d.wd}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {stages.map((s) => {
+              const r = stageRange(s);
+              return (
+                <tr key={s.id}>
+                  <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", textAlign: "left", padding: "3px 6px 3px 10px" }}>
+                    <input value={s.name} onChange={(e) => setStage(s.id, "name", e.target.value)} placeholder="Название этапа" className="w-full rounded-md bg-transparent px-1 py-1 text-xs font-medium text-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200" />
+                  </th>
+                  <th style={{ ...sticky(LBL_W, DATE_W, "#fff"), borderTop: "1px solid #f5f5f5", padding: "3px 6px" }}>
+                    <input type="date" value={s.start || ""} onChange={(e) => setStage(s.id, "start", e.target.value)} className={dateInput + " w-full"} />
+                  </th>
+                  <th style={{ ...sticky(LBL_W + DATE_W, DATE_W, "#fff"), borderTop: "1px solid #f5f5f5", padding: "3px 6px" }}>
+                    <input type="date" value={s.end || ""} onChange={(e) => setStage(s.id, "end", e.target.value)} className={dateInput + " w-full"} />
+                  </th>
+                  <th style={{ ...sticky(LBL_W + DATE_W * 2, COLOR_W, "#fff"), borderTop: "1px solid #f5f5f5", textAlign: "center" }}>
+                    <input type="color" value={s.color || "#0ea5e9"} onChange={(e) => setStage(s.id, "color", e.target.value)} title="Цвет полосы" style={{ width: 22, height: 22, padding: 0, border: "none", background: "none", cursor: "pointer" }} />
+                  </th>
+                  <th style={{ ...sticky(LBL_W + DATE_W * 2 + COLOR_W, DEL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "center" }}>
+                    <button onClick={() => removeStage(s.id)} className="rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить этап"><Trash2 size={13} /></button>
+                  </th>
+                  {dayList.map((d) => {
+                    const inRange = r && d.key >= r.start && d.key <= r.end;
+                    const isStart = r && d.key === r.start;
+                    const isEnd = r && d.key === r.end;
+                    const weekend = d.weekend;
+                    return (
+                      <td key={d.key} style={{ width: DAY_W, minWidth: DAY_W, position: "relative", borderTop: "1px solid #f5f5f5", background: weekend && !inRange ? "#fafafa" : "#fff", ...colBorders(d.key) }}>
+                        <div style={{ minHeight: 28 }} />
+                        {inRange && (
+                          <div style={{
+                            position: "absolute", top: 7, bottom: 7,
+                            left: isStart ? 3 : -1, right: isEnd ? 3 : -1,
+                            background: s.color || "#0ea5e9",
+                            borderTopLeftRadius: isStart ? 6 : 0, borderBottomLeftRadius: isStart ? 6 : 0,
+                            borderTopRightRadius: isEnd ? 6 : 0, borderBottomRightRadius: isEnd ? 6 : 0,
+                          }} />
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+
+            {/* строка добавления этапа */}
+            <tr>
+              <th colSpan={5} style={{ ...sticky(0, LEFT_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: 0 }}>
+                <button onClick={addStage} className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-50">
+                  <Plus size={13} /> Добавить этап
+                </button>
+              </th>
+              {dayList.map((d) => (
+                <td key={d.key} style={{ width: DAY_W, minWidth: DAY_W, borderTop: "1px solid #f5f5f5", background: d.weekend ? "#fafafa" : "#fff", ...colBorders(d.key) }} />
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {stages.length === 0 && (
+        <div className="px-3 py-4 text-center text-xs text-neutral-400">Этапов пока нет. Нажмите «Добавить этап».</div>
+      )}
     </div>
   );
 }
