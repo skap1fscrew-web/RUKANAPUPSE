@@ -309,6 +309,7 @@ const normalizeProduct = (p) => {
     plan: { sizes: p?.plan?.sizes || [] },
     rnp: p?.rnp || { cells: {}, entries: {}, fills: {}, flags: {}, budget: { allocated: "" } },
     calendar: normalizeCalendar(p?.calendar),
+    tasks: Array.isArray(p?.tasks) ? p.tasks : [],
   };
 };
 
@@ -353,7 +354,10 @@ export default function AssortmentTable() {
   const [loaded, setLoaded] = useState(false);
   const [statusMgr, setStatusMgr] = useState(false);
   const [ganttModal, setGanttModal] = useState(null);
+  const [cardModal, setCardModal] = useState(null); // id товара для окна «Задачи по карточке»
   const [codeFilter, setCodeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState([]); // выбранные статусы (мультивыбор); пусто = все
+  const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   const [bloggerDB, setBloggerDB] = useState([]);
   const [razdachDB, setRazdachDB] = useState([]);
   const [showBloggerDB, setShowBloggerDB] = useState(false);
@@ -539,6 +543,8 @@ export default function AssortmentTable() {
     ]);
   const updateProduct = (id, field, value) =>
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
+  const setProductTasks = (id, tasks) =>
+    setProducts((p) => p.map((x) => (x.id === id ? { ...x, tasks } : x)));
   const removeProduct = (id) => {
     if (!confirm("Вы точно хотите удалить товар?")) return;
     setProducts((p) => p.filter((x) => x.id !== id));
@@ -824,9 +830,11 @@ export default function AssortmentTable() {
     ? [{ id: "expander", label: "", width: 40 }, ...FROZEN]
     : FROZEN;
 
-  const filteredProducts = codeFilter.trim()
-    ? products.filter((p) => (p.code || "").toLowerCase().includes(codeFilter.trim().toLowerCase()))
-    : products;
+  const filteredProducts = products.filter((p) => {
+    if (codeFilter.trim() && !(p.code || "").toLowerCase().includes(codeFilter.trim().toLowerCase())) return false;
+    if (statusFilter.length && !statusFilter.includes(p.status)) return false;
+    return true;
+  });
 
   const lefts = [];
   let acc = 0;
@@ -959,6 +967,48 @@ export default function AssortmentTable() {
             <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchases.length} в плане закупок` : `${filteredProducts.length} товаров`}</span>
             {activeTab !== "purchases" && (
               <input value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Фильтр по коду" className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-sm text-neutral-700 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ width: 140 }} />
+            )}
+            {activeTab !== "purchases" && (
+              <div className="relative inline-block">
+                <button
+                  onClick={() => setStatusFilterOpen((v) => !v)}
+                  className="rounded-lg inline-flex items-center gap-1.5 border bg-white px-2.5 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
+                  style={statusFilter.length ? { borderColor: "#fdba74", color: "#c2410c", background: "#fff7ed" } : { borderColor: "#e5e5e5" }}
+                >
+                  {statusFilter.length ? `Статусы: ${statusFilter.length}` : "Все статусы"}
+                  <ChevronDown size={14} className="text-neutral-400" />
+                </button>
+                {statusFilterOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setStatusFilterOpen(false)} />
+                    <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+                      {statuses.map((s) => {
+                        const on = statusFilter.includes(s.name);
+                        return (
+                          <label key={s.name} className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-neutral-50">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => setStatusFilter((cur) => (on ? cur.filter((x) => x !== s.name) : [...cur, s.name]))}
+                              className="h-3.5 w-3.5 accent-orange-600"
+                            />
+                            <span className="inline-flex items-center gap-1.5">
+                              <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: s.color }} />
+                              <span className="text-neutral-700">{s.name}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                      {statusFilter.length > 0 && (
+                        <>
+                          <div className="mx-3 my-1 border-t border-neutral-100" />
+                          <button onClick={() => setStatusFilter([])} className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-500 hover:bg-neutral-50">Сбросить</button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -1117,8 +1167,20 @@ export default function AssortmentTable() {
                           return <td key="code" style={base}><CellInput value={p.code} onChange={(v) => updateProduct(p.id, "code", v)} placeholder="—" /></td>;
                         if (f.id === "wb")
                           return <td key="wb" style={base}><CellInput value={p.wb} onChange={(v) => updateProduct(p.id, "wb", v)} placeholder="—" mono /></td>;
-                        if (f.id === "name")
-                          return <td key="name" style={base}><CellInput value={p.name} onChange={(v) => updateProduct(p.id, "name", v)} placeholder="Название товара" /></td>;
+                        if (f.id === "name") {
+                          const ts = p.tasks || [];
+                          const done = ts.filter((t) => t.done).length;
+                          return (
+                            <td key="name" style={base}>
+                              <button onClick={() => setCardModal(p.id)} className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-sm text-neutral-900 hover:text-orange-700" title="Открыть задачи по карточке">
+                                <span className="min-w-0 flex-1 truncate">{p.name || <span className="text-neutral-400">Название товара</span>}</span>
+                                {ts.length > 0 && (
+                                  <span className="rounded-full shrink-0 px-1.5 text-xs font-semibold" style={{ background: done === ts.length ? "#dcfce7" : "#ffedd5", color: done === ts.length ? "#15803d" : "#c2410c" }}>{done}/{ts.length}</span>
+                                )}
+                              </button>
+                            </td>
+                          );
+                        }
                         if (f.id === "status")
                           return (
                             <td key="status" style={base}>
@@ -1259,6 +1321,19 @@ export default function AssortmentTable() {
       </div>
 
       {statusMgr && <StatusManager statuses={statuses} setStatuses={setStatuses} onClose={() => setStatusMgr(false)} />}
+
+      {cardModal && (() => {
+        const cp = products.find((x) => x.id === cardModal);
+        if (!cp) return null;
+        return (
+          <CardTasksModal
+            product={cp}
+            onSetName={(v) => updateProduct(cp.id, "name", v)}
+            onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
+            onClose={() => setCardModal(null)}
+          />
+        );
+      })()}
 
       {ganttModal && (() => {
         const gp = products.find((x) => x.id === ganttModal.productId);
@@ -2681,6 +2756,82 @@ function CellInput({ value, onChange, placeholder, mono }) {
       className="w-full truncate bg-transparent px-2 py-1 text-neutral-800 placeholder:text-neutral-300 focus:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-neutral-400"
       style={mono ? { fontVariantNumeric: "tabular-nums" } : undefined}
     />
+  );
+}
+
+/* ----------------------------------------------------------------------------
+   Окно «Задачи по карточке» — чек-лист задач конкретного товара
+---------------------------------------------------------------------------- */
+
+function CardTasksModal({ product, onSetName, onSetTasks, onClose }) {
+  const tasks = product.tasks || [];
+  const [newText, setNewText] = useState("");
+  const done = tasks.filter((t) => t.done).length;
+
+  const addTask = () => {
+    const t = newText.trim();
+    if (!t) return;
+    onSetTasks([...tasks, { id: uid(), text: t, done: false }]);
+    setNewText("");
+  };
+  const toggle = (id) => onSetTasks(tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  const setText = (id, text) => onSetTasks(tasks.map((t) => (t.id === id ? { ...t, text } : t)));
+  const remove = (id) => onSetTasks(tasks.filter((t) => t.id !== id));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
+      <div className="rounded-2xl w-full max-w-lg overflow-auto bg-white p-5 shadow-xl" style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
+              {product.code && <span className="font-semibold text-neutral-500">{product.code}</span>}
+              {product.wb && <span>· {product.wb}</span>}
+            </div>
+            <input
+              value={product.name}
+              onChange={(e) => onSetName(e.target.value)}
+              placeholder="Название товара"
+              className="w-full rounded-lg border border-transparent px-1.5 py-1 text-base font-semibold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
+            />
+          </div>
+          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+        </div>
+
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-neutral-700">Задачи по карточке</h3>
+          {tasks.length > 0 && <span className="text-xs text-neutral-400">{done} из {tasks.length} выполнено</span>}
+        </div>
+
+        <div className="space-y-1.5">
+          {tasks.map((t) => (
+            <div key={t.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-1.5 hover:border-neutral-200">
+              <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} className="h-4 w-4 shrink-0 accent-green-600" />
+              <input
+                value={t.text}
+                onChange={(e) => setText(t.id, e.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
+                style={t.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }}
+              />
+              <button onClick={() => remove(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+            </div>
+          ))}
+          {tasks.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач пока нет. Добавьте первую ниже.</div>}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            value={newText}
+            onChange={(e) => setNewText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTask()}
+            placeholder="Новая задача…"
+            className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+          />
+          <button onClick={addTask} disabled={!newText.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+            <Plus size={14} /> Добавить
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
