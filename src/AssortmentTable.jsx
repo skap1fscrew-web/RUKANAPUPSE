@@ -1636,7 +1636,9 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStages, onC
   const entry = cal.entry || "";
 
   const pad = (n) => String(n).padStart(2, "0");
-  const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const iso = (d) => `${String(d.getFullYear()).padStart(4, "0")}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  // правдоподобная дата формата YYYY-MM-DD в разумном диапазоне (защита от мусора при наборе года)
+  const plausible = (ds) => typeof ds === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ds) && ds >= "2000-01-01" && ds <= "2100-12-31";
   const addDaysStr = (dayStr, n) => { const d = new Date(dayStr + "T00:00:00"); d.setDate(d.getDate() + n); return iso(d); };
   const daysBetween = (aStr, bStr) => Math.round((new Date(bStr + "T00:00:00") - new Date(aStr + "T00:00:00")) / 86400000);
   const today = new Date();
@@ -1651,10 +1653,12 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStages, onC
     return a <= b ? { start: a, end: b } : { start: b, end: a };
   };
 
-  // окно дат: от самой ранней даты до самой поздней (этапы + дедлайн + сегодня) с полями
+  // окно дат: от самой ранней даты до самой поздней (этапы + дедлайн + сегодня) с полями.
+  // Неправдоподобные значения (например, недопечатанный год «0002») игнорируем, чтобы
+  // окно не «уезжало» и ничего не падало, пока пользователь набирает дату.
   const dates = [];
-  stages.forEach((s) => { const r = stageRange(s); if (r) { dates.push(r.start); dates.push(r.end); } });
-  if (entry) dates.push(entry);
+  stages.forEach((s) => { const r = stageRange(s); if (r && plausible(r.start) && plausible(r.end)) { dates.push(r.start); dates.push(r.end); } });
+  if (plausible(entry)) dates.push(entry);
   dates.push(todayStr);
   const minStr = dates.reduce((a, b) => (a < b ? a : b), dates[0] || todayStr);
   const maxStr = dates.reduce((a, b) => (a > b ? a : b), dates[0] || todayStr);
@@ -1706,7 +1710,7 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStages, onC
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, [drag, stages]); // eslint-disable-line react-hooks/exhaustive-deps
-  const clampIdx = (key) => { const i = dayList.findIndex((d) => d.key === key); if (i >= 0) return i; return key < dayList[0].key ? 0 : dayList.length - 1; };
+  const clampIdx = (key) => { if (!dayList.length) return 0; const i = dayList.findIndex((d) => d.key === key); if (i >= 0) return i; return key < dayList[0].key ? 0 : dayList.length - 1; };
 
   const headColBg = (dKey) => (dKey === entry ? "#fef2f2" : dKey === todayStr ? "#fff7ed" : dKey && new Date(dKey + "T00:00:00").getDay() % 6 === 0 ? "#f5f5f5" : "#fafafa");
 
