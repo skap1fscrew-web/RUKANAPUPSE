@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
-  ChevronRight, ChevronDown, Minus, ArrowRight, Copy,
+  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -109,11 +109,26 @@ const FILL_COLORS = ["#bbf7d0", "#fed7aa", "#fde68a", "#fecaca", "#e9d5ff", "#ba
 
 // Календарь производства: палитра полос этапов и дефолтный набор этапов
 const CAL_STAGE_COLORS = ["#93c5fd", "#c4b5fd", "#fcd34d", "#86efac", "#fca5a5", "#f9a8d4", "#5eead4", "#a5b4fc"];
-const DEFAULT_CAL_STAGES = ["Формирование заказа", "Производство", "Проверка качества", "Логистика", "Приёмка", "Отгрузка"];
+// Процесс «Логистика» — последовательные компоненты с длительностью в днях.
+const DEFAULT_CAL_COMPONENTS = [
+  { name: "Формирование заказа", days: 3 },
+  { name: "Производство", days: 14 },
+  { name: "Контроль качества", days: 2 },
+  { name: "Доставка", days: 7 },
+];
 const makeDefaultCalendar = () => ({
-  entry: "",
-  stages: DEFAULT_CAL_STAGES.map((name, i) => ({ id: uid(), name, start: "", end: "", color: CAL_STAGE_COLORS[i % CAL_STAGE_COLORS.length] })),
+  entry: "",   // точка входа (дедлайн, старт продаж)
+  start: "",   // дата старта процесса «Логистика»
+  name: "Логистика",
+  components: DEFAULT_CAL_COMPONENTS.map((c, i) => ({ id: uid(), name: c.name, days: c.days, color: CAL_STAGE_COLORS[i % CAL_STAGE_COLORS.length] })),
 });
+// Привести календарь к новой схеме (процесс с компонентами)
+const normalizeCalendar = (c) => {
+  if (c && Array.isArray(c.components)) {
+    return { entry: c.entry || "", start: c.start || "", name: c.name || "Логистика", components: c.components };
+  }
+  return makeDefaultCalendar();
+};
 
 const DEFAULT_WAREHOUSES = [
   { id: uid(), name: "Подольск", region: "Центральный" },
@@ -293,7 +308,7 @@ const normalizeProduct = (p) => {
     blocks,
     plan: { sizes: p?.plan?.sizes || [] },
     rnp: p?.rnp || { cells: {}, entries: {}, fills: {}, flags: {}, budget: { allocated: "" } },
-    calendar: p?.calendar || makeDefaultCalendar(),
+    calendar: normalizeCalendar(p?.calendar),
   };
 };
 
@@ -619,19 +634,23 @@ export default function AssortmentTable() {
   const setRnpBudget = (pid, val) =>
     editRnp(pid, (r) => ({ ...r, budget: { ...r.budget, allocated: val } }));
 
-  /* --- Календарь производства (данные по товару) --- */
+  /* --- Календарь производства (данные по товару): процесс «Логистика» с компонентами --- */
   const editCal = (pid, fn) =>
-    setProducts((ps) => ps.map((p) => (p.id !== pid ? p : { ...p, calendar: fn(p.calendar || { entry: "", stages: [] }) })));
+    setProducts((ps) => ps.map((p) => (p.id !== pid ? p : { ...p, calendar: fn(normalizeCalendar(p.calendar)) })));
   const setCalEntry = (pid, val) => editCal(pid, (c) => ({ ...c, entry: val }));
-  const setCalStages = (pid, stages) => editCal(pid, (c) => ({ ...c, stages }));
+  const setCalStart = (pid, val) => editCal(pid, (c) => ({ ...c, start: val }));
+  const setCalName = (pid, val) => editCal(pid, (c) => ({ ...c, name: val }));
+  const setCalComponents = (pid, components) => editCal(pid, (c) => ({ ...c, components }));
   // копировать календарь из товара-источника в целевой (одинаковые модели разных цветов)
   const copyCalendarFrom = (targetPid, sourcePid) => {
     const src = products.find((x) => x.id === sourcePid);
     if (!src) return;
-    const c = src.calendar || { entry: "", stages: [] };
+    const c = normalizeCalendar(src.calendar);
     editCal(targetPid, () => ({
       entry: c.entry || "",
-      stages: (c.stages || []).map((s) => ({ ...s, id: uid() })),
+      start: c.start || "",
+      name: c.name || "Логистика",
+      components: (c.components || []).map((s) => ({ ...s, id: uid() })),
     }));
   };
 
@@ -795,7 +814,7 @@ export default function AssortmentTable() {
   const allOpen = hasExpandable && products.length > 0 && products.every((p) => expanded[p.id]);
   const entryCount = (p) =>
     expandableGroups.reduce(
-      (n, g) => n + (g.kind === "matrix" ? (p.blocks[g.id]?.entries.length || 0) : g.kind === "plan" ? (p.plan?.sizes.length || 0) : g.kind === "calendar" ? (p.calendar?.stages?.length || 0) : 0),
+      (n, g) => n + (g.kind === "matrix" ? (p.blocks[g.id]?.entries.length || 0) : g.kind === "plan" ? (p.plan?.sizes.length || 0) : g.kind === "calendar" ? (p.calendar?.components?.length || 0) : 0),
       0
     );
   // есть ли переключаемые группы для выпадашки «Группы столбцов» (гант и календарь показываются всегда)
@@ -861,12 +880,23 @@ export default function AssortmentTable() {
       );
       fname = "promotion";
     } else if (activeTab === "calendar") {
-      head = ["Код", "Наименование", "Точка входа", "Этап", "Начало", "Конец"];
+      head = ["Код", "Наименование", "Точка входа", "Старт логистики", "Компонент", "Дней", "Начало", "Конец"];
+      const pad2 = (n) => String(n).padStart(2, "0");
+      const addD = (ds, n) => { const d = new Date(ds + "T00:00:00"); if (isNaN(d.getTime())) return ""; d.setDate(d.getDate() + n); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
       rows = products.flatMap((p) => {
-        const st = p.calendar?.stages || [];
-        const ent = p.calendar?.entry || "";
-        if (!st.length) return [[p.code, p.name, ent, "", "", ""]];
-        return st.map((s) => [p.code, p.name, ent, s.name, s.start || "", s.end || ""]);
+        const c = p.calendar || {};
+        const comps = c.components || [];
+        const st = c.start || "";
+        const ent = c.entry || "";
+        if (!comps.length) return [[p.code, p.name, ent, st, "", "", "", ""]];
+        let acc = 0;
+        return comps.map((comp) => {
+          const days = Math.max(1, parseInt(comp.days) || 1);
+          const cStart = st ? addD(st, acc) : "";
+          const cEnd = st ? addD(st, acc + days - 1) : "";
+          acc += days;
+          return [p.code, p.name, ent, st, comp.name, days, cStart, cEnd];
+        });
       });
       fname = "calendar";
     } else {
@@ -1162,7 +1192,9 @@ export default function AssortmentTable() {
                                     product={p}
                                     productList={products}
                                     onSetEntry={(v) => setCalEntry(p.id, v)}
-                                    onSetStages={(stages) => setCalStages(p.id, stages)}
+                                    onSetStart={(v) => setCalStart(p.id, v)}
+                                    onSetName={(v) => setCalName(p.id, v)}
+                                    onSetComponents={(comps) => setCalComponents(p.id, comps)}
                                     onCopyFrom={(sourceId) => copyCalendarFrom(p.id, sourceId)}
                                   />
                                 ) : (
@@ -1625,107 +1657,106 @@ function PlanBlock({ group, warehouses, sizes, onAddSize, onRemoveSize, onSetSiz
 }
 
 /* ----------------------------------------------------------------------------
-   Блок «Календарь» — диаграмма Ганта по этапам производства. Один на товар.
-   Этапы редактируемые (название + даты начала/конца). Точка входа — дедлайн,
-   до которого все этапы должны быть готовы. Подсвечиваются текущая дата и дедлайн.
+   Блок «Календарь» — процесс «Логистика» на диаграмме Ганта. Один на товар.
+   Процесс = дата старта + последовательные компоненты (название + длительность в днях).
+   Компоненты идут встык; их правые границы (ползунки) можно тянуть на Ганте, а весь
+   процесс — двигать. Точка входа — дедлайн (старт продаж). Подсвечены сегодня и дедлайн.
 ---------------------------------------------------------------------------- */
 
-function CalendarBlock({ product, productList = [], onSetEntry, onSetStages, onCopyFrom }) {
-  const cal = product.calendar || { entry: "", stages: [] };
-  const stages = cal.stages || [];
+function CalendarBlock({ product, productList = [], onSetEntry, onSetStart, onSetName, onSetComponents, onCopyFrom }) {
+  const cal = normalizeCalendar(product.calendar);
+  const components = cal.components || [];
   const entry = cal.entry || "";
+  const start = cal.start || "";
+  const procName = cal.name || "Логистика";
 
   const pad = (n) => String(n).padStart(2, "0");
   const iso = (d) => `${String(d.getFullYear()).padStart(4, "0")}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  // правдоподобная дата формата YYYY-MM-DD в разумном диапазоне (защита от мусора при наборе года)
-  const plausible = (ds) => typeof ds === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ds) && ds >= "2000-01-01" && ds <= "2100-12-31";
-  const addDaysStr = (dayStr, n) => { const d = new Date(dayStr + "T00:00:00"); d.setDate(d.getDate() + n); return iso(d); };
+  const addDaysStr = (dayStr, n) => { const d = new Date(dayStr + "T00:00:00"); if (isNaN(d.getTime())) return dayStr; d.setDate(d.getDate() + n); return iso(d); };
   const daysBetween = (aStr, bStr) => Math.round((new Date(bStr + "T00:00:00") - new Date(aStr + "T00:00:00")) / 86400000);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const plausible = (ds) => typeof ds === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ds) && ds >= "2000-01-01" && ds <= "2100-12-31";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayStr = iso(today);
 
-  // нормализованные границы этапа (на случай, если начало позже конца)
-  const stageRange = (s) => {
-    const a = s.start || s.end;
-    const b = s.end || s.start;
-    if (!a || !b) return null;
-    return a <= b ? { start: a, end: b } : { start: b, end: a };
-  };
+  const [editOpen, setEditOpen] = useState(false); // окно настроек процесса
+  const [drag, setDrag] = useState(null); // { mode:"move"|"resize", compIdx, startClientX, origStart, origDays, previewStart, previewDays }
 
-  // окно дат: от самой ранней даты до самой поздней (этапы + дедлайн + сегодня) с полями.
-  // Неправдоподобные значения (например, недопечатанный год «0002») игнорируем, чтобы
-  // окно не «уезжало» и ничего не падало, пока пользователь набирает дату.
+  const LBL_W = 230, DAY_W = 30;
+  const sticky = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
+
+  // зафиксированные длительности (для расчёта окна — стабильно во время перетаскивания)
+  const committedDays = components.map((c) => Math.max(1, parseInt(c.days) || 1));
+  const committedTotal = committedDays.reduce((a, b) => a + b, 0);
+  const hasStart = plausible(start);
+
+  // окно дат считаем по зафиксированным значениям — чтобы сетка не «уезжала» при перетаскивании
   const dates = [];
-  stages.forEach((s) => { const r = stageRange(s); if (r && plausible(r.start) && plausible(r.end)) { dates.push(r.start); dates.push(r.end); } });
+  if (hasStart) { dates.push(start); const e = addDaysStr(start, committedTotal - 1); if (plausible(e)) dates.push(e); }
   if (plausible(entry)) dates.push(entry);
   dates.push(todayStr);
   const minStr = dates.reduce((a, b) => (a < b ? a : b), dates[0] || todayStr);
   const maxStr = dates.reduce((a, b) => (a > b ? a : b), dates[0] || todayStr);
   const winStart = addDaysStr(minStr, -2);
-  const winEnd = addDaysStr(maxStr, 2);
-  let count = daysBetween(winStart, winEnd) + 1;
-  count = Math.max(14, Math.min(200, count));
+  let count = daysBetween(winStart, addDaysStr(maxStr, 2)) + 1;
+  count = Math.max(14, Math.min(220, isNaN(count) ? 14 : count));
   const dayList = buildDays(winStart, count);
 
-  const [editStage, setEditStage] = useState(null); // { id, x, y } — открытое окно настроек этапа
-  const [drag, setDrag] = useState(null); // { id, mode, startClientX, origStart, origEnd, previewStart, previewEnd }
-  const LBL_W = 230;
-  const DAY_W = 30;
-  const openEdit = (id, ev) => {
-    const r = ev.currentTarget.getBoundingClientRect();
-    const vw = typeof window !== "undefined" ? window.innerWidth : 800;
-    setEditStage((cur) => (cur && cur.id === id ? null : { id, x: Math.min(r.right - 20, vw - 280), y: r.bottom + 6 }));
-  };
-  const sticky = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
+  // полоса (во время перетаскивания — превью, иначе зафиксированные значения)
+  const dragging = !!drag;
+  const barStart = dragging ? drag.previewStart : start;
+  const barDays = dragging ? drag.previewDays : committedDays;
+  const barTotal = barDays.reduce((a, b) => a + b, 0);
+  const barOffsets = []; { let acc = 0; for (const d of barDays) { barOffsets.push(acc); acc += d; } }
+  const rawStartIdx = dayList.length && plausible(barStart) ? daysBetween(dayList[0].key, barStart) : 0;
 
-  const setStage = (id, field, val) => onSetStages(stages.map((s) => (s.id === id ? { ...s, [field]: val } : s)));
-  const removeStage = (id) => onSetStages(stages.filter((s) => s.id !== id));
-  const addStage = () => onSetStages([...stages, { id: uid(), name: "", start: "", end: "", color: CAL_STAGE_COLORS[stages.length % CAL_STAGE_COLORS.length] }]);
+  // ----- компоненты (редактирование в настройках) -----
+  const setComp = (id, field, val) => onSetComponents(components.map((c) => (c.id === id ? { ...c, [field]: val } : c)));
+  const addComp = () => onSetComponents([...components, { id: uid(), name: "", days: 3, color: CAL_STAGE_COLORS[components.length % CAL_STAGE_COLORS.length] }]);
+  const removeComp = (id) => onSetComponents(components.filter((c) => c.id !== id));
+  const moveComp = (idx, dir) => { const j = idx + dir; if (j < 0 || j >= components.length) return; const arr = components.slice(); const t = arr[idx]; arr[idx] = arr[j]; arr[j] = t; onSetComponents(arr); };
 
-  // Перетаскивание и изменение размера полосы этапа
-  const startDrag = (s, mode, ev) => {
+  // ----- перетаскивание на ганте -----
+  const startDrag = (mode, compIdx, ev) => {
     ev.preventDefault(); ev.stopPropagation();
-    const r = stageRange(s);
-    if (!r) return;
-    setDrag({ id: s.id, mode, startClientX: ev.clientX, origStart: r.start, origEnd: r.end, previewStart: r.start, previewEnd: r.end });
+    if (!hasStart) return;
+    setDrag({ mode, compIdx, startClientX: ev.clientX, origStart: start, origDays: committedDays.slice(), previewStart: start, previewDays: committedDays.slice() });
   };
   useEffect(() => {
     if (!drag) return;
     const onMove = (e) => {
       const delta = Math.round((e.clientX - drag.startClientX) / DAY_W);
-      let ns = drag.origStart, ne = drag.origEnd;
-      if (drag.mode === "move") { ns = addDaysStr(drag.origStart, delta); ne = addDaysStr(drag.origEnd, delta); }
-      else if (drag.mode === "start") { ns = addDaysStr(drag.origStart, delta); if (ns > ne) ns = ne; }
-      else if (drag.mode === "end") { ne = addDaysStr(drag.origEnd, delta); if (ne < ns) ne = ns; }
-      setDrag((d) => (d ? { ...d, previewStart: ns, previewEnd: ne } : d));
+      if (drag.mode === "move") {
+        setDrag((d) => (d ? { ...d, previewStart: addDaysStr(d.origStart, delta) } : d));
+      } else {
+        setDrag((d) => { if (!d) return d; const nd = d.origDays.slice(); nd[d.compIdx] = Math.max(1, d.origDays[d.compIdx] + delta); return { ...d, previewDays: nd }; });
+      }
     };
     const onUp = () => {
       setDrag((d) => {
-        if (d) onSetStages(stages.map((s) => (s.id === d.id ? { ...s, start: d.previewStart, end: d.previewEnd } : s)));
+        if (d) {
+          if (d.mode === "move") onSetStart(d.previewStart);
+          else onSetComponents(components.map((c, i) => (i === d.compIdx ? { ...c, days: d.previewDays[i] } : c)));
+        }
         return null;
       });
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [drag, stages]); // eslint-disable-line react-hooks/exhaustive-deps
-  const clampIdx = (key) => { if (!dayList.length) return 0; const i = dayList.findIndex((d) => d.key === key); if (i >= 0) return i; return key < dayList[0].key ? 0 : dayList.length - 1; };
+  }, [drag, components]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const headColBg = (dKey) => (dKey === entry ? "#fef2f2" : dKey === todayStr ? "#fff7ed" : dKey && new Date(dKey + "T00:00:00").getDay() % 6 === 0 ? "#f5f5f5" : "#fafafa");
-
-  // стили вертикальных линий: дедлайн (красная пунктирная), сегодня (оранжевая)
   const colBorders = (dKey) => {
     if (dKey === entry) return { borderLeft: "2px dashed #dc2626" };
     if (dKey === todayStr) return { borderLeft: "1px solid #ea580c", borderRight: "1px solid #ea580c" };
     return { borderLeft: "1px solid #f0f0f0" };
   };
-
   const dateInput = "rounded-md border border-neutral-200 px-1 py-0.5 text-xs text-neutral-700 focus:outline-none focus:ring-2 focus:ring-sky-200";
+  const procEnd = hasStart && barTotal > 0 ? addDaysStr(barStart, barTotal - 1) : "";
 
   return (
     <div>
-      {/* Шапка блока: точка входа (дедлайн) + копирование + легенда */}
+      {/* Шапка */}
       <div className="mb-2 flex flex-wrap items-center gap-3 px-1">
         <div className="text-sm font-semibold text-neutral-900">Календарь производства</div>
         <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-600">
@@ -1733,21 +1764,14 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStages, onC
           <input type="date" value={entry} onChange={(e) => onSetEntry(e.target.value)} className={dateInput} />
         </label>
         <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-600">
+          Старт логистики
+          <input type="date" value={start} onChange={(e) => onSetStart(e.target.value)} className={dateInput} />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-600">
           <Copy size={13} className="text-sky-600" />
-          <select
-            value=""
-            onChange={(e) => {
-              const id = e.target.value;
-              e.target.value = "";
-              if (!id) return;
-              if (stages.length === 0 || (typeof window !== "undefined" && window.confirm("Заменить текущие этапы этого товара на календарь выбранного товара?"))) onCopyFrom(id);
-            }}
-            className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          >
+          <select value="" onChange={(e) => { const id = e.target.value; e.target.value = ""; if (id) onCopyFrom(id); }} className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-200">
             <option value="">Скопировать из…</option>
-            {productList.filter((x) => x.id !== product.id).map((x) => (
-              <option key={x.id} value={x.id}>{(x.code || x.wb || "—") + (x.name ? " — " + x.name : "")}</option>
-            ))}
+            {productList.filter((x) => x.id !== product.id).map((x) => (<option key={x.id} value={x.id}>{(x.code || x.wb || "—") + (x.name ? " — " + x.name : "")}</option>))}
           </select>
         </label>
         <span className="ml-auto flex items-center gap-3 text-xs text-neutral-400">
@@ -1760,7 +1784,7 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStages, onC
         <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr>
-              <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: "4px 10px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Этап</th>
+              <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: "4px 10px" }} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Процесс</th>
               {dayList.map((d) => (
                 <th key={d.key} style={{ width: DAY_W, minWidth: DAY_W, background: headColBg(d.key), ...colBorders(d.key), borderTop: d.key === todayStr || d.key === entry ? undefined : "none", position: "relative" }} className="px-0.5 py-1 text-center">
                   {d.key === entry && <div style={{ position: "absolute", top: -1, left: "50%", transform: "translateX(-50%)", color: "#dc2626", fontSize: 9, lineHeight: 1 }}>▼</div>}
@@ -1772,111 +1796,89 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStages, onC
             </tr>
           </thead>
           <tbody>
-            {stages.map((s) => {
-              const open = editStage && editStage.id === s.id;
-              const dragging = drag && drag.id === s.id;
-              // диапазон полосы: во время перетаскивания — превью, иначе сохранённые даты
-              const r = dragging ? { start: drag.previewStart, end: drag.previewEnd } : stageRange(s);
-              let barStart = -1, barSpan = 0;
-              if (r) { const si = clampIdx(r.start), ei = clampIdx(r.end); barStart = si; barSpan = ei - si + 1; }
-              const durDays = r ? daysBetween(r.start, r.end) + 1 : 0;
-              const color = s.color || "#93c5fd";
-              return (
-                <tr key={s.id}>
-                  <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: "3px 6px 3px 8px" }}>
-                    <div className="flex items-center gap-1.5">
-                      <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />
-                      <input value={s.name} onChange={(e) => setStage(s.id, "name", e.target.value)} placeholder="Название этапа" className="min-w-0 flex-1 rounded-md bg-transparent px-1 py-1 text-xs font-medium text-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200" />
-                      <button onClick={(ev) => openEdit(s.id, ev)} className="rounded-md flex h-6 w-6 shrink-0 items-center justify-center border text-neutral-500 hover:bg-neutral-50" style={open ? { borderColor: "#0ea5e9", color: "#0284c7", background: "#f0f9ff" } : { borderColor: "#e5e5e5" }} title="Настройки этапа (даты, цвет)">
-                        <Settings2 size={13} />
-                      </button>
-                    </div>
-                  </th>
-                  {dayList.map((d, di) => (
-                    <td key={d.key} style={{ width: DAY_W, minWidth: DAY_W, position: "relative", zIndex: di === 0 ? 2 : "auto", borderTop: "1px solid #f5f5f5", background: d.weekend ? "#fafafa" : "#fff", ...colBorders(d.key) }}>
-                      <div style={{ minHeight: 30 }} />
-                      {/* полоса рисуется один раз, в первой ячейке, и перекрывает соседние */}
-                      {di === 0 && r && barSpan > 0 && (
-                        <div
-                          onMouseDown={(ev) => startDrag(s, "move", ev)}
-                          title="Перетащите, чтобы сдвинуть; потяните за край, чтобы изменить длительность"
-                          style={{
-                            position: "absolute", top: 1, bottom: 1,
-                            left: barStart * DAY_W, width: barSpan * DAY_W,
-                            background: color, border: "1px solid rgba(0,0,0,.08)",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            overflow: "hidden", cursor: dragging && drag.mode === "move" ? "grabbing" : "grab",
-                            userSelect: "none", zIndex: 3, boxShadow: dragging ? "0 2px 6px rgba(15,23,42,.25)" : "none",
-                          }}
-                        >
-                          <span style={{ fontSize: 10, fontWeight: 600, color: "#334155", whiteSpace: "nowrap", pointerEvents: "none" }}>
-                            {durDays} {durDays === 1 ? "день" : durDays >= 2 && durDays <= 4 ? "дня" : "дн"}
-                          </span>
-                          <div onMouseDown={(ev) => startDrag(s, "start", ev)} style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 6, cursor: "ew-resize" }} />
-                          <div onMouseDown={(ev) => startDrag(s, "end", ev)} style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 6, cursor: "ew-resize" }} />
-                        </div>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-
-            {/* строка добавления этапа */}
             <tr>
-              <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: 0 }}>
-                <button onClick={addStage} className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-50">
-                  <Plus size={13} /> Добавить этап
-                </button>
+              <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: "3px 6px 3px 10px" }}>
+                <div className="flex w-full items-center gap-1.5">
+                  <span className="min-w-0 truncate text-xs font-semibold text-neutral-800">{procName}</span>
+                  <span className="shrink-0 text-xs text-neutral-400">· {barTotal} дн</span>
+                  <button onClick={() => setEditOpen(true)} className="rounded-md ml-auto flex h-6 w-6 shrink-0 items-center justify-center border text-neutral-500 hover:bg-neutral-50" style={editOpen ? { borderColor: "#0ea5e9", color: "#0284c7", background: "#f0f9ff" } : { borderColor: "#e5e5e5" }} title="Настройки логистики (старт, компоненты)"><Settings2 size={13} /></button>
+                </div>
               </th>
-              {dayList.map((d) => (
-                <td key={d.key} style={{ width: DAY_W, minWidth: DAY_W, borderTop: "1px solid #f5f5f5", background: d.weekend ? "#fafafa" : "#fff", ...colBorders(d.key) }} />
+              {dayList.map((d, di) => (
+                <td key={d.key} style={{ width: DAY_W, minWidth: DAY_W, position: "relative", zIndex: di === 0 ? 2 : "auto", borderTop: "1px solid #f5f5f5", background: d.weekend ? "#fafafa" : "#fff", ...colBorders(d.key) }}>
+                  <div style={{ minHeight: 34 }} />
+                  {di === 0 && hasStart && barTotal > 0 && (
+                    <div style={{ position: "absolute", top: 1, bottom: 1, left: rawStartIdx * DAY_W, width: barTotal * DAY_W }}>
+                      {barDays.map((dd, ci) => {
+                        const c = components[ci] || {};
+                        const segW = dd * DAY_W;
+                        const color = c.color || "#93c5fd";
+                        return (
+                          <div
+                            key={c.id || ci}
+                            onMouseDown={(ev) => startDrag("move", ci, ev)}
+                            title={`${c.name || "Компонент"} — ${dd} дн. Тяните, чтобы сдвинуть процесс; за правый край — изменить длительность`}
+                            style={{ position: "absolute", top: 0, bottom: 0, left: barOffsets[ci] * DAY_W, width: segW, background: color, borderRight: ci < barDays.length - 1 ? "1px solid rgba(255,255,255,.75)" : "none", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: dragging && drag.mode === "move" ? "grabbing" : "grab", userSelect: "none" }}
+                          >
+                            <span style={{ fontSize: 9, fontWeight: 600, color: "#334155", whiteSpace: "nowrap", padding: "0 3px", pointerEvents: "none" }}>
+                              {segW >= 56 ? `${c.name || ""} · ${dd}` : segW >= 22 ? dd : ""}
+                            </span>
+                            <div onMouseDown={(ev) => startDrag("resize", ci, ev)} style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 7, cursor: "ew-resize" }} title="Изменить длительность компонента" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </td>
               ))}
             </tr>
           </tbody>
         </table>
       </div>
 
-      {stages.length === 0 && (
-        <div className="px-3 py-4 text-center text-xs text-neutral-400">Этапов пока нет. Нажмите «Добавить этап».</div>
+      {!hasStart && (
+        <div className="px-3 py-3 text-center text-xs text-neutral-400">Укажите «Старт логистики», чтобы увидеть полосу процесса.</div>
       )}
 
-      {/* Окно настроек этапа */}
-      {editStage && (() => {
-        const s = stages.find((x) => x.id === editStage.id);
-        if (!s) return null;
-        return (
-          <>
-            <div className="fixed inset-0 z-50" onClick={() => setEditStage(null)} />
-            <div className="rounded-2xl fixed z-50 border border-neutral-200 bg-white p-3.5 shadow-xl" style={{ left: editStage.x, top: editStage.y, width: 250 }}>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-semibold text-neutral-800">Настройки этапа</span>
-                <button onClick={() => setEditStage(null)} className="rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100"><X size={15} /></button>
-              </div>
-              <label className="mb-2 block text-xs font-medium text-neutral-500">
-                Начало
-                <input type="date" value={s.start || ""} onChange={(e) => setStage(s.id, "start", e.target.value)} className={dateInput + " mt-1 block w-full"} />
-              </label>
-              <label className="mb-2 block text-xs font-medium text-neutral-500">
-                Конец
-                <input type="date" value={s.end || ""} onChange={(e) => setStage(s.id, "end", e.target.value)} className={dateInput + " mt-1 block w-full"} />
-              </label>
-              <div className="mb-3 text-xs font-medium text-neutral-500">
-                Цвет полосы
-                <div className="mt-1 flex items-center gap-1.5">
-                  {CAL_STAGE_COLORS.map((c) => (
-                    <button key={c} onClick={() => setStage(s.id, "color", c)} title={c} style={{ width: 20, height: 20, borderRadius: 5, background: c, boxShadow: (s.color || "").toLowerCase() === c.toLowerCase() ? "0 0 0 2px #fff, 0 0 0 4px #0ea5e9" : "none" }} />
-                  ))}
-                  <input type="color" value={s.color || "#0ea5e9"} onChange={(e) => setStage(s.id, "color", e.target.value)} title="Свой цвет" style={{ width: 24, height: 24, padding: 0, border: "1px solid #e5e5e5", borderRadius: 5, background: "none", cursor: "pointer", marginLeft: "auto" }} />
-                </div>
-              </div>
-              <button onClick={() => { removeStage(s.id); setEditStage(null); }} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100">
-                <Trash2 size={13} /> Удалить этап
-              </button>
+      {/* Окно настроек процесса */}
+      {editOpen && (
+        <>
+          <div className="fixed inset-0 z-50" onClick={() => setEditOpen(false)} />
+          <div className="rounded-2xl fixed left-1/2 top-24 z-50 w-[540px] max-w-[92vw] -translate-x-1/2 border border-neutral-200 bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-semibold text-neutral-800">Настройки логистики</span>
+              <button onClick={() => setEditOpen(false)} className="rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100"><X size={16} /></button>
             </div>
-          </>
-        );
-      })()}
+            <div className="mb-3 flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-500">Название
+                <input value={procName} onChange={(e) => onSetName(e.target.value)} className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 focus:outline-none focus:ring-2 focus:ring-sky-200" style={{ width: 150 }} />
+              </label>
+              <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-500">Старт
+                <input type="date" value={start} onChange={(e) => onSetStart(e.target.value)} className={dateInput} />
+              </label>
+              <span className="text-xs text-neutral-400">Итого: <b className="text-neutral-700">{committedTotal} дн</b>{procEnd ? ` · до ${procEnd.slice(8, 10)}.${procEnd.slice(5, 7)}` : ""}</span>
+            </div>
+            <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400" style={{ display: "grid", gridTemplateColumns: "20px 1fr 70px 26px 26px 26px", gap: 6, alignItems: "center" }}>
+              <span></span><span>Компонент</span><span className="text-right">Дней</span><span></span><span></span><span></span>
+            </div>
+            <div className="space-y-1.5">
+              {components.map((c, ci) => (
+                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "20px 1fr 70px 26px 26px 26px", gap: 6, alignItems: "center" }}>
+                  <input type="color" value={c.color || "#93c5fd"} onChange={(e) => setComp(c.id, "color", e.target.value)} style={{ width: 18, height: 18, padding: 0, border: "none", background: "none", cursor: "pointer" }} title="Цвет" />
+                  <input value={c.name} onChange={(e) => setComp(c.id, "name", e.target.value)} placeholder="Название компонента" className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 focus:outline-none focus:ring-2 focus:ring-sky-200" />
+                  <input value={c.days} onChange={(e) => setComp(c.id, "days", e.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" placeholder="0" className="rounded-md border border-neutral-200 px-2 py-1 text-right text-xs text-neutral-700 focus:outline-none focus:ring-2 focus:ring-sky-200" />
+                  <button onClick={() => moveComp(ci, -1)} disabled={ci === 0} className="rounded flex h-6 w-6 items-center justify-center text-neutral-400 hover:bg-neutral-100 disabled:opacity-30" title="Выше"><ChevronUp size={13} /></button>
+                  <button onClick={() => moveComp(ci, 1)} disabled={ci === components.length - 1} className="rounded flex h-6 w-6 items-center justify-center text-neutral-400 hover:bg-neutral-100 disabled:opacity-30" title="Ниже"><ChevronDown size={13} /></button>
+                  <button onClick={() => removeComp(c.id)} className="rounded flex h-6 w-6 items-center justify-center text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить"><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+            <button onClick={addComp} className="mt-2 flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-200 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50">
+              <Plus size={13} /> Добавить компонент
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
