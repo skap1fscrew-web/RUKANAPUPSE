@@ -3304,6 +3304,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [showDone, setShowDone] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [unitOpen, setUnitOpen] = useState(false);
+  const [mp, setMp] = useState("wb"); // маркетплейс для юнит-экономики: wb | oz
   const done = tasks.filter((t) => t.done).length;
 
   // id задач по умолчанию — такие задачи нельзя удалять из карточки
@@ -3356,34 +3357,23 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   };
   const removeComp = (id) => onSetCompetitors(competitors.filter((c) => c.id !== id));
 
-  // --- дашборды: юнит-экономика ---
-  const unitCols = (GROUPS.find((g) => g.id === "unit") || {}).columns || [];
+  // --- дашборды: юнит-экономика (переключатель ВБ / Озон) ---
+  const MP = mp === "oz"
+    ? { gid: "unitoz", f: { price: "priceOz", spp: "sppOz", drr: "drrOz", commission: "commissionOz", buyback: "buybackOz", logistics: "logisticsOz" }, c: { logisticsFull: "logisticsFullOz", totalCosts: "totalCostsOz", profit: "profitOz", renta: "rentaOz", margin: "marginOz" } }
+    : { gid: "unit",   f: { price: "price",   spp: "spp",   drr: "drr",   commission: "commission",   buyback: "buyback",   logistics: "logistics"   }, c: { logisticsFull: "logisticsFull",   totalCosts: "totalCosts",   profit: "profit",   renta: "renta",   margin: "margin"   } };
+  const unitCols = (GROUPS.find((g) => g.id === MP.gid) || {}).columns || [];
   const cv = (id) => {
     const c = unitCols.find((x) => x.id === id);
     if (!c) return NaN;
     try { return c.type === "calc" ? c.fn(product, unitCols) : toNum(product[c.field]); } catch { return NaN; }
   };
-  const price = cv("price"), cost = cv("cost");
-  const sppVal = toNum(product.spp);
+  const price = cv(MP.f.price), cost = cv("cost");
+  const sppVal = toNum(product[MP.f.spp]);
   const afterSpp = isNaN(price) ? NaN : (isNaN(sppVal) ? price : price * (1 - sppVal / 100));
-  const profit = cv("profit"), margin = cv("margin"), renta = cv("renta");
-  const commRub = !isNaN(price) ? price * (toNum(product.commission) || 0) / 100 : NaN;
-  const acqRub = !isNaN(price) ? price * (toNum(product.acquiring) || 0) / 100 : NaN;
-  const logRub = cv("logisticsFull");
-  const taxRub = !isNaN(afterSpp) ? afterSpp * (toNum(product.taxRate) || 0) / 100 : NaN;
-  const drrRub = !isNaN(price) ? price * (toNum(product.drr) || 0) / 100 : NaN;
+  const profit = cv(MP.c.profit), margin = cv(MP.c.margin), renta = cv(MP.c.renta);
+  const logRub = cv(MP.c.logisticsFull);
+  const totalCostsV = cv(MP.c.totalCosts);
   const hasEconomics = !isNaN(price) && price > 0 && !isNaN(cost);
-
-  const costSegments = [
-    { label: "Себестоимость", val: isNaN(cost) ? 0 : cost, color: "#64748b" },
-    { label: "Логистика", val: isNaN(logRub) ? 0 : logRub, color: "#0ea5e9" },
-    { label: "Комиссия", val: isNaN(commRub) ? 0 : commRub, color: "#f59e0b" },
-    { label: "Эквайринг", val: isNaN(acqRub) ? 0 : acqRub, color: "#a855f7" },
-    { label: "Налог", val: isNaN(taxRub) ? 0 : taxRub, color: "#ef4444" },
-    { label: "ДРР", val: isNaN(drrRub) ? 0 : drrRub, color: "#94a3b8" },
-  ];
-  if (!isNaN(profit) && profit > 0) costSegments.push({ label: "Прибыль", val: profit, color: "#10b981" });
-  const segBase = hasEconomics ? price : costSegments.reduce((s, x) => s + x.val, 0) || 1;
 
   // --- дашборды: готовность карточки по меткам ---
   const readiness = (() => {
@@ -3402,7 +3392,6 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const overallPct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
   const R = 30, C2 = 2 * Math.PI * R;
 
-  const totalCostsV = cv("totalCosts");
   const toneColor = (v) => isNaN(v) ? "#0f172a" : (v >= 0 ? "#15803d" : "#dc2626");
   const pct = (v) => isNaN(v) ? "—" : Math.round(v) + "%";
 
@@ -3444,7 +3433,12 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-50" onClick={(e) => e.stopPropagation()}>
       {/* Шапка */}
-      <div className="flex items-start justify-between gap-4 border-b border-neutral-200 bg-white px-5 py-4 sm:px-8">
+      <div className="flex items-start gap-4 border-b border-neutral-200 bg-white px-5 py-4 sm:px-8">
+        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+          {product.image
+            ? <img src={product.image} alt="" className="h-full w-full object-cover" />
+            : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={20} /></div>}
+        </div>
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
             {product.code && <span className="font-semibold text-neutral-500">{product.code}</span>}
@@ -3541,17 +3535,31 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
 
             {/* Юнит-экономика — раскрывающийся редактируемый дашборд */}
             <section className="rounded-2xl border border-neutral-200 bg-white p-4">
-              <button onClick={() => setUnitOpen((v) => !v)} className="mb-3 flex w-full items-center gap-1.5 text-left">
-                {unitOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                <h3 className="text-sm font-semibold text-neutral-800">Юнит-экономика</h3>
-                <span className="ml-auto text-[11px] text-neutral-400">{unitOpen ? "свернуть" : "изменить данные"}</span>
-              </button>
+              <div className="mb-3 flex items-center gap-2">
+                <button onClick={() => setUnitOpen((v) => !v)} className="flex items-center gap-1.5 text-left">
+                  {unitOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  <h3 className="text-sm font-semibold text-neutral-800">Юнит-экономика</h3>
+                </button>
+                <div className="inline-flex rounded-lg border border-neutral-200 p-0.5">
+                  {[["wb", "ВБ", "#7c3aed"], ["oz", "Озон", "#2563eb"]].map(([id, lbl, col]) => (
+                    <button
+                      key={id}
+                      onClick={() => setMp(id)}
+                      className="rounded-md px-2.5 py-0.5 text-xs font-semibold transition"
+                      style={mp === id ? { background: col, color: "#fff" } : { color: "#737373" }}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+                <span onClick={() => setUnitOpen((v) => !v)} className="ml-auto cursor-pointer text-[11px] text-neutral-400">{unitOpen ? "свернуть" : "изменить данные"}</span>
+              </div>
 
               {/* превью — всегда видно */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {tileWrap("Цена", unitInput("price"))}
-                {tileWrap("СПП", unitInput("spp", "%"))}
-                {tileWrap("ДРР", unitInput("drr", "%"))}
+                {tileWrap("Цена", unitInput(MP.f.price))}
+                {tileWrap("СПП", unitInput(MP.f.spp, "%"))}
+                {tileWrap("ДРР", unitInput(MP.f.drr, "%"))}
                 {resultTile("Чистая прибыль", money(profit), isNaN(profit) ? undefined : profit)}
                 {resultTile("Рентабельность", pct(renta), isNaN(renta) ? undefined : renta)}
                 {resultTile("Маржа", pct(margin), isNaN(margin) ? undefined : margin)}
@@ -3563,9 +3571,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Параметры товара</p>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {tileWrap("Себестоимость", unitInput("cost"))}
-                    {tileWrap("Комиссия", unitInput("commission", "%"))}
-                    {tileWrap("% выкупа", unitInput("buyback", "%"))}
-                    {tileWrap("Базовая логистика", unitInput("logistics"))}
+                    {tileWrap("Комиссия", unitInput(MP.f.commission, "%"))}
+                    {tileWrap("% выкупа", unitInput(MP.f.buyback, "%"))}
+                    {tileWrap("Базовая логистика", unitInput(MP.f.logistics))}
                   </div>
                   <p className="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-neutral-400">Результат</p>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -3573,7 +3581,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                     {resultTile("Итоговая логистика", money(logRub))}
                     {resultTile("Общие затраты", money(totalCostsV))}
                   </div>
-                  <p className="mt-3 text-[11px] text-neutral-400">Налог, эквайринг и КФ склада — общие для всех товаров, меняются в «Единые данные».</p>
+                  <p className="mt-3 text-[11px] text-neutral-400">{mp === "oz" ? "Налог и эквайринг Озон" : "Налог, эквайринг и КФ склада"} — общие для всех товаров, меняются в «Единые данные».</p>
                 </div>
               )}
             </section>
