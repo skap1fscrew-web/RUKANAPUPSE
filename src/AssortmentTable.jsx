@@ -411,7 +411,6 @@ export default function AssortmentTable() {
   const [hiddenCols, setHiddenCols] = useState({}); // скрытые столбцы юнита: { "unit:spp": true }
   const [colFilterOpen, setColFilterOpen] = useState(false);
   const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170" }); // единые для всех товаров
-  const [unitSettingsOpen, setUnitSettingsOpen] = useState(false);
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
   const [expanded, setExpanded] = useState({});
@@ -1200,13 +1199,6 @@ export default function AssortmentTable() {
                 </>
               )}
             </div>
-            <button
-              onClick={() => setUnitSettingsOpen(true)}
-              title="Единые настройки юнит-экономики"
-              className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              <Settings2 size={14} /> Единые данные
-            </button>
           </div>
         )}
 
@@ -1479,12 +1471,10 @@ export default function AssortmentTable() {
           setDefaultTasks={setDefaultTasks}
           taskLabels={taskLabels}
           setTaskLabels={setTaskLabels}
+          unitConst={unitConst}
+          setUnitConst={setUnitConst}
           onClose={() => setSettingsOpen(false)}
         />
-      )}
-
-      {unitSettingsOpen && (
-        <UnitSettingsModal value={unitConst} onChange={setUnitConst} onClose={() => setUnitSettingsOpen(false)} />
       )}
 
       {cardModal && (() => {
@@ -3375,6 +3365,27 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const totalCostsV = cv(MP.c.totalCosts);
   const hasEconomics = !isNaN(price) && price > 0 && !isNaN(cost);
 
+  // Какая нужна цена для заданной рентабельности (ЧП/себес):
+  //   Общие затраты = Себес + Итог.лог + Цена*k,  где k — переменная доля от цены.
+  //   ЧП = Цена*(1−k) − (Себес + Итог.лог);  Рента = ЧП/Себес = R  ⇒
+  //   Цена = (Себес*(1+R) + Итог.лог) / (1 − k)
+  const kVar = (() => {
+    const comm = toNum(product[MP.f.commission]) || 0;
+    const sppv = toNum(product[MP.f.spp]) || 0;
+    const drrv = toNum(product[MP.f.drr]) || 0;
+    const acqv = toNum(product[mp === "oz" ? "acquiringOz" : "acquiring"]) || 0;
+    const taxv = toNum(product[mp === "oz" ? "taxRateOz" : "taxRate"]) || 0;
+    const af = 1 - sppv / 100;
+    return mp === "oz"
+      ? comm / 100 + drrv / 100 + af * acqv / 100 + af * taxv / 100  // Озон: эквайринг от цены после СПП
+      : comm / 100 + acqv / 100 + drrv / 100 + af * taxv / 100;       // ВБ: эквайринг от цены
+  })();
+  const targetPrice = (R) => {
+    const logF = isNaN(logRub) ? 0 : logRub;
+    if (isNaN(cost) || !(1 - kVar > 0)) return NaN;
+    return (cost * (1 + R) + logF) / (1 - kVar);
+  };
+
   // --- дашборды: готовность карточки по меткам ---
   const readiness = (() => {
     const map = new Map();
@@ -3565,6 +3576,28 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                 {resultTile("Маржа", pct(margin), isNaN(margin) ? undefined : margin)}
               </div>
 
+              {/* Подсказки: цена под нужную рентабельность (клик — подставить) */}
+              <div className="mt-3">
+                <div className="mb-1.5 text-[11px] uppercase tracking-wide text-neutral-400">Цена для рентабельности</div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[50, 100, 150, 200].map((r) => {
+                    const v = targetPrice(r / 100);
+                    return (
+                      <button
+                        key={r}
+                        onClick={() => !isNaN(v) && onSetField && onSetField(MP.f.price, String(Math.round(v)))}
+                        disabled={isNaN(v)}
+                        title={isNaN(v) ? "Заполните себестоимость" : "Поставить эту цену"}
+                        className="rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-sky-50/50 disabled:cursor-default disabled:opacity-60 disabled:hover:border-neutral-100 disabled:hover:bg-neutral-50/60"
+                      >
+                        <div className="text-[11px] font-medium text-neutral-400">{r}%</div>
+                        <div className="text-sm font-bold tabular-nums text-neutral-800">{isNaN(v) ? "—" : money(v)}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* расширенный редактор */}
               {unitOpen && (
                 <div className="mt-4 border-t border-neutral-100 pt-4">
@@ -3581,7 +3614,6 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                     {resultTile("Итоговая логистика", money(logRub))}
                     {resultTile("Общие затраты", money(totalCostsV))}
                   </div>
-                  <p className="mt-3 text-[11px] text-neutral-400">{mp === "oz" ? "Налог и эквайринг Озон" : "Налог, эквайринг и КФ склада"} — общие для всех товаров, меняются в «Единые данные».</p>
                 </div>
               )}
             </section>
@@ -3641,43 +3673,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
    Настройки: статусы + задачи по умолчанию
 ---------------------------------------------------------------------------- */
 
-function UnitSettingsModal({ value, onChange, onClose }) {
-  const set = (k, v) => onChange((c) => ({ ...c, [k]: v }));
-  const rows = [
-    { k: "tax", label: "Налог, %" },
-    { k: "acqWb", label: "Эквайринг ВБ, %" },
-    { k: "acqOz", label: "Эквайринг Озон, %" },
-    { k: "whCoeffWb", label: "КФ склада ВБ, %" },
-  ];
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="rounded-2xl w-full max-w-sm bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-900"><Settings2 size={18} /> Единые данные</h2>
-          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
-        </div>
-        <p className="mb-4 text-xs text-neutral-400">Применяются ко всем товарам в расчёте юнит-экономики.</p>
-        <div className="space-y-2.5">
-          {rows.map((r) => (
-            <label key={r.k} className="flex items-center justify-between gap-3">
-              <span className="text-sm text-neutral-700">{r.label}</span>
-              <input
-                value={value[r.k] ?? ""}
-                onChange={(e) => set(r.k, e.target.value)}
-                inputMode="decimal"
-                placeholder="0"
-                className="w-28 rounded-lg border border-neutral-200 px-3 py-1.5 text-right text-sm text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300"
-                style={{ fontVariantNumeric: "tabular-nums" }}
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, unitConst, setUnitConst, onClose }) {
   const [tab, setTab] = useState("statuses");
 
   // --- статусы ---
@@ -3735,6 +3731,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
           <TabBtn id="statuses">Статусы</TabBtn>
           <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
           <TabBtn id="labels">Метки</TabBtn>
+          <TabBtn id="unit">Единые данные</TabBtn>
         </div>
 
         <div className="flex-1 overflow-auto p-5">
@@ -3829,6 +3826,32 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                     <button key={c} onClick={() => setLColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: lColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />
                   ))}
                 </div>
+              </div>
+            </>
+          )}
+
+          {tab === "unit" && (
+            <>
+              <p className="mb-4 text-xs text-neutral-400">Применяются ко всем товарам в расчёте юнит-экономики.</p>
+              <div className="space-y-2.5">
+                {[
+                  { k: "tax", label: "Налог, %" },
+                  { k: "acqWb", label: "Эквайринг ВБ, %" },
+                  { k: "acqOz", label: "Эквайринг Озон, %" },
+                  { k: "whCoeffWb", label: "КФ склада ВБ, %" },
+                ].map((r) => (
+                  <label key={r.k} className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-neutral-700">{r.label}</span>
+                    <input
+                      value={(unitConst || {})[r.k] ?? ""}
+                      onChange={(e) => setUnitConst((c) => ({ ...c, [r.k]: e.target.value }))}
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="w-28 rounded-lg border border-neutral-200 px-3 py-1.5 text-right text-sm text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                      style={{ fontVariantNumeric: "tabular-nums" }}
+                    />
+                  </label>
+                ))}
               </div>
             </>
           )}
