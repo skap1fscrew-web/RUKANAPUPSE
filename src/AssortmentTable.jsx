@@ -3466,8 +3466,35 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
       <div className="flex-1 overflow-auto px-4 py-5 sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-col gap-5 lg:flex-row lg:items-start">
 
-          {/* Левая колонка — компактные задачи */}
-          <aside className="w-full lg:w-[27rem] lg:shrink-0">
+          {/* Левая колонка — готовность + компактные задачи */}
+          <aside className="w-full space-y-3 lg:w-[27rem] lg:shrink-0">
+            {/* Готовность карточки — компактно, над задачами */}
+            <section className="rounded-2xl border border-neutral-200 bg-white p-3">
+              <div className="flex items-center gap-3">
+                <svg width="52" height="52" viewBox="0 0 72 72" className="shrink-0">
+                  <circle cx="36" cy="36" r={R} fill="none" stroke="#f1f5f9" strokeWidth="9" />
+                  <circle cx="36" cy="36" r={R} fill="none" stroke={overallPct === 100 ? "#16a34a" : "#f97316"} strokeWidth="9" strokeLinecap="round" strokeDasharray={C2} strokeDashoffset={C2 * (1 - overallPct / 100)} transform="rotate(-90 36 36)" />
+                  <text x="36" y="42" textAnchor="middle" fontSize="19" fontWeight="700" fill="#0f172a">{overallPct}%</text>
+                </svg>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  {readiness.map((r) => {
+                    const rp = r.total ? Math.round(r.done / r.total * 100) : 0;
+                    return (
+                      <div key={r.id} className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} />
+                        <span className="w-24 shrink-0 truncate text-[11px] text-neutral-600">{r.name}</span>
+                        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-neutral-100">
+                          <div className="h-full rounded-full" style={{ width: rp + "%", background: r.color }} />
+                        </div>
+                        <span className="shrink-0 text-[11px] tabular-nums text-neutral-400">{r.done}/{r.total}</span>
+                      </div>
+                    );
+                  })}
+                  {readiness.length === 0 && <p className="text-[11px] text-neutral-400">Нет задач.</p>}
+                </div>
+              </div>
+            </section>
+
             {card(
               "Задачи",
               <>
@@ -3523,10 +3550,11 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               {/* превью — всегда видно */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {tileWrap("Цена", unitInput("price"))}
+                {tileWrap("СПП", unitInput("spp", "%"))}
                 {tileWrap("ДРР", unitInput("drr", "%"))}
                 {resultTile("Чистая прибыль", money(profit), isNaN(profit) ? undefined : profit)}
-                {resultTile("Маржа", pct(margin), isNaN(margin) ? undefined : margin)}
                 {resultTile("Рентабельность", pct(renta), isNaN(renta) ? undefined : renta)}
+                {resultTile("Маржа", pct(margin), isNaN(margin) ? undefined : margin)}
               </div>
 
               {/* расширенный редактор */}
@@ -3535,7 +3563,6 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Параметры товара</p>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {tileWrap("Себестоимость", unitInput("cost"))}
-                    {tileWrap("СПП", unitInput("spp", "%"))}
                     {tileWrap("Комиссия", unitInput("commission", "%"))}
                     {tileWrap("% выкупа", unitInput("buyback", "%"))}
                     {tileWrap("Базовая логистика", unitInput("logistics"))}
@@ -3550,64 +3577,6 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                 </div>
               )}
             </section>
-
-            {/* Структура цены */}
-            {card(
-              "Куда уходит цена",
-              hasEconomics ? (
-                <>
-                  <div className="flex h-3.5 w-full overflow-hidden rounded-full bg-neutral-100">
-                    {costSegments.filter((s) => s.val > 0).map((s) => (
-                      <div key={s.label} style={{ width: (s.val / segBase * 100) + "%", background: s.color }} title={`${s.label}: ${money(s.val)}`} />
-                    ))}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
-                    {costSegments.filter((s) => s.val > 0).map((s) => (
-                      <div key={s.label} className="flex items-center gap-1.5 text-xs">
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
-                        <span className="min-w-0 flex-1 truncate text-neutral-600">{s.label}</span>
-                        <span className="shrink-0 tabular-nums text-neutral-400">{Math.round(s.val / segBase * 100)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                  {!isNaN(profit) && profit < 0 && (
-                    <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600">Убыток: {money(profit)} — затраты превышают цену.</p>
-                  )}
-                </>
-              ) : (
-                <p className="text-xs text-neutral-400">Заполните себестоимость и цену во вкладке «Юнит», чтобы увидеть разбор.</p>
-              )
-            )}
-
-            {/* Готовность карточки */}
-            {card(
-              "Готовность карточки",
-              <div className="flex items-center gap-5">
-                <svg width="76" height="76" viewBox="0 0 72 72" className="shrink-0">
-                  <circle cx="36" cy="36" r={R} fill="none" stroke="#f1f5f9" strokeWidth="8" />
-                  <circle cx="36" cy="36" r={R} fill="none" stroke={overallPct === 100 ? "#16a34a" : "#f97316"} strokeWidth="8" strokeLinecap="round" strokeDasharray={C2} strokeDashoffset={C2 * (1 - overallPct / 100)} transform="rotate(-90 36 36)" />
-                  <text x="36" y="41" textAnchor="middle" fontSize="17" fontWeight="700" fill="#0f172a">{overallPct}%</text>
-                </svg>
-                <div className="min-w-0 flex-1 space-y-2">
-                  {readiness.map((r) => {
-                    const pct = r.total ? Math.round(r.done / r.total * 100) : 0;
-                    return (
-                      <div key={r.id}>
-                        <div className="mb-0.5 flex items-center gap-1.5 text-xs">
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} />
-                          <span className="min-w-0 flex-1 truncate text-neutral-600">{r.name}</span>
-                          <span className="shrink-0 tabular-nums text-neutral-400">{r.done}/{r.total}</span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
-                          <div className="h-full rounded-full" style={{ width: pct + "%", background: r.color }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {readiness.length === 0 && <p className="text-xs text-neutral-400">Нет задач.</p>}
-                </div>
-              </div>
-            )}
 
             {/* Конкуренты */}
             {card(
