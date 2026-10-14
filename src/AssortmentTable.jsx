@@ -2822,16 +2822,31 @@ function CellInput({ value, onChange, placeholder, mono }) {
 
 function LabelSelect({ labels, value, onChange, compact }) {
   const cur = (labels || []).find((l) => l.id === value);
+  // Компактный вид: только цветная точка (акцент на тексте задачи).
+  // Нативный список меток открывается прозрачным <select> поверх точки.
+  if (compact) {
+    return (
+      <div className="relative shrink-0" title={cur ? cur.name : "Без метки"}>
+        <span className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-neutral-100">
+          <span className="h-3 w-3 rounded-full" style={cur ? { background: cur.color } : { background: "#fff", boxShadow: "inset 0 0 0 1.5px #d4d4d4" }} />
+        </span>
+        <select value={value || ""} onChange={(e) => onChange(e.target.value || null)} className="absolute inset-0 cursor-pointer opacity-0">
+          <option value="">Без метки</option>
+          {(labels || []).map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
+        </select>
+      </div>
+    );
+  }
   return (
     <div className="flex shrink-0 items-center gap-1">
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: cur ? cur.color : "#e5e5e5" }} />
       <select
         value={value || ""}
         onChange={(e) => onChange(e.target.value || null)}
-        className={"rounded-md border border-neutral-200 bg-white py-1 text-xs text-neutral-600 focus:border-neutral-400 focus:outline-none " + (compact ? "max-w-[88px] px-1" : "px-1.5")}
+        className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-xs text-neutral-600 focus:border-neutral-400 focus:outline-none"
         title={cur ? cur.name : "Метка"}
       >
-        <option value="">{compact ? "—" : "Без метки"}</option>
+        <option value="">Без метки</option>
         {(labels || []).map((l) => (
           <option key={l.id} value={l.id}>{l.name}</option>
         ))}
@@ -3045,7 +3060,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
         <div className="mx-auto flex max-w-6xl flex-col gap-5 lg:flex-row lg:items-start">
 
           {/* Левая колонка — компактные задачи */}
-          <aside className="w-full lg:w-80 lg:shrink-0">
+          <aside className="w-full lg:w-[27rem] lg:shrink-0">
             {card(
               "Задачи",
               <>
@@ -3058,9 +3073,6 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                     <div className="h-full rounded-full bg-green-500" style={{ width: overallPct + "%" }} />
                   </div>
                 </div>
-                {usingDefaults && tasks.length > 0 && (
-                  <p className="mb-2 text-[11px] text-neutral-400">Задачи по умолчанию. Любое изменение сохранит их в этой карточке.</p>
-                )}
                 <div className="space-y-1">
                   {active.map((t) => renderRow(t))}
                   {tasks.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач пока нет.</div>}
