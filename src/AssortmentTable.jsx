@@ -25,19 +25,19 @@ function calcRecordCost(fields, e) {
 
 // Фиксированная (примороженная) левая часть таблицы.
 const FROZEN = [
-  { id: "actions", label: "", width: 44 },
-  { id: "image", label: "Фото", width: 64 },
-  { id: "code", label: "Код", width: 92 },
-  { id: "wb", label: "Артикул ВБ", width: 116 },
-  { id: "name", label: "Наименование", width: 220 },
-  { id: "status", label: "Статус", width: 156 },
+  { id: "actions", label: "", width: 32 },
+  { id: "image", label: "Фото", width: 48 },
+  { id: "code", label: "Код", width: 68 },
+  { id: "wb", label: "Артикул", width: 118 },
+  { id: "name", label: "Наименование", width: 180 },
+  { id: "status", label: "Статус", width: 120 },
 ];
 
 // Группы. tab — к какой вкладке относится группа. kind:
 //   "columns" — добавляет столбцы к каждой строке товара (как Юнит);
 //   "matrix"  — раскрывается под строкой товара (метрики × интеграции, как Внешка).
 const TABS = [
-  { id: "assortment", label: "Ассортимент" },
+  { id: "assortment", label: "Юнит" },
   { id: "promotion", label: "Продвижение" },
   { id: "calendar", label: "Календарь" },
   { id: "shipment", label: "План отгрузок ВБ" },
@@ -151,43 +151,46 @@ const GROUPS = [
     accent: "#171717",
     tab: "assortment",
     kind: "columns",
+    // Формулы юнит-экономики ВБ — как в таблице «Ассортимент»:
+    //   Цена после СПП = Цена * (1 − СПП)
+    //   Итоговая логистика = (Баз.лог * КФ склада)/%выкупа + (Баз.лог/%выкупа − Баз.лог)
+    //   Общие затраты = Себес + Цена*Комиссия + Цена*Эквайринг + Итог.лог + ЦенаПослеСПП*Налог + Цена*ДРР
+    //   ЧП = Цена − Общие затраты · Рента = ЧП/Себес · Маржа = ЧП/Цена
+    //   Стоимость выкупа = ЧП + Себес − ЦенаПослеСПП − Оплата сервиса
     columns: [
-      { id: "cost",       label: "Факт. себес",       field: "cost",       type: "input" },
+      { id: "service",    label: "Оплата сервиса",     field: "service",    type: "input" },
+      { id: "cost",       label: "Факт. себес",        field: "cost",       type: "input" },
       { id: "price",      label: "Наша цена",          field: "price",      type: "input" },
       { id: "spp",        label: "СПП, %",             field: "spp",        type: "input", suffix: "%" },
       { id: "priceAfterSpp", label: "Цена после СПП",  type: "calc",
-        fn: (p) => { const pr = toNum(p.price), sp = toNum(p.spp); return (!isNaN(pr) && !isNaN(sp)) ? pr * (1 - sp / 100) : NaN; } },
+        fn: (p) => { const pr = toNum(p.price), sp = toNum(p.spp); return (!isNaN(pr) && !isNaN(sp)) ? pr * (1 - sp / 100) : (isNaN(pr) ? NaN : pr); } },
       { id: "commission", label: "Комиссия, %",        field: "commission", type: "input", suffix: "%" },
       { id: "acquiring",  label: "Эквайринг, %",       field: "acquiring",  type: "input", suffix: "%" },
       { id: "buyback",    label: "% выкупа",            field: "buyback",    type: "input", suffix: "%" },
-      { id: "logistics",  label: "Баз. логистика ВБ",   field: "logistics",  type: "input" },
-      { id: "whCoeff",    label: "Ср. кф складов, %",   field: "whCoeff",    type: "input", suffix: "%" },
-      { id: "constrTariff", label: "Констр. тарифов, %", field: "constrTariff", type: "input", suffix: "%" },
-      { id: "irp",        label: "ИРП",                 field: "irp",        type: "input" },
-      { id: "ktr",        label: "КТР",                 field: "ktr",        type: "input" },
-      { id: "defect",     label: "Брак",                field: "defect",     type: "input" },
-      { id: "storage",    label: "Хранение",            field: "storage",    type: "input" },
-      { id: "logisticsFull", label: "Логист. с уч. % выкупа", type: "calc",
+      { id: "whCoeff",    label: "КФ склада",           field: "whCoeff",    type: "input" },
+      { id: "taxRate",    label: "Налог, %",            field: "taxRate",    type: "input", suffix: "%" },
+      { id: "drr",        label: "ДРР, %",              field: "drr",        type: "input", suffix: "%" },
+      { id: "logistics",  label: "Базовая логистика",   field: "logistics",  type: "input" },
+      { id: "logisticsFull", label: "Итоговая логистика", type: "calc",
         fn: (p) => {
           const base = toNum(p.logistics), coeff = toNum(p.whCoeff), bb = toNum(p.buyback);
           if (isNaN(base) || isNaN(bb) || bb <= 0) return NaN;
-          const cf = isNaN(coeff) ? 1 : coeff / 100;
-          return base / (bb / 100) * (cf + 1 - bb / 100);
+          const n = bb / 100, o = isNaN(coeff) ? 1 : coeff;
+          return (base * o) / n + (base / n - base);
         } },
-      { id: "taxRate",    label: "Налог. ставка, %",    field: "taxRate",    type: "input", suffix: "%" },
       { id: "totalCosts", label: "Общие затраты",       type: "calc",
         fn: (p, cols) => {
-          const cost = toNum(p.cost), price = toNum(p.price), spp = toNum(p.spp), comm = toNum(p.commission), acq = toNum(p.acquiring), tax = toNum(p.taxRate);
-          const irp = toNum(p.irp) || 0, ktr = toNum(p.ktr) || 0, defect = toNum(p.defect) || 0, stor = toNum(p.storage) || 0;
+          const cost = toNum(p.cost), price = toNum(p.price), spp = toNum(p.spp), comm = toNum(p.commission), acq = toNum(p.acquiring), tax = toNum(p.taxRate), drr = toNum(p.drr);
           if (isNaN(cost) || isNaN(price)) return NaN;
           const commRub = !isNaN(comm) ? price * comm / 100 : 0;
           const acqRub = !isNaN(acq) ? price * acq / 100 : 0;
           const priceAfterSpp = !isNaN(spp) ? price * (1 - spp / 100) : price;
           const taxRub = !isNaN(tax) ? priceAfterSpp * tax / 100 : 0;
+          const drrRub = !isNaN(drr) ? price * drr / 100 : 0;
           const logCol = cols.find((c) => c.id === "logisticsFull");
           const logVal = logCol ? logCol.fn(p) : 0;
           const log = isNaN(logVal) ? 0 : logVal;
-          return cost + commRub + acqRub + log + irp + ktr + defect + stor + taxRub;
+          return cost + commRub + acqRub + log + taxRub + drrRub;
         } },
       { id: "profit",     label: "ЧП",                  type: "calc",
         fn: (p, cols) => {
@@ -195,6 +198,14 @@ const GROUPS = [
           const tcCol = cols.find((c) => c.id === "totalCosts");
           const tc = tcCol ? tcCol.fn(p, cols) : NaN;
           return (!isNaN(price) && !isNaN(tc)) ? price - tc : NaN;
+        } },
+      { id: "buyoutCost", label: "Стоимость выкупа",    type: "calc",
+        fn: (p, cols) => {
+          const cost = toNum(p.cost), price = toNum(p.price), spp = toNum(p.spp), service = toNum(p.service) || 0;
+          const prCol = cols.find((c) => c.id === "profit");
+          const pr = prCol ? prCol.fn(p, cols) : NaN;
+          const paspp = !isNaN(spp) ? price * (1 - spp / 100) : price;
+          return (!isNaN(pr) && !isNaN(cost) && !isNaN(paspp)) ? pr + cost - paspp - service : NaN;
         } },
       { id: "renta",      label: "Рента",               type: "calc", suffix: "%",
         fn: (p, cols) => {
@@ -1053,7 +1064,7 @@ export default function AssortmentTable() {
         </div>
 
         {/* Группы столбцов текущей вкладки — компактный dropdown */}
-        {(toggleableGroups.length > 0 || activeTab === "promotion") && (
+        {activeTab !== "assortment" && (toggleableGroups.length > 0 || activeTab === "promotion") && (
           <div className="mb-3 relative inline-block">
             <button
               onClick={() => setColSettings((v) => !v)}
@@ -1106,7 +1117,7 @@ export default function AssortmentTable() {
                   <th
                     key={f.id}
                     rowSpan={2}
-                    className="bg-neutral-50 px-3 py-2 text-left align-bottom text-xs font-semibold uppercase tracking-wide text-neutral-500"
+                    className="bg-neutral-50 px-2 py-2 text-left align-bottom text-xs font-semibold uppercase tracking-wide text-neutral-500"
                     style={{ ...frozenCell(i), top: 0, zIndex: 40, borderBottom: "1px solid #e5e5e5" }}
                   >
                     {f.label}
@@ -1170,8 +1181,8 @@ export default function AssortmentTable() {
                         if (f.id === "image")
                           return (
                             <td key="img" style={base}>
-                              <button onClick={() => triggerUpload(p.id)} className="rounded-lg mx-auto flex h-11 w-11 items-center justify-center overflow-hidden border border-neutral-200 bg-neutral-50 text-neutral-400 hover:border-neutral-200 hover:text-neutral-600" title="Загрузить фото">
-                                {p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={16} />}
+                              <button onClick={() => triggerUpload(p.id)} className="rounded-lg mx-auto flex h-9 w-9 items-center justify-center overflow-hidden border border-neutral-200 bg-neutral-50 text-neutral-400 hover:border-neutral-200 hover:text-neutral-600" title="Загрузить фото">
+                                {p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={15} />}
                               </button>
                             </td>
                           );
@@ -3242,7 +3253,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const acqRub = !isNaN(price) ? price * (toNum(product.acquiring) || 0) / 100 : NaN;
   const logRub = cv("logisticsFull");
   const taxRub = !isNaN(afterSpp) ? afterSpp * (toNum(product.taxRate) || 0) / 100 : NaN;
-  const otherRub = (toNum(product.irp) || 0) + (toNum(product.ktr) || 0) + (toNum(product.defect) || 0) + (toNum(product.storage) || 0);
+  const drrRub = !isNaN(price) ? price * (toNum(product.drr) || 0) / 100 : NaN;
   const hasEconomics = !isNaN(price) && price > 0 && !isNaN(cost);
 
   const costSegments = [
@@ -3251,7 +3262,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
     { label: "Комиссия", val: isNaN(commRub) ? 0 : commRub, color: "#f59e0b" },
     { label: "Эквайринг", val: isNaN(acqRub) ? 0 : acqRub, color: "#a855f7" },
     { label: "Налог", val: isNaN(taxRub) ? 0 : taxRub, color: "#ef4444" },
-    { label: "Прочее", val: otherRub, color: "#94a3b8" },
+    { label: "ДРР", val: isNaN(drrRub) ? 0 : drrRub, color: "#94a3b8" },
   ];
   if (!isNaN(profit) && profit > 0) costSegments.push({ label: "Прибыль", val: profit, color: "#10b981" });
   const segBase = hasEconomics ? price : costSegments.reduce((s, x) => s + x.val, 0) || 1;
