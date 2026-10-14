@@ -147,23 +147,21 @@ const DEFAULT_WAREHOUSES = [
 const GROUPS = [
   {
     id: "unit",
-    label: "Юнит",
-    accent: "#171717",
+    label: "Юнит ВБ",
+    accent: "#7c3aed",
     tab: "assortment",
     kind: "columns",
     // Формулы юнит-экономики ВБ — как в таблице «Ассортимент»:
-    //   Цена после СПП = Цена * (1 − СПП)
-    //   Итоговая логистика = (Баз.лог * КФ склада)/%выкупа + (Баз.лог/%выкупа − Баз.лог)
-    //   Общие затраты = Себес + Цена*Комиссия + Цена*Эквайринг + Итог.лог + ЦенаПослеСПП*Налог + Цена*ДРР
+    //   Цена после СПП = Цена*(1−СПП)
+    //   Итоговая логистика = (Баз.лог*КФ склада)/%выкупа + (Баз.лог/%выкупа − Баз.лог)
+    //   Общие затраты = Себес + Цена*Эквайринг + Цена*Комиссия + Итог.лог + ЦенаПослеСПП*Налог + Цена*ДРР
     //   ЧП = Цена − Общие затраты · Рента = ЧП/Себес · Маржа = ЧП/Цена
-    //   Стоимость выкупа = ЧП + Себес − ЦенаПослеСПП − Оплата сервиса
     columns: [
-      { id: "service",    label: "Оплата сервиса",     field: "service",    type: "input" },
       { id: "cost",       label: "Факт. себес",        field: "cost",       type: "input" },
       { id: "price",      label: "Наша цена",          field: "price",      type: "input" },
-      { id: "spp",        label: "СПП, %",             field: "spp",        type: "input", suffix: "%" },
       { id: "priceAfterSpp", label: "Цена после СПП",  type: "calc",
-        fn: (p) => { const pr = toNum(p.price), sp = toNum(p.spp); return (!isNaN(pr) && !isNaN(sp)) ? pr * (1 - sp / 100) : (isNaN(pr) ? NaN : pr); } },
+        fn: (p) => { const pr = toNum(p.price), sp = toNum(p.spp); return isNaN(pr) ? NaN : (isNaN(sp) ? pr : pr * (1 - sp / 100)); } },
+      { id: "spp",        label: "СПП, %",             field: "spp",        type: "input", suffix: "%" },
       { id: "commission", label: "Комиссия, %",        field: "commission", type: "input", suffix: "%" },
       { id: "acquiring",  label: "Эквайринг, %",       field: "acquiring",  type: "input", suffix: "%" },
       { id: "buyback",    label: "% выкупа",            field: "buyback",    type: "input", suffix: "%" },
@@ -199,14 +197,6 @@ const GROUPS = [
           const tc = tcCol ? tcCol.fn(p, cols) : NaN;
           return (!isNaN(price) && !isNaN(tc)) ? price - tc : NaN;
         } },
-      { id: "buyoutCost", label: "Стоимость выкупа",    type: "calc",
-        fn: (p, cols) => {
-          const cost = toNum(p.cost), price = toNum(p.price), spp = toNum(p.spp), service = toNum(p.service) || 0;
-          const prCol = cols.find((c) => c.id === "profit");
-          const pr = prCol ? prCol.fn(p, cols) : NaN;
-          const paspp = !isNaN(spp) ? price * (1 - spp / 100) : price;
-          return (!isNaN(pr) && !isNaN(cost) && !isNaN(paspp)) ? pr + cost - paspp - service : NaN;
-        } },
       { id: "renta",      label: "Рента",               type: "calc", suffix: "%",
         fn: (p, cols) => {
           const cost = toNum(p.cost);
@@ -218,6 +208,70 @@ const GROUPS = [
         fn: (p, cols) => {
           const price = toNum(p.price);
           const prCol = cols.find((c) => c.id === "profit");
+          const pr = prCol ? prCol.fn(p, cols) : NaN;
+          return (!isNaN(pr) && !isNaN(price) && price > 0) ? (pr / price) * 100 : NaN;
+        } },
+    ],
+  },
+  {
+    id: "unitoz",
+    label: "Юнит Озон",
+    accent: "#2563eb",
+    tab: "assortment",
+    kind: "columns",
+    // Озон: себес — общий (p.cost). Итог.логистика без КФ склада.
+    //   Итог.лог = Баз.лог/%выкупа + (Баз.лог/%выкупа − Баз.лог)
+    //   Общие затраты = Себес + ЦенаПослеСПП*Эквайринг + Цена*Комиссия + Итог.лог + ЦенаПослеСПП*Налог + Цена*ДРР
+    columns: [
+      { id: "priceOz",    label: "Наша цена",          field: "priceOz",    type: "input" },
+      { id: "priceAfterSppOz", label: "Цена после СПП", type: "calc",
+        fn: (p) => { const pr = toNum(p.priceOz), sp = toNum(p.sppOz); return isNaN(pr) ? NaN : (isNaN(sp) ? pr : pr * (1 - sp / 100)); } },
+      { id: "sppOz",      label: "СПП, %",             field: "sppOz",      type: "input", suffix: "%" },
+      { id: "commissionOz", label: "Комиссия, %",      field: "commissionOz", type: "input", suffix: "%" },
+      { id: "acquiringOz", label: "Эквайринг, %",      field: "acquiringOz", type: "input", suffix: "%" },
+      { id: "buybackOz",  label: "% выкупа",            field: "buybackOz",  type: "input", suffix: "%" },
+      { id: "taxRateOz",  label: "Налог, %",            field: "taxRateOz",  type: "input", suffix: "%" },
+      { id: "drrOz",      label: "ДРР, %",              field: "drrOz",      type: "input", suffix: "%" },
+      { id: "logisticsOz", label: "Логистика",          field: "logisticsOz", type: "input" },
+      { id: "logisticsFullOz", label: "Итоговая логистика", type: "calc",
+        fn: (p) => {
+          const base = toNum(p.logisticsOz), bb = toNum(p.buybackOz);
+          if (isNaN(base) || isNaN(bb) || bb <= 0) return NaN;
+          const n = bb / 100;
+          return base / n + (base / n - base);
+        } },
+      { id: "totalCostsOz", label: "Общие затраты",     type: "calc",
+        fn: (p, cols) => {
+          const cost = toNum(p.cost), price = toNum(p.priceOz), spp = toNum(p.sppOz), comm = toNum(p.commissionOz), acq = toNum(p.acquiringOz), tax = toNum(p.taxRateOz), drr = toNum(p.drrOz);
+          if (isNaN(cost) || isNaN(price)) return NaN;
+          const priceAfterSpp = !isNaN(spp) ? price * (1 - spp / 100) : price;
+          const commRub = !isNaN(comm) ? price * comm / 100 : 0;
+          const acqRub = !isNaN(acq) ? priceAfterSpp * acq / 100 : 0;
+          const taxRub = !isNaN(tax) ? priceAfterSpp * tax / 100 : 0;
+          const drrRub = !isNaN(drr) ? price * drr / 100 : 0;
+          const logCol = cols.find((c) => c.id === "logisticsFullOz");
+          const logVal = logCol ? logCol.fn(p) : 0;
+          const log = isNaN(logVal) ? 0 : logVal;
+          return cost + acqRub + commRub + log + taxRub + drrRub;
+        } },
+      { id: "profitOz",   label: "ЧП",                  type: "calc",
+        fn: (p, cols) => {
+          const price = toNum(p.priceOz);
+          const tcCol = cols.find((c) => c.id === "totalCostsOz");
+          const tc = tcCol ? tcCol.fn(p, cols) : NaN;
+          return (!isNaN(price) && !isNaN(tc)) ? price - tc : NaN;
+        } },
+      { id: "rentaOz",    label: "Рента",               type: "calc", suffix: "%",
+        fn: (p, cols) => {
+          const cost = toNum(p.cost);
+          const prCol = cols.find((c) => c.id === "profitOz");
+          const pr = prCol ? prCol.fn(p, cols) : NaN;
+          return (!isNaN(pr) && !isNaN(cost) && cost > 0) ? (pr / cost) * 100 : NaN;
+        } },
+      { id: "marginOz",   label: "Маржа",               type: "calc", suffix: "%",
+        fn: (p, cols) => {
+          const price = toNum(p.priceOz);
+          const prCol = cols.find((c) => c.id === "profitOz");
           const pr = prCol ? prCol.fn(p, cols) : NaN;
           return (!isNaN(pr) && !isNaN(price) && price > 0) ? (pr / price) * 100 : NaN;
         } },
@@ -361,7 +415,7 @@ export default function AssortmentTable() {
   });
   const [rnpDays, setRnpDays] = useState(28);
   const [hiddenTasks, setHiddenTasks] = useState({});
-  const [enabled, setEnabled] = useState({ unit: true, external: true, razdachi: true, vykupy: true, shipment: true });
+  const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
   const [expanded, setExpanded] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -1127,7 +1181,7 @@ export default function AssortmentTable() {
                   <th
                     key={g.id}
                     colSpan={g.columns.length}
-                    className="px-3 py-2 text-center text-xs font-bold uppercase tracking-wide"
+                    className="px-2 py-1.5 text-center text-xs font-bold uppercase tracking-wide"
                     style={{ position: "sticky", top: 0, zIndex: 30, background: g.accent + "14", color: g.accent, borderBottom: "1px solid " + g.accent + "33", borderLeft: "1px solid " + g.accent + "22" }}
                   >
                     {g.label}
@@ -1139,8 +1193,8 @@ export default function AssortmentTable() {
                   g.columns.map((col, ci) => (
                     <th
                       key={g.id + col.id}
-                      className="whitespace-nowrap px-3 py-2 text-right text-xs font-medium text-neutral-500"
-                      style={{ position: "sticky", top: 33, zIndex: 30, background: "#fafafa", borderBottom: "1px solid #e5e5e5", borderLeft: ci === 0 ? "1px solid " + g.accent + "22" : "none" }}
+                      className="px-1 py-1.5 text-right text-[11px] font-medium leading-tight text-neutral-500 align-bottom"
+                      style={{ position: "sticky", top: 33, zIndex: 30, background: "#fafafa", borderBottom: "1px solid #e5e5e5", borderLeft: ci === 0 ? "1px solid " + g.accent + "33" : "none", width: 54, minWidth: 54, maxWidth: 54, whiteSpace: "normal" }}
                     >
                       {col.label}
                     </th>
@@ -1242,13 +1296,13 @@ export default function AssortmentTable() {
                           return (
                             <td
                               key={g.id + col.id}
-                              className="px-1 py-1 text-right"
-                              style={{ borderBottom: isOpen ? "none" : "1px solid #f5f5f5", borderLeft: ci === 0 ? "1px solid " + g.accent + "1a" : "none", background: isInput ? g.accent + "06" : "#fff" }}
+                              className="px-0.5 py-1 text-right"
+                              style={{ borderBottom: isOpen ? "none" : "1px solid #f5f5f5", borderLeft: ci === 0 ? "1px solid " + g.accent + "33" : "none", background: isInput ? g.accent + "06" : "#fff" }}
                             >
                               {isInput ? (
-                                <input value={val} onChange={(e) => updateProduct(p.id, col.field, e.target.value)} inputMode="decimal" placeholder="0" className="w-full bg-transparent px-1 py-0.5 text-right text-sm text-neutral-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400" style={{ fontVariantNumeric: "tabular-nums", minWidth: 54 }} />
+                                <input value={val} onChange={(e) => updateProduct(p.id, col.field, e.target.value)} inputMode="decimal" placeholder="0" className="w-full bg-transparent px-0.5 py-0.5 text-right text-xs text-neutral-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400" style={{ fontVariantNumeric: "tabular-nums", minWidth: 40 }} />
                               ) : (
-                                <span className="text-sm text-neutral-600" style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(val)}</span>
+                                <span className="text-xs text-neutral-600" style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(val)}</span>
                               )}
                             </td>
                           );
