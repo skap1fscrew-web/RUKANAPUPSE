@@ -1499,6 +1499,7 @@ export default function AssortmentTable() {
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
             onSetCompetitors={(c) => setProductCompetitors(cp.id, c)}
             onSetSeasonality={(s) => setProductSeasonality(cp.id, s)}
+            onSetField={(f, v) => updateProduct(cp.id, f, v)}
             onClose={() => setCardModal(null)}
           />
         );
@@ -3293,7 +3294,7 @@ function SeasonalityPanel({ data, onChange }) {
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onClose }) {
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onSetField, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -3302,6 +3303,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [newText, setNewText] = useState("");
   const [showDone, setShowDone] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
+  const [unitOpen, setUnitOpen] = useState(false);
   const done = tasks.filter((t) => t.done).length;
 
   // id задач по умолчанию — такие задачи нельзя удалять из карточки
@@ -3400,14 +3402,32 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const overallPct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
   const R = 30, C2 = 2 * Math.PI * R;
 
-  const tiles = [
-    { label: "Наша цена", value: money(price) },
-    { label: "Цена после СПП", value: money(afterSpp) },
-    { label: "Себестоимость", value: money(cost) },
-    { label: "Чистая прибыль", value: money(profit), tone: isNaN(profit) ? null : (profit >= 0 ? "pos" : "neg") },
-    { label: "Маржа", value: isNaN(margin) ? "—" : Math.round(margin) + "%", tone: isNaN(margin) ? null : (margin >= 0 ? "pos" : "neg") },
-    { label: "Рентабельность", value: isNaN(renta) ? "—" : Math.round(renta) + "%", tone: isNaN(renta) ? null : (renta >= 0 ? "pos" : "neg") },
-  ];
+  const totalCostsV = cv("totalCosts");
+  const toneColor = (v) => isNaN(v) ? "#0f172a" : (v >= 0 ? "#15803d" : "#dc2626");
+  const pct = (v) => isNaN(v) ? "—" : Math.round(v) + "%";
+
+  // поле-ввод внутри плитки (функция, не компонент — чтобы не терять фокус)
+  const unitInput = (field, suffix) => (
+    <div className="mt-0.5 flex items-baseline gap-1">
+      <input
+        value={product[field] ?? ""}
+        onChange={(e) => onSetField && onSetField(field, e.target.value)}
+        inputMode="decimal"
+        placeholder="0"
+        className="w-full min-w-0 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-lg font-bold tabular-nums text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+      />
+      {suffix && <span className="shrink-0 text-sm text-neutral-400">{suffix}</span>}
+    </div>
+  );
+  const tileWrap = (label, body) => (
+    <div className="rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">
+      <div className="text-[11px] uppercase tracking-wide text-neutral-400">{label}</div>
+      {body}
+    </div>
+  );
+  const resultTile = (label, text, colorNum) => tileWrap(label,
+    <div className="mt-0.5 text-lg font-bold tabular-nums" style={{ color: colorNum === undefined ? "#0f172a" : toneColor(colorNum) }}>{text}</div>
+  );
 
   const card = (title, children, extra) => (
     <section className="rounded-2xl border border-neutral-200 bg-white p-4">
@@ -3492,18 +3512,44 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
           {/* Правая часть — дашборды */}
           <div className="min-w-0 flex-1 space-y-5">
 
-            {/* KPI */}
-            {card(
-              "Юнит-экономика",
+            {/* Юнит-экономика — раскрывающийся редактируемый дашборд */}
+            <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+              <button onClick={() => setUnitOpen((v) => !v)} className="mb-3 flex w-full items-center gap-1.5 text-left">
+                {unitOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                <h3 className="text-sm font-semibold text-neutral-800">Юнит-экономика</h3>
+                <span className="ml-auto text-[11px] text-neutral-400">{unitOpen ? "свернуть" : "изменить данные"}</span>
+              </button>
+
+              {/* превью — всегда видно */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {tiles.map((t) => (
-                  <div key={t.label} className="rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">
-                    <div className="text-[11px] uppercase tracking-wide text-neutral-400">{t.label}</div>
-                    <div className="mt-0.5 text-lg font-bold tabular-nums" style={{ color: t.tone === "pos" ? "#15803d" : t.tone === "neg" ? "#dc2626" : "#0f172a" }}>{t.value}</div>
-                  </div>
-                ))}
+                {tileWrap("Цена", unitInput("price"))}
+                {tileWrap("ДРР", unitInput("drr", "%"))}
+                {resultTile("Чистая прибыль", money(profit), isNaN(profit) ? undefined : profit)}
+                {resultTile("Маржа", pct(margin), isNaN(margin) ? undefined : margin)}
+                {resultTile("Рентабельность", pct(renta), isNaN(renta) ? undefined : renta)}
               </div>
-            )}
+
+              {/* расширенный редактор */}
+              {unitOpen && (
+                <div className="mt-4 border-t border-neutral-100 pt-4">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Параметры товара</p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {tileWrap("Себестоимость", unitInput("cost"))}
+                    {tileWrap("СПП", unitInput("spp", "%"))}
+                    {tileWrap("Комиссия", unitInput("commission", "%"))}
+                    {tileWrap("% выкупа", unitInput("buyback", "%"))}
+                    {tileWrap("Базовая логистика", unitInput("logistics"))}
+                  </div>
+                  <p className="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-neutral-400">Результат</p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {resultTile("Цена после СПП", money(afterSpp))}
+                    {resultTile("Итоговая логистика", money(logRub))}
+                    {resultTile("Общие затраты", money(totalCostsV))}
+                  </div>
+                  <p className="mt-3 text-[11px] text-neutral-400">Налог, эквайринг и КФ склада — общие для всех товаров, меняются в «Единые данные».</p>
+                </div>
+              )}
+            </section>
 
             {/* Структура цены */}
             {card(
