@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
-  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink,
+  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -311,6 +311,7 @@ const normalizeProduct = (p) => {
     calendar: normalizeCalendar(p?.calendar),
     tasks: Array.isArray(p?.tasks) ? p.tasks : [],
     competitors: Array.isArray(p?.competitors) ? p.competitors : [],
+    seasonality: p?.seasonality || null,
   };
 };
 
@@ -554,6 +555,8 @@ export default function AssortmentTable() {
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, tasks } : x)));
   const setProductCompetitors = (id, competitors) =>
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, competitors } : x)));
+  const setProductSeasonality = (id, seasonality) =>
+    setProducts((p) => p.map((x) => (x.id === id ? { ...x, seasonality } : x)));
   const removeProduct = (id) => {
     if (!confirm("Вы точно хотите удалить товар?")) return;
     setProducts((p) => p.filter((x) => x.id !== id));
@@ -1370,6 +1373,7 @@ export default function AssortmentTable() {
             onSetName={(v) => updateProduct(cp.id, "name", v)}
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
             onSetCompetitors={(c) => setProductCompetitors(cp.id, c)}
+            onSetSeasonality={(s) => setProductSeasonality(cp.id, s)}
             onClose={() => setCardModal(null)}
           />
         );
@@ -2910,7 +2914,261 @@ function CompetitorThumb({ url, onRemove }) {
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onClose }) {
+/* ----------------------------------------------------------------------------
+   Сезонность: чтение xlsx прямо в браузере (без внешних зависимостей)
+---------------------------------------------------------------------------- */
+async function inflateRaw(bytes) {
+  const ds = new DecompressionStream("deflate-raw");
+  const ab = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+  return new Uint8Array(ab);
+}
+async function readZip(arrayBuffer) {
+  const u8 = new Uint8Array(arrayBuffer);
+  const dv = new DataView(arrayBuffer);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= 0; i--) { if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; } }
+  if (eocd < 0) throw new Error("Файл не распознан как xlsx.");
+  const cnt = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const entries = {};
+  for (let n = 0; n < cnt; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const compSize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nameLen));
+    entries[name] = { method, compSize, lho };
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  const read = async (name) => {
+    const e = entries[name]; if (!e) return null;
+    const lh = e.lho;
+    const nl = dv.getUint16(lh + 26, true);
+    const el = dv.getUint16(lh + 28, true);
+    const start = lh + 30 + nl + el;
+    const comp = u8.subarray(start, start + e.compSize);
+    const raw = e.method === 0 ? comp : await inflateRaw(comp);
+    return new TextDecoder().decode(raw);
+  };
+  return { entries, read };
+}
+const decodeXml = (s) => s
+  .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+const colIndex = (ref) => { const m = ref.match(/^[A-Z]+/); let n = 0; for (const ch of m[0]) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
+const serialToISO = (n) => new Date(Math.round((n - 25569) * 86400000)).toISOString().slice(0, 10);
+
+async function parseSeasonalityXlsx(arrayBuffer) {
+  const zip = await readZip(arrayBuffer);
+  // общие строки
+  const ssXml = await zip.read("xl/sharedStrings.xml");
+  const shared = [];
+  if (ssXml) {
+    const siRe = /<si>([\s\S]*?)<\/si>/g; let m;
+    while ((m = siRe.exec(ssXml))) {
+      const tRe = /<t[^>]*>([\s\S]*?)<\/t>/g; let tm, s = "";
+      while ((tm = tRe.exec(m[1]))) s += tm[1];
+      shared.push(decodeXml(s));
+    }
+  }
+  // первый лист книги
+  const wbXml = await zip.read("xl/workbook.xml");
+  const relsXml = await zip.read("xl/_rels/workbook.xml.rels");
+  let sheetPath = "xl/worksheets/sheet1.xml";
+  try {
+    const firstId = (wbXml.match(/<sheet[^>]*r:id="([^"]+)"/) || [])[1];
+    const rel = relsXml.match(new RegExp(`Id="${firstId}"[^>]*Target="([^"]+)"`)) || relsXml.match(new RegExp(`Target="([^"]+)"[^>]*Id="${firstId}"`));
+    if (rel) sheetPath = "xl/" + rel[1].replace(/^\//, "").replace(/^xl\//, "");
+  } catch {}
+  const sheetXml = await zip.read(sheetPath) || await zip.read("xl/worksheets/sheet1.xml");
+  if (!sheetXml) throw new Error("Не найден лист с данными.");
+
+  const cellVal = (attrs, body) => {
+    const t = (attrs.match(/t="([^"]+)"/) || [])[1];
+    const vm = body.match(/<v>([\s\S]*?)<\/v>/);
+    if (t === "s") return shared[parseInt((vm || [])[1], 10)] ?? "";
+    if (t === "inlineStr" || t === "str") { const im = body.match(/<t[^>]*>([\s\S]*?)<\/t>/); return im ? decodeXml(im[1]) : ((vm && vm[1]) || ""); }
+    return vm ? vm[1] : "";
+  };
+  const rows = [];
+  const rowRe = /<row[^>]*\sr="(\d+)"[^>]*>([\s\S]*?)<\/row>/g; let rm;
+  while ((rm = rowRe.exec(sheetXml))) {
+    const rnum = parseInt(rm[1], 10);
+    const cells = {};
+    const cRe = /<c\s+r="([A-Z]+\d+)"([^>]*)>([\s\S]*?)<\/c>/g; let cm;
+    while ((cm = cRe.exec(rm[2]))) cells[colIndex(cm[1])] = cellVal(cm[2], cm[3]);
+    rows.push({ rnum, cells });
+  }
+  if (!rows.length) throw new Error("Лист пуст.");
+
+  // шапка: ищем нужные столбцы по названию
+  const header = rows[0].cells;
+  const norm = (s) => String(s || "").toLowerCase().replace(/\s|\n/g, "");
+  let colDate = -1, colOrders = -1, colCheck = -1;
+  for (const [k, v] of Object.entries(header)) {
+    const h = norm(v);
+    if (colDate < 0 && h.includes("дата")) colDate = +k;
+    if (colOrders < 0 && h.includes("заказы") && (h.includes("₽") || h.includes("руб"))) colOrders = +k;
+    if (colCheck < 0 && h.includes("среднийчек")) colCheck = +k;
+  }
+  if (colDate < 0 || colOrders < 0 || colCheck < 0)
+    throw new Error("Нужные столбцы не найдены (Дата, «Заказы, ₽», «Средний чек, ₽»). Загрузите Лист 1 (mpstats).");
+
+  const raw = [];
+  for (let i = 1; i < rows.length; i++) {
+    const c = rows[i].cells;
+    const ds = c[colDate], o = parseFloat(c[colOrders]), ch = parseFloat(c[colCheck]);
+    if (ds == null || isNaN(o) || isNaN(ch)) continue;
+    const dnum = parseFloat(ds);
+    const d = !isNaN(dnum) && dnum > 20000 && dnum < 80000 ? serialToISO(dnum) : String(ds).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    raw.push({ d, o, ch });
+  }
+  if (!raw.length) throw new Error("Не удалось прочитать данные по дням.");
+
+  const meanO = raw.reduce((s, r) => s + r.o, 0) / raw.length;
+  const meanC = raw.reduce((s, r) => s + r.ch, 0) / raw.length;
+  const points = raw
+    .map((r) => ({ d: r.d, s: +((r.o / meanO) * (r.ch / meanC)).toFixed(4) }))
+    .sort((a, b) => (a.d < b.d ? -1 : 1));
+  return points;
+}
+
+const MON_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+
+function SeasonalityPanel({ data, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const fileRef = useRef(null);
+  const points = (data && Array.isArray(data.points)) ? data.points : [];
+  const entry = data?.entry || null;
+  const exit = data?.exit || null;
+
+  const onFile = async (file) => {
+    if (!file) return;
+    setBusy(true); setErr("");
+    try {
+      const buf = await file.arrayBuffer();
+      const pts = await parseSeasonalityXlsx(buf);
+      onChange({ points: pts, entry: null, exit: null });
+    } catch (e) {
+      setErr(e?.message || "Не удалось обработать файл.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  // геометрия графика
+  const VBW = 760, VBH = 210, padX = 6, padT = 12, padB = 20;
+  const n = points.length;
+  const maxS = points.reduce((m, p) => Math.max(m, p.s), 0.0001);
+  const xAt = (i) => padX + (n <= 1 ? 0 : (i / (n - 1)) * (VBW - 2 * padX));
+  const yAt = (s) => padT + (1 - s / maxS) * (VBH - padT - padB);
+  const idxOf = (d) => points.findIndex((p) => p.d === d);
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(p.s).toFixed(1)}`).join(" ");
+  const areaPath = n ? `${linePath} L${xAt(n - 1).toFixed(1)},${yAt(0).toFixed(1)} L${xAt(0).toFixed(1)},${yAt(0).toFixed(1)} Z` : "";
+
+  const monthTicks = [];
+  let lastM = -1;
+  points.forEach((p, i) => { const m = +p.d.slice(5, 7) - 1; if (m !== lastM) { monthTicks.push({ i, m }); lastM = m; } });
+
+  const onChartClick = (e) => {
+    if (!n) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    const i = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+    const d = points[i].d;
+    if (!entry || (entry && exit)) onChange({ ...data, points, entry: d, exit: null });
+    else onChange({ ...data, points, entry, exit: d });
+  };
+
+  const ei = entry ? idxOf(entry) : -1;
+  const xi = exit ? idxOf(exit) : -1;
+  const peak = n ? points.reduce((a, b) => (b.s > a.s ? b : a)) : null;
+  const low = n ? points.reduce((a, b) => (b.s < a.s ? b : a)) : null;
+  const fmtD = (d) => d ? `${d.slice(8, 10)} ${MON_SHORT[+d.slice(5, 7) - 1]}` : "—";
+  let windowAvg = null;
+  if (ei >= 0 && xi >= 0) {
+    const a = Math.min(ei, xi), b = Math.max(ei, xi);
+    const seg = points.slice(a, b + 1);
+    windowAvg = seg.reduce((s, p) => s + p.s, 0) / seg.length;
+  }
+
+  return (
+    <div>
+      <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+      {n === 0 ? (
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          className="flex w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-neutral-200 py-6 text-sm text-neutral-500 hover:border-sky-300 hover:bg-sky-50/40 disabled:opacity-50"
+        >
+          <Download size={18} className="rotate-180 text-neutral-400" />
+          {busy ? "Обработка…" : "Загрузить таблицу (Лист 1, mpstats) — .xlsx"}
+        </button>
+      ) : (
+        <>
+          <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-500">
+            <span>Дней: <b className="text-neutral-700">{n}</b></span>
+            {peak && <span>Пик: <b className="text-neutral-700">{fmtD(peak.d)}</b> ({peak.s.toFixed(2)})</span>}
+            {low && <span>Спад: <b className="text-neutral-700">{fmtD(low.d)}</b> ({low.s.toFixed(2)})</span>}
+            <button onClick={() => fileRef.current?.click()} className="ml-auto inline-flex items-center gap-1 text-sky-600 hover:underline">Загрузить заново</button>
+          </div>
+
+          <svg viewBox={`0 0 ${VBW} ${VBH}`} className="w-full cursor-crosshair select-none" style={{ height: 210 }} onClick={onChartClick}>
+            {/* окно вход→выход */}
+            {ei >= 0 && xi >= 0 && (
+              <rect x={Math.min(xAt(ei), xAt(xi))} y={padT} width={Math.abs(xAt(xi) - xAt(ei))} height={VBH - padT - padB} fill="#16a34a" opacity="0.07" />
+            )}
+            {/* базовая линия сезон = 1 */}
+            <line x1={padX} x2={VBW - padX} y1={yAt(1)} y2={yAt(1)} stroke="#cbd5e1" strokeWidth="1" strokeDasharray="4 3" />
+            <text x={padX + 2} y={yAt(1) - 3} fontSize="9" fill="#94a3b8">1,0 (среднее)</text>
+            {/* область и линия сезонности */}
+            <path d={areaPath} fill="#0ea5e9" opacity="0.08" />
+            <path d={linePath} fill="none" stroke="#0284c7" strokeWidth="1.5" />
+            {/* метки месяцев */}
+            {monthTicks.map((t) => (
+              <g key={t.i}>
+                <line x1={xAt(t.i)} x2={xAt(t.i)} y1={VBH - padB} y2={VBH - padB + 3} stroke="#cbd5e1" strokeWidth="1" />
+                <text x={xAt(t.i)} y={VBH - padB + 13} fontSize="9" fill="#94a3b8" textAnchor="middle">{MON_SHORT[t.m]}</text>
+              </g>
+            ))}
+            {/* точка входа */}
+            {ei >= 0 && (
+              <g>
+                <line x1={xAt(ei)} x2={xAt(ei)} y1={padT} y2={VBH - padB} stroke="#16a34a" strokeWidth="1.5" />
+                <circle cx={xAt(ei)} cy={yAt(points[ei].s)} r="3.5" fill="#16a34a" />
+              </g>
+            )}
+            {/* точка выхода */}
+            {xi >= 0 && (
+              <g>
+                <line x1={xAt(xi)} x2={xAt(xi)} y1={padT} y2={VBH - padB} stroke="#dc2626" strokeWidth="1.5" />
+                <circle cx={xAt(xi)} cy={yAt(points[xi].s)} r="3.5" fill="#dc2626" />
+              </g>
+            )}
+          </svg>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-green-600" /> Вход: <b className="text-neutral-700">{fmtD(entry)}</b></span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-600" /> Выход: <b className="text-neutral-700">{fmtD(exit)}</b></span>
+            {windowAvg != null && <span className="text-neutral-500">Ср. сезон в окне: <b className="text-neutral-700">{windowAvg.toFixed(2)}</b></span>}
+            {(entry || exit) && <button onClick={() => onChange({ ...data, points, entry: null, exit: null })} className="ml-auto text-neutral-400 hover:text-red-500">Сбросить точки</button>}
+          </div>
+          <p className="mt-1 text-[11px] text-neutral-400">Кликните по графику, чтобы отметить точку входа, затем ещё раз — точку выхода.</p>
+        </>
+      )}
+      {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
+
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -2918,6 +3176,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const tasks = usingDefaults ? (defaultTasks || []).map((t) => ({ id: t.id, text: t.text, done: false, labelId: t.labelId || null })) : own;
   const [newText, setNewText] = useState("");
   const [showDone, setShowDone] = useState(false);
+  const [seasonOpen, setSeasonOpen] = useState(false);
   const done = tasks.filter((t) => t.done).length;
 
   // id задач по умолчанию — такие задачи нельзя удалять из карточки
@@ -2943,6 +3202,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const renderRow = (t) => (
     <div key={t.id} className="group flex items-center gap-1.5 rounded-lg border border-neutral-100 px-1.5 py-1.5 hover:border-neutral-200">
       <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} className="h-4 w-4 shrink-0 accent-green-600" />
+      {defaultIds.has(t.id) && <Paperclip size={13} className="shrink-0 text-neutral-400" title="Задача по умолчанию" />}
       <input
         value={t.text}
         onChange={(e) => setText(t.id, e.target.value)}
@@ -3202,6 +3462,24 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               </>,
               competitors.length > 0 ? <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span> : null
             )}
+
+            {/* Сезонность — раскрывающийся дашборд */}
+            <section className="rounded-2xl border border-neutral-200 bg-white">
+              <button onClick={() => setSeasonOpen((v) => !v)} className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left">
+                <span className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-800">
+                  {seasonOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  Сезонность
+                </span>
+                {product.seasonality?.points?.length > 0 && (
+                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>
+                )}
+              </button>
+              {seasonOpen && (
+                <div className="border-t border-neutral-100 px-4 py-4">
+                  <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} />
+                </div>
+              )}
+            </section>
           </div>
         </div>
       </div>
