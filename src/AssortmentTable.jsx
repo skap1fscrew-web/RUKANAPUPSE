@@ -1777,6 +1777,7 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStart, onSe
   const todayStr = iso(today);
 
   const [editOpen, setEditOpen] = useState(false); // окно настроек процесса
+  const [copyOpen, setCopyOpen] = useState(false); // меню «скопировать из…»
   const [drag, setDrag] = useState(null); // { mode:"move"|"resize", compIdx, startClientX, origStart, origDays, previewStart, previewDays }
 
   const LBL_W = 230, DAY_W = 30;
@@ -1856,7 +1857,6 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStart, onSe
     <div>
       {/* Шапка */}
       <div className="mb-2 flex flex-wrap items-center gap-3 px-1">
-        <div className="text-sm font-semibold text-neutral-900">Календарь производства</div>
         <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-600">
           <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #dc2626" }} /> Точка входа (старт продаж)</span>
           <input type="date" value={entry} onChange={(e) => onSetEntry(e.target.value)} className={dateInput} />
@@ -1865,17 +1865,35 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStart, onSe
           Старт логистики
           <input type="date" value={start} onChange={(e) => onSetStart(e.target.value)} className={dateInput} />
         </label>
-        <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-600">
-          <Copy size={13} className="text-sky-600" />
-          <select value="" onChange={(e) => { const id = e.target.value; e.target.value = ""; if (id) onCopyFrom(id); }} className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-200">
-            <option value="">Скопировать из…</option>
-            {productList.filter((x) => x.id !== product.id).map((x) => (<option key={x.id} value={x.id}>{(x.code || x.wb || "—") + (x.name ? " — " + x.name : "")}</option>))}
-          </select>
-        </label>
-        <span className="ml-auto flex items-center gap-3 text-xs text-neutral-400">
-          <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#ea580c" }} /> сегодня</span>
-          <span className="inline-flex items-center gap-1"><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #dc2626" }} /> дедлайн</span>
-        </span>
+        <div className="relative">
+          <button
+            onClick={() => setCopyOpen((v) => !v)}
+            title="Скопировать этапы из другого товара"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-600 hover:bg-sky-100"
+          >
+            <Copy size={14} />
+          </button>
+          {copyOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setCopyOpen(false)} />
+              <div className="absolute left-0 top-8 z-20 max-h-64 w-64 overflow-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+                <div className="px-3 py-1 text-xs font-medium text-neutral-400">Скопировать этапы из…</div>
+                {productList.filter((x) => x.id !== product.id).map((x) => (
+                  <button
+                    key={x.id}
+                    onClick={() => { onCopyFrom(x.id); setCopyOpen(false); }}
+                    className="block w-full truncate px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-50"
+                  >
+                    {(x.code || x.wb || "—") + (x.name ? " — " + x.name : "")}
+                  </button>
+                ))}
+                {productList.filter((x) => x.id !== product.id).length === 0 && (
+                  <div className="px-3 py-1.5 text-xs text-neutral-400">Нет других товаров</div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div style={{ overflowX: "auto", paddingBottom: 12 }}>
@@ -1897,9 +1915,8 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStart, onSe
             <tr>
               <th style={{ ...sticky(0, LBL_W, "#fff"), borderTop: "1px solid #f5f5f5", borderRight: "1px solid #e5e5e5", boxShadow: "6px 0 10px -8px rgba(15,23,42,.25)", textAlign: "left", padding: "3px 6px 3px 10px" }}>
                 <div className="flex w-full items-center gap-1.5">
-                  <span className="min-w-0 truncate text-xs font-semibold text-neutral-800">{procName}</span>
-                  <span className="shrink-0 text-xs text-neutral-400">· {barTotal} дн</span>
-                  <button onClick={() => setEditOpen(true)} className="rounded-md ml-auto flex h-6 w-6 shrink-0 items-center justify-center border text-neutral-500 hover:bg-neutral-50" style={editOpen ? { borderColor: "#0ea5e9", color: "#0284c7", background: "#f0f9ff" } : { borderColor: "#e5e5e5" }} title="Настройки логистики (старт, компоненты)"><Settings2 size={13} /></button>
+                  <span className="min-w-0 truncate text-xs font-semibold text-neutral-800">Этапы</span>
+                  <button onClick={() => setEditOpen(true)} className="rounded-md ml-auto flex h-6 w-6 shrink-0 items-center justify-center border text-neutral-500 hover:bg-neutral-50" style={editOpen ? { borderColor: "#0ea5e9", color: "#0284c7", background: "#f0f9ff" } : { borderColor: "#e5e5e5" }} title="Настройки этапов (старт, компоненты)"><Settings2 size={13} /></button>
                 </div>
               </th>
               {dayList.map((d, di) => (
@@ -2873,6 +2890,10 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
 
   // id задач по умолчанию — такие задачи нельзя удалять из карточки
   const defaultIds = new Set((defaultTasks || []).map((t) => t.id));
+  // метка задачи по умолчанию (чтобы подтягивать её в карточку, даже если
+  // задача уже «материализована» без метки — например, была добавлена до меток)
+  const defaultLabelMap = new Map((defaultTasks || []).map((t) => [t.id, t.labelId || null]));
+  const effLabel = (t) => (t.labelId != null ? t.labelId : (defaultIds.has(t.id) ? (defaultLabelMap.get(t.id) || null) : null));
   const active = tasks.filter((t) => !t.done);
   const completed = tasks.filter((t) => t.done);
 
@@ -2896,7 +2917,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
         className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
         style={t.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }}
       />
-      <LabelSelect labels={taskLabels} value={t.labelId} onChange={(v) => setLabel(t.id, v)} />
+      <LabelSelect labels={taskLabels} value={effLabel(t)} onChange={(v) => setLabel(t.id, v)} />
       {defaultIds.has(t.id) ? (
         <span className="h-5 w-5 shrink-0" title="Задача по умолчанию — её нельзя удалить" />
       ) : (
