@@ -158,22 +158,18 @@ const GROUPS = [
     //   ЧП = Цена − Общие затраты · Рента = ЧП/Себес · Маржа = ЧП/Цена
     columns: [
       { id: "cost",       label: "Факт. себес",        field: "cost",       type: "input" },
-      { id: "price",      label: "Наша цена",          field: "price",      type: "input" },
-      { id: "priceAfterSpp", label: "Цена после СПП",  type: "calc",
-        fn: (p) => { const pr = toNum(p.price), sp = toNum(p.spp); return isNaN(pr) ? NaN : (isNaN(sp) ? pr : pr * (1 - sp / 100)); } },
+      { id: "price",      label: "Цена",               field: "price",      type: "priceStack", w: 72,
+        sub: (p) => { const pr = toNum(p.price), sp = toNum(p.spp); return isNaN(pr) ? NaN : (isNaN(sp) ? pr : pr * (1 - sp / 100)); } },
       { id: "spp",        label: "СПП, %",             field: "spp",        type: "input", suffix: "%" },
       { id: "commission", label: "Комиссия, %",        field: "commission", type: "input", suffix: "%" },
-      { id: "acquiring",  label: "Эквайринг, %",       field: "acquiring",  type: "input", suffix: "%" },
       { id: "buyback",    label: "% выкупа",            field: "buyback",    type: "input", suffix: "%" },
-      { id: "whCoeff",    label: "КФ склада",           field: "whCoeff",    type: "input" },
-      { id: "taxRate",    label: "Налог, %",            field: "taxRate",    type: "input", suffix: "%" },
       { id: "drr",        label: "ДРР, %",              field: "drr",        type: "input", suffix: "%" },
       { id: "logistics",  label: "Базовая логистика",   field: "logistics",  type: "input" },
       { id: "logisticsFull", label: "Итоговая логистика", type: "calc",
         fn: (p) => {
           const base = toNum(p.logistics), coeff = toNum(p.whCoeff), bb = toNum(p.buyback);
           if (isNaN(base) || isNaN(bb) || bb <= 0) return NaN;
-          const n = bb / 100, o = isNaN(coeff) ? 1 : coeff;
+          const n = bb / 100, o = isNaN(coeff) ? 1 : coeff / 100; // КФ склада — проценты (170% = 1.7)
           return (base * o) / n + (base / n - base);
         } },
       { id: "totalCosts", label: "Общие затраты",       type: "calc",
@@ -223,14 +219,11 @@ const GROUPS = [
     //   Итог.лог = Баз.лог/%выкупа + (Баз.лог/%выкупа − Баз.лог)
     //   Общие затраты = Себес + ЦенаПослеСПП*Эквайринг + Цена*Комиссия + Итог.лог + ЦенаПослеСПП*Налог + Цена*ДРР
     columns: [
-      { id: "priceOz",    label: "Наша цена",          field: "priceOz",    type: "input" },
-      { id: "priceAfterSppOz", label: "Цена после СПП", type: "calc",
-        fn: (p) => { const pr = toNum(p.priceOz), sp = toNum(p.sppOz); return isNaN(pr) ? NaN : (isNaN(sp) ? pr : pr * (1 - sp / 100)); } },
+      { id: "priceOz",    label: "Цена",               field: "priceOz",    type: "priceStack", w: 72,
+        sub: (p) => { const pr = toNum(p.priceOz), sp = toNum(p.sppOz); return isNaN(pr) ? NaN : (isNaN(sp) ? pr : pr * (1 - sp / 100)); } },
       { id: "sppOz",      label: "СПП, %",             field: "sppOz",      type: "input", suffix: "%" },
       { id: "commissionOz", label: "Комиссия, %",      field: "commissionOz", type: "input", suffix: "%" },
-      { id: "acquiringOz", label: "Эквайринг, %",      field: "acquiringOz", type: "input", suffix: "%" },
       { id: "buybackOz",  label: "% выкупа",            field: "buybackOz",  type: "input", suffix: "%" },
-      { id: "taxRateOz",  label: "Налог, %",            field: "taxRateOz",  type: "input", suffix: "%" },
       { id: "drrOz",      label: "ДРР, %",              field: "drrOz",      type: "input", suffix: "%" },
       { id: "logisticsOz", label: "Логистика",          field: "logisticsOz", type: "input" },
       { id: "logisticsFullOz", label: "Итоговая логистика", type: "calc",
@@ -415,6 +408,10 @@ export default function AssortmentTable() {
   });
   const [rnpDays, setRnpDays] = useState(28);
   const [hiddenTasks, setHiddenTasks] = useState({});
+  const [hiddenCols, setHiddenCols] = useState({}); // скрытые столбцы юнита: { "unit:spp": true }
+  const [colFilterOpen, setColFilterOpen] = useState(false);
+  const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170" }); // единые для всех товаров
+  const [unitSettingsOpen, setUnitSettingsOpen] = useState(false);
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
   const [expanded, setExpanded] = useState({});
@@ -453,12 +450,12 @@ export default function AssortmentTable() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("rnp-ui");
-      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); }
+      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); }
     } catch {}
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks })); } catch {}
-  }, [enabled, activeTab, hiddenTasks]);
+    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks, hiddenCols })); } catch {}
+  }, [enabled, activeTab, hiddenTasks, hiddenCols]);
 
   // загрузка из Supabase
   useEffect(() => {
@@ -475,6 +472,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = JSON.stringify(settings.razdachDB); }
         if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
         if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = JSON.stringify(settings.taskLabels); }
+        if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
           if (settings.rnp.days) setRnpDays(settings.rnp.days);
@@ -517,7 +515,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, taskLabels, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, taskLabels, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -556,7 +554,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, taskLabels, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, taskLabels, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -588,6 +586,7 @@ export default function AssortmentTable() {
         else if (key === "razdachDB") setRazdachDB(value);
         else if (key === "defaultTasks") setDefaultTasks(value || []);
         else if (key === "taskLabels") setTaskLabels(value || []);
+        else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
         else if (key === "wbOrdersMeta") setWbOrdersMeta(value || {});
@@ -889,6 +888,12 @@ export default function AssortmentTable() {
   const tabGroups = GROUPS.filter((g) => g.tab === activeTab);
   const visibleGroups = tabGroups.filter((g) => g.kind === "gantt" || g.kind === "calendar" || enabled[g.id]);
   const columnGroups = visibleGroups.filter((g) => g.kind === "columns");
+  // единые константы (из шестерёнки) подставляются в каждый товар перед расчётом
+  const withConst = (p) => ({ ...p, acquiring: unitConst.acqWb, acquiringOz: unitConst.acqOz, whCoeff: unitConst.whCoeffWb, taxRate: unitConst.tax, taxRateOz: unitConst.tax });
+  // с учётом скрытых столбцов (фильтр столбцов)
+  const columnGroupsView = columnGroups
+    .map((g) => ({ ...g, allCols: g.columns, columns: g.columns.filter((c) => !hiddenCols[g.id + ":" + c.id]) }))
+    .filter((g) => g.columns.length > 0);
   const matrixGroups = visibleGroups.filter((g) => g.kind === "matrix");
   const planGroup = visibleGroups.find((g) => g.kind === "plan");
   const ganttGroup = visibleGroups.find((g) => g.kind === "gantt");
@@ -921,7 +926,7 @@ export default function AssortmentTable() {
   }
   const lastFrozen = frozenCols.length - 1;
   const totalCols =
-    frozenCols.length + columnGroups.reduce((a, g) => a + g.columns.length, 0);
+    frozenCols.length + columnGroupsView.reduce((a, g) => a + g.columns.length, 0);
 
   const frozenCell = (i) => ({
     position: "sticky",
@@ -990,10 +995,11 @@ export default function AssortmentTable() {
         ...columnGroups.flatMap((g) => g.columns.map((c) => `${g.label}: ${c.label}`)),
       ];
       rows = products.map((p) => {
+        const pe = withConst(p);
         const right = columnGroups.flatMap((g) =>
           g.columns.map((col) => {
-            if (col.type === "input") return p[col.field] ?? "";
-            const v = col.fn(p, g.columns);
+            if (col.type === "input" || col.type === "priceStack") return p[col.field] ?? "";
+            const v = col.fn(pe, g.columns);
             return isNaN(v) ? "" : Math.round(v * 100) / 100;
           })
         );
@@ -1161,6 +1167,49 @@ export default function AssortmentTable() {
           </div>
         )}
 
+        {/* Юнит: фильтр столбцов + шестерёнка единых настроек */}
+        {activeTab === "assortment" && (
+          <div className="mb-3 flex items-center gap-2">
+            <div className="relative inline-block">
+              <button
+                onClick={() => setColFilterOpen((v) => !v)}
+                className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                <Settings2 size={14} /> Столбцы
+                <ChevronDown size={14} className="text-neutral-400" />
+              </button>
+              {colFilterOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setColFilterOpen(false)} />
+                  <div className="absolute left-0 top-full z-50 mt-1 max-h-80 w-64 overflow-auto rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+                    {columnGroups.map((g) => (
+                      <div key={g.id}>
+                        <div className="px-3 pb-0.5 pt-2 text-xs font-bold uppercase tracking-wide" style={{ color: g.accent }}>{g.label}</div>
+                        {g.columns.map((col) => {
+                          const on = !hiddenCols[g.id + ":" + col.id];
+                          return (
+                            <label key={col.id} className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-neutral-50">
+                              <input type="checkbox" checked={on} onChange={() => setHiddenCols((h) => { const k = g.id + ":" + col.id; const n = { ...h }; if (on) n[k] = true; else delete n[k]; return n; })} className="h-3.5 w-3.5 accent-orange-600" />
+                              <span className={on ? "text-neutral-700" : "text-neutral-400"}>{col.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            <button
+              onClick={() => setUnitSettingsOpen(true)}
+              title="Единые настройки юнит-экономики"
+              className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              <Settings2 size={14} /> Единые данные
+            </button>
+          </div>
+        )}
+
         {/* Таблица товаров (Ассортимент / Продвижение / План отгрузок) */}
         {activeTab !== "purchases" && (
         <div ref={scrollRef} className="rounded-xl overflow-auto border border-neutral-200 bg-white shadow-sm">
@@ -1177,7 +1226,7 @@ export default function AssortmentTable() {
                     {f.label}
                   </th>
                 ))}
-                {columnGroups.map((g) => (
+                {columnGroupsView.map((g) => (
                   <th
                     key={g.id}
                     colSpan={g.columns.length}
@@ -1189,12 +1238,12 @@ export default function AssortmentTable() {
                 ))}
               </tr>
               <tr>
-                {columnGroups.map((g) =>
+                {columnGroupsView.map((g) =>
                   g.columns.map((col, ci) => (
                     <th
                       key={g.id + col.id}
                       className="px-1 py-1.5 text-right text-[11px] font-medium leading-tight text-neutral-500 align-bottom"
-                      style={{ position: "sticky", top: 33, zIndex: 30, background: "#fafafa", borderBottom: "1px solid #e5e5e5", borderLeft: ci === 0 ? "1px solid " + g.accent + "33" : "none", width: 54, minWidth: 54, maxWidth: 54, whiteSpace: "normal" }}
+                      style={{ position: "sticky", top: 33, zIndex: 30, background: "#fafafa", borderBottom: "1px solid #e5e5e5", borderLeft: ci === 0 ? "1px solid " + g.accent + "33" : "none", width: col.w || 54, minWidth: col.w || 54, maxWidth: col.w || 54, whiteSpace: "normal" }}
                     >
                       {col.label}
                     </th>
@@ -1288,18 +1337,25 @@ export default function AssortmentTable() {
                         return null;
                       })}
 
-                      {columnGroups.map((g) =>
+                      {columnGroupsView.map((g) =>
                         g.columns.map((col, ci) => {
                           const isInput = col.type === "input";
-                          const val = isInput ? (p[col.field] ?? "") : col.fn(p, g.columns);
+                          const isStack = col.type === "priceStack";
+                          const pe = withConst(p);
+                          const val = isInput || isStack ? (p[col.field] ?? "") : col.fn(pe, g.allCols);
                           const fmt = (n) => isNaN(n) ? "—" : (col.suffix === "%" ? n.toFixed(2).replace(/\.?0+$/, "") + "%" : money(n));
                           return (
                             <td
                               key={g.id + col.id}
                               className="px-0.5 py-1 text-right"
-                              style={{ borderBottom: isOpen ? "none" : "1px solid #f5f5f5", borderLeft: ci === 0 ? "1px solid " + g.accent + "33" : "none", background: isInput ? g.accent + "06" : "#fff" }}
+                              style={{ borderBottom: isOpen ? "none" : "1px solid #f5f5f5", borderLeft: ci === 0 ? "1px solid " + g.accent + "33" : "none", background: (isInput || isStack) ? g.accent + "06" : "#fff" }}
                             >
-                              {isInput ? (
+                              {isStack ? (
+                                <div className="flex flex-col items-end leading-tight">
+                                  <input value={val} onChange={(e) => updateProduct(p.id, col.field, e.target.value)} inputMode="decimal" placeholder="0" className="w-full bg-transparent px-0.5 py-0 text-right text-sm font-medium text-neutral-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400" style={{ fontVariantNumeric: "tabular-nums", minWidth: 40 }} />
+                                  <span className="px-0.5 text-[11px] text-neutral-400" style={{ fontVariantNumeric: "tabular-nums" }}>{(() => { const n = col.sub(p); return isNaN(n) ? "—" : money(n); })()}</span>
+                                </div>
+                              ) : isInput ? (
                                 <input value={val} onChange={(e) => updateProduct(p.id, col.field, e.target.value)} inputMode="decimal" placeholder="0" className="w-full bg-transparent px-0.5 py-0.5 text-right text-xs text-neutral-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400" style={{ fontVariantNumeric: "tabular-nums", minWidth: 40 }} />
                               ) : (
                                 <span className="text-xs text-neutral-600" style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(val)}</span>
@@ -1427,12 +1483,16 @@ export default function AssortmentTable() {
         />
       )}
 
+      {unitSettingsOpen && (
+        <UnitSettingsModal value={unitConst} onChange={setUnitConst} onClose={() => setUnitSettingsOpen(false)} />
+      )}
+
       {cardModal && (() => {
         const cp = products.find((x) => x.id === cardModal);
         if (!cp) return null;
         return (
           <CardTasksModal
-            product={cp}
+            product={withConst(cp)}
             defaultTasks={defaultTasks}
             taskLabels={taskLabels}
             onSetName={(v) => updateProduct(cp.id, "name", v)}
@@ -3301,7 +3361,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
     if (!c) return NaN;
     try { return c.type === "calc" ? c.fn(product, unitCols) : toNum(product[c.field]); } catch { return NaN; }
   };
-  const price = cv("price"), cost = cv("cost"), afterSpp = cv("priceAfterSpp");
+  const price = cv("price"), cost = cv("cost");
+  const sppVal = toNum(product.spp);
+  const afterSpp = isNaN(price) ? NaN : (isNaN(sppVal) ? price : price * (1 - sppVal / 100));
   const profit = cv("profit"), margin = cv("margin"), renta = cv("renta");
   const commRub = !isNaN(price) ? price * (toNum(product.commission) || 0) / 100 : NaN;
   const acqRub = !isNaN(price) ? price * (toNum(product.acquiring) || 0) / 100 : NaN;
@@ -3555,6 +3617,42 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
 /* ----------------------------------------------------------------------------
    Настройки: статусы + задачи по умолчанию
 ---------------------------------------------------------------------------- */
+
+function UnitSettingsModal({ value, onChange, onClose }) {
+  const set = (k, v) => onChange((c) => ({ ...c, [k]: v }));
+  const rows = [
+    { k: "tax", label: "Налог, %" },
+    { k: "acqWb", label: "Эквайринг ВБ, %" },
+    { k: "acqOz", label: "Эквайринг Озон, %" },
+    { k: "whCoeffWb", label: "КФ склада ВБ, %" },
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
+      <div className="rounded-2xl w-full max-w-sm bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-900"><Settings2 size={18} /> Единые данные</h2>
+          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+        </div>
+        <p className="mb-4 text-xs text-neutral-400">Применяются ко всем товарам в расчёте юнит-экономики.</p>
+        <div className="space-y-2.5">
+          {rows.map((r) => (
+            <label key={r.k} className="flex items-center justify-between gap-3">
+              <span className="text-sm text-neutral-700">{r.label}</span>
+              <input
+                value={value[r.k] ?? ""}
+                onChange={(e) => set(r.k, e.target.value)}
+                inputMode="decimal"
+                placeholder="0"
+                className="w-28 rounded-lg border border-neutral-200 px-3 py-1.5 text-right text-sm text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                style={{ fontVariantNumeric: "tabular-nums" }}
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, onClose }) {
   const [tab, setTab] = useState("statuses");
