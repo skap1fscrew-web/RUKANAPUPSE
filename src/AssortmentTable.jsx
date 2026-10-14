@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
-  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy,
+  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -1175,7 +1175,24 @@ export default function AssortmentTable() {
                         if (f.id === "code")
                           return <td key="code" style={base}><CellInput value={p.code} onChange={(v) => updateProduct(p.id, "code", v)} placeholder="—" /></td>;
                         if (f.id === "wb")
-                          return <td key="wb" style={base}><CellInput value={p.wb} onChange={(v) => updateProduct(p.id, "wb", v)} placeholder="—" mono /></td>;
+                          return (
+                            <td key="wb" style={base}>
+                              <div className="group relative flex items-center">
+                                <CellInput value={p.wb} onChange={(v) => updateProduct(p.id, "wb", v)} placeholder="—" mono />
+                                {String(p.wb || "").trim() && (
+                                  <a
+                                    href={`https://global.wildberries.ru/catalog/${String(p.wb).trim()}/detail.aspx`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded absolute right-1 top-1/2 -translate-y-1/2 bg-white/90 p-0.5 text-neutral-400 opacity-0 transition hover:text-sky-600 group-hover:opacity-100"
+                                    title="Открыть карточку на WB"
+                                  >
+                                    <ExternalLink size={13} />
+                                  </a>
+                                )}
+                              </div>
+                            </td>
+                          );
                         if (f.id === "name") {
                           const own = p.tasks || [];
                           const ts = own.length ? own : defaultTasks;
@@ -2803,18 +2820,18 @@ function CellInput({ value, onChange, placeholder, mono }) {
    Окно «Задачи по карточке» — чек-лист задач конкретного товара
 ---------------------------------------------------------------------------- */
 
-function LabelSelect({ labels, value, onChange }) {
+function LabelSelect({ labels, value, onChange, compact }) {
   const cur = (labels || []).find((l) => l.id === value);
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <span className="h-2.5 w-2.5 rounded-full" style={{ background: cur ? cur.color : "#e5e5e5" }} />
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: cur ? cur.color : "#e5e5e5" }} />
       <select
         value={value || ""}
         onChange={(e) => onChange(e.target.value || null)}
-        className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-xs text-neutral-600 focus:border-neutral-400 focus:outline-none"
-        title="Метка"
+        className={"rounded-md border border-neutral-200 bg-white py-1 text-xs text-neutral-600 focus:border-neutral-400 focus:outline-none " + (compact ? "max-w-[88px] px-1" : "px-1.5")}
+        title={cur ? cur.name : "Метка"}
       >
-        <option value="">Без метки</option>
+        <option value="">{compact ? "—" : "Без метки"}</option>
         {(labels || []).map((l) => (
           <option key={l.id} value={l.id}>{l.name}</option>
         ))}
@@ -2909,7 +2926,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const remove = (id) => onSetTasks(tasks.filter((t) => t.id !== id));
 
   const renderRow = (t) => (
-    <div key={t.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
+    <div key={t.id} className="group flex items-center gap-1.5 rounded-lg border border-neutral-100 px-1.5 py-1.5 hover:border-neutral-200">
       <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} className="h-4 w-4 shrink-0 accent-green-600" />
       <input
         value={t.text}
@@ -2917,9 +2934,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
         className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
         style={t.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }}
       />
-      <LabelSelect labels={taskLabels} value={effLabel(t)} onChange={(v) => setLabel(t.id, v)} />
+      <LabelSelect labels={taskLabels} value={effLabel(t)} onChange={(v) => setLabel(t.id, v)} compact />
       {defaultIds.has(t.id) ? (
-        <span className="h-5 w-5 shrink-0" title="Задача по умолчанию — её нельзя удалить" />
+        <span className="h-5 w-4 shrink-0" title="Задача по умолчанию — её нельзя удалить" />
       ) : (
         <button onClick={() => remove(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
       )}
@@ -2937,14 +2954,81 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   };
   const removeComp = (id) => onSetCompetitors(competitors.filter((c) => c.id !== id));
 
+  // --- дашборды: юнит-экономика ---
+  const unitCols = (GROUPS.find((g) => g.id === "unit") || {}).columns || [];
+  const cv = (id) => {
+    const c = unitCols.find((x) => x.id === id);
+    if (!c) return NaN;
+    try { return c.type === "calc" ? c.fn(product, unitCols) : toNum(product[c.field]); } catch { return NaN; }
+  };
+  const price = cv("price"), cost = cv("cost"), afterSpp = cv("priceAfterSpp");
+  const profit = cv("profit"), margin = cv("margin"), renta = cv("renta");
+  const commRub = !isNaN(price) ? price * (toNum(product.commission) || 0) / 100 : NaN;
+  const acqRub = !isNaN(price) ? price * (toNum(product.acquiring) || 0) / 100 : NaN;
+  const logRub = cv("logisticsFull");
+  const taxRub = !isNaN(afterSpp) ? afterSpp * (toNum(product.taxRate) || 0) / 100 : NaN;
+  const otherRub = (toNum(product.irp) || 0) + (toNum(product.ktr) || 0) + (toNum(product.defect) || 0) + (toNum(product.storage) || 0);
+  const hasEconomics = !isNaN(price) && price > 0 && !isNaN(cost);
+
+  const costSegments = [
+    { label: "Себестоимость", val: isNaN(cost) ? 0 : cost, color: "#64748b" },
+    { label: "Логистика", val: isNaN(logRub) ? 0 : logRub, color: "#0ea5e9" },
+    { label: "Комиссия", val: isNaN(commRub) ? 0 : commRub, color: "#f59e0b" },
+    { label: "Эквайринг", val: isNaN(acqRub) ? 0 : acqRub, color: "#a855f7" },
+    { label: "Налог", val: isNaN(taxRub) ? 0 : taxRub, color: "#ef4444" },
+    { label: "Прочее", val: otherRub, color: "#94a3b8" },
+  ];
+  if (!isNaN(profit) && profit > 0) costSegments.push({ label: "Прибыль", val: profit, color: "#10b981" });
+  const segBase = hasEconomics ? price : costSegments.reduce((s, x) => s + x.val, 0) || 1;
+
+  // --- дашборды: готовность карточки по меткам ---
+  const readiness = (() => {
+    const map = new Map();
+    tasks.forEach((t) => {
+      const lid = effLabel(t) || "__none";
+      const cur = map.get(lid) || { done: 0, total: 0 };
+      cur.total++; if (t.done) cur.done++;
+      map.set(lid, cur);
+    });
+    return [...map.entries()].map(([lid, v]) => {
+      const lab = (taskLabels || []).find((l) => l.id === lid);
+      return { id: lid, name: lab ? lab.name : "Без метки", color: lab ? lab.color : "#cbd5e1", done: v.done, total: v.total };
+    }).sort((a, b) => b.total - a.total);
+  })();
+  const overallPct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const R = 30, C2 = 2 * Math.PI * R;
+
+  const tiles = [
+    { label: "Наша цена", value: money(price) },
+    { label: "Цена после СПП", value: money(afterSpp) },
+    { label: "Себестоимость", value: money(cost) },
+    { label: "Чистая прибыль", value: money(profit), tone: isNaN(profit) ? null : (profit >= 0 ? "pos" : "neg") },
+    { label: "Маржа", value: isNaN(margin) ? "—" : Math.round(margin) + "%", tone: isNaN(margin) ? null : (margin >= 0 ? "pos" : "neg") },
+    { label: "Рентабельность", value: isNaN(renta) ? "—" : Math.round(renta) + "%", tone: isNaN(renta) ? null : (renta >= 0 ? "pos" : "neg") },
+  ];
+
+  const card = (title, children, extra) => (
+    <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+      {title && (
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-neutral-800">{title}</h3>
+          {extra}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex flex-col bg-neutral-50" onClick={(e) => e.stopPropagation()}>
       {/* Шапка */}
-      <div className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 sm:px-8">
+      <div className="flex items-start justify-between gap-4 border-b border-neutral-200 bg-white px-5 py-4 sm:px-8">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
             {product.code && <span className="font-semibold text-neutral-500">{product.code}</span>}
-            {product.wb && <span>· {product.wb}</span>}
+            {product.wb && (
+              <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-sky-600">· {product.wb} <ExternalLink size={11} /></a>
+            )}
           </div>
           <input
             value={product.name}
@@ -2956,84 +3040,156 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
         <button onClick={onClose} className="rounded-lg shrink-0 p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
       </div>
 
-      {/* Тело — прокручиваемое, место под будущую информацию о товаре */}
-      <div className="flex-1 overflow-auto px-5 py-6 sm:px-8">
-        <div className="mx-auto max-w-2xl">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-neutral-800">Задачи по карточке</h3>
-            {tasks.length > 0 && <span className="text-xs text-neutral-400">{done} из {tasks.length} выполнено</span>}
-          </div>
+      {/* Тело — дашборды */}
+      <div className="flex-1 overflow-auto px-4 py-5 sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-5 lg:flex-row lg:items-start">
 
-          {usingDefaults && tasks.length > 0 && (
-            <p className="mb-2 text-xs text-neutral-400">Задачи по умолчанию. Любое изменение сохранит их в этой карточке.</p>
-          )}
-
-          <div className="space-y-1.5">
-            {active.map((t) => renderRow(t))}
-            {tasks.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач пока нет. Добавьте первую ниже.</div>}
-            {tasks.length > 0 && active.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Все задачи выполнены 🎉</div>}
-          </div>
-
-          {completed.length > 0 && (
-            <div className="mt-4 border-t border-neutral-100 pt-3">
-              <button
-                onClick={() => setShowDone((v) => !v)}
-                className="flex w-full items-center gap-1.5 text-sm font-medium text-neutral-500 hover:text-neutral-700"
-              >
-                {showDone ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                Выполненные
-                <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{completed.length}</span>
-              </button>
-              {showDone && (
-                <div className="mt-2 space-y-1.5">
-                  {completed.map((t) => renderRow(t))}
+          {/* Левая колонка — компактные задачи */}
+          <aside className="w-full lg:w-80 lg:shrink-0">
+            {card(
+              "Задачи",
+              <>
+                <div className="mb-2">
+                  <div className="mb-1 flex items-center justify-between text-xs text-neutral-400">
+                    <span>{done} из {tasks.length}</span>
+                    <span>{overallPct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+                    <div className="h-full rounded-full bg-green-500" style={{ width: overallPct + "%" }} />
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+                {usingDefaults && tasks.length > 0 && (
+                  <p className="mb-2 text-[11px] text-neutral-400">Задачи по умолчанию. Любое изменение сохранит их в этой карточке.</p>
+                )}
+                <div className="space-y-1">
+                  {active.map((t) => renderRow(t))}
+                  {tasks.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач пока нет.</div>}
+                  {tasks.length > 0 && active.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Все задачи выполнены 🎉</div>}
+                </div>
+                {completed.length > 0 && (
+                  <div className="mt-3 border-t border-neutral-100 pt-2">
+                    <button onClick={() => setShowDone((v) => !v)} className="flex w-full items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-neutral-700">
+                      {showDone ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      Выполненные
+                      <span className="rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">{completed.length}</span>
+                    </button>
+                    {showDone && <div className="mt-2 space-y-1">{completed.map((t) => renderRow(t))}</div>}
+                  </div>
+                )}
+                <div className="mt-3 flex items-center gap-1.5">
+                  <input
+                    value={newText}
+                    onChange={(e) => setNewText(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addTask()}
+                    placeholder="Новая задача…"
+                    className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  />
+                  <button onClick={addTask} disabled={!newText.trim()} className="rounded-lg inline-flex shrink-0 items-center bg-neutral-900 p-2 text-white hover:bg-neutral-800 disabled:opacity-40" title="Добавить"><Plus size={15} /></button>
+                </div>
+              </>
+            )}
+          </aside>
 
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              value={newText}
-              onChange={(e) => setNewText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addTask()}
-              placeholder="Новая задача…"
-              className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
-            />
-            <button onClick={addTask} disabled={!newText.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
-              <Plus size={14} /> Добавить
-            </button>
-          </div>
+          {/* Правая часть — дашборды */}
+          <div className="min-w-0 flex-1 space-y-5">
 
-          {/* Конкуренты */}
-          <div className="mt-8 border-t border-neutral-100 pt-5">
-            <div className="mb-3 flex items-center gap-2">
-              <h3 className="text-base font-semibold text-neutral-800">Конкуренты</h3>
-              {competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span>}
-            </div>
-
-            {competitors.length > 0 ? (
-              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                {competitors.map((c) => (
-                  <CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />
+            {/* KPI */}
+            {card(
+              "Юнит-экономика",
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {tiles.map((t) => (
+                  <div key={t.label} className="rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">
+                    <div className="text-[11px] uppercase tracking-wide text-neutral-400">{t.label}</div>
+                    <div className="mt-0.5 text-lg font-bold tabular-nums" style={{ color: t.tone === "pos" ? "#15803d" : t.tone === "neg" ? "#dc2626" : "#0f172a" }}>{t.value}</div>
+                  </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>
             )}
 
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                value={compUrl}
-                onChange={(e) => setCompUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addComp()}
-                placeholder="Ссылка на карточку ВБ…"
-                className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
-              />
-              <button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
-                <Plus size={14} /> Добавить
-              </button>
-            </div>
+            {/* Структура цены */}
+            {card(
+              "Куда уходит цена",
+              hasEconomics ? (
+                <>
+                  <div className="flex h-3.5 w-full overflow-hidden rounded-full bg-neutral-100">
+                    {costSegments.filter((s) => s.val > 0).map((s) => (
+                      <div key={s.label} style={{ width: (s.val / segBase * 100) + "%", background: s.color }} title={`${s.label}: ${money(s.val)}`} />
+                    ))}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
+                    {costSegments.filter((s) => s.val > 0).map((s) => (
+                      <div key={s.label} className="flex items-center gap-1.5 text-xs">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
+                        <span className="min-w-0 flex-1 truncate text-neutral-600">{s.label}</span>
+                        <span className="shrink-0 tabular-nums text-neutral-400">{Math.round(s.val / segBase * 100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                  {!isNaN(profit) && profit < 0 && (
+                    <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600">Убыток: {money(profit)} — затраты превышают цену.</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-neutral-400">Заполните себестоимость и цену во вкладке «Юнит», чтобы увидеть разбор.</p>
+              )
+            )}
+
+            {/* Готовность карточки */}
+            {card(
+              "Готовность карточки",
+              <div className="flex items-center gap-5">
+                <svg width="76" height="76" viewBox="0 0 72 72" className="shrink-0">
+                  <circle cx="36" cy="36" r={R} fill="none" stroke="#f1f5f9" strokeWidth="8" />
+                  <circle cx="36" cy="36" r={R} fill="none" stroke={overallPct === 100 ? "#16a34a" : "#f97316"} strokeWidth="8" strokeLinecap="round" strokeDasharray={C2} strokeDashoffset={C2 * (1 - overallPct / 100)} transform="rotate(-90 36 36)" />
+                  <text x="36" y="41" textAnchor="middle" fontSize="17" fontWeight="700" fill="#0f172a">{overallPct}%</text>
+                </svg>
+                <div className="min-w-0 flex-1 space-y-2">
+                  {readiness.map((r) => {
+                    const pct = r.total ? Math.round(r.done / r.total * 100) : 0;
+                    return (
+                      <div key={r.id}>
+                        <div className="mb-0.5 flex items-center gap-1.5 text-xs">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} />
+                          <span className="min-w-0 flex-1 truncate text-neutral-600">{r.name}</span>
+                          <span className="shrink-0 tabular-nums text-neutral-400">{r.done}/{r.total}</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+                          <div className="h-full rounded-full" style={{ width: pct + "%", background: r.color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {readiness.length === 0 && <p className="text-xs text-neutral-400">Нет задач.</p>}
+                </div>
+              </div>
+            )}
+
+            {/* Конкуренты */}
+            {card(
+              "Конкуренты",
+              <>
+                {competitors.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                    {competitors.map((c) => (<CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>
+                )}
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    value={compUrl}
+                    onChange={(e) => setCompUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addComp()}
+                    placeholder="Ссылка на карточку ВБ…"
+                    className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  />
+                  <button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex shrink-0 items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+                    <Plus size={14} /> Добавить
+                  </button>
+                </div>
+              </>,
+              competitors.length > 0 ? <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span> : null
+            )}
           </div>
         </div>
       </div>
