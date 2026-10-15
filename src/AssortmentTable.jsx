@@ -3428,6 +3428,28 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const resultTile = (label, text, colorNum) => tileWrap(label,
     <div className="mt-0.5 text-lg font-bold tabular-nums" style={{ color: colorNum === undefined ? "#0f172a" : toneColor(colorNum) }}>{text}</div>
   );
+  // компактная строка-поле «label … input» (функция, не компонент)
+  const unitField = (label, field, suffix) => (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs text-neutral-600">{label}</span>
+      <div className="flex items-center gap-1">
+        <input
+          value={product[field] ?? ""}
+          onChange={(e) => onSetField && onSetField(field, e.target.value)}
+          inputMode="decimal"
+          placeholder="0"
+          className="w-24 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-sm font-semibold tabular-nums text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+        />
+        <span className="w-2.5 text-xs text-neutral-400">{suffix || ""}</span>
+      </div>
+    </div>
+  );
+  const resRow = (label, text, colorNum) => (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs text-neutral-600">{label}</span>
+      <b className="text-sm font-bold tabular-nums" style={{ color: colorNum === undefined ? "#0f172a" : toneColor(colorNum) }}>{text}</b>
+    </div>
+  );
 
   const card = (title, children, extra) => (
     <section className="rounded-2xl border border-neutral-200 bg-white p-4">
@@ -3566,36 +3588,37 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                 <span onClick={() => setUnitOpen((v) => !v)} className="ml-auto cursor-pointer text-[11px] text-neutral-400">{unitOpen ? "свернуть" : "изменить данные"}</span>
               </div>
 
-              {/* превью — всегда видно */}
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {tileWrap("Цена", unitInput(MP.f.price))}
-                {tileWrap("СПП", unitInput(MP.f.spp, "%"))}
-                {tileWrap("ДРР", unitInput(MP.f.drr, "%"))}
-                {resultTile("Чистая прибыль", money(profit), isNaN(profit) ? undefined : profit)}
-                {resultTile("Рентабельность", pct(renta), isNaN(renta) ? undefined : renta)}
-                {resultTile("Маржа", pct(margin), isNaN(margin) ? undefined : margin)}
+              {/* превью — две колонки: ввод слева, итог справа */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  {unitField("Цена", MP.f.price)}
+                  {unitField("СПП, %", MP.f.spp, "%")}
+                  {unitField("ДРР, %", MP.f.drr, "%")}
+                </div>
+                <div className="flex flex-col justify-center gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">
+                  {resRow("Чистая прибыль", money(profit), isNaN(profit) ? undefined : profit)}
+                  {resRow("Рентабельность", pct(renta), isNaN(renta) ? undefined : renta)}
+                  {resRow("Маржа", pct(margin), isNaN(margin) ? undefined : margin)}
+                </div>
               </div>
 
               {/* Подсказки: цена под нужную рентабельность (клик — подставить) */}
-              <div className="mt-3">
-                <div className="mb-1.5 text-[11px] uppercase tracking-wide text-neutral-400">Цена для рентабельности</div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {[50, 100, 150, 200].map((r) => {
-                    const v = targetPrice(r / 100);
-                    return (
-                      <button
-                        key={r}
-                        onClick={() => !isNaN(v) && onSetField && onSetField(MP.f.price, String(Math.round(v)))}
-                        disabled={isNaN(v)}
-                        title={isNaN(v) ? "Заполните себестоимость" : "Поставить эту цену"}
-                        className="rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-sky-50/50 disabled:cursor-default disabled:opacity-60 disabled:hover:border-neutral-100 disabled:hover:bg-neutral-50/60"
-                      >
-                        <div className="text-[11px] font-medium text-neutral-400">{r}%</div>
-                        <div className="text-sm font-bold tabular-nums text-neutral-800">{isNaN(v) ? "—" : money(v)}</div>
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-neutral-400">Цена для рента:</span>
+                {[50, 100, 150, 200].map((r) => {
+                  const v = targetPrice(r / 100);
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => !isNaN(v) && onSetField && onSetField(MP.f.price, String(Math.round(v)))}
+                      disabled={isNaN(v)}
+                      title={isNaN(v) ? "Заполните себестоимость" : "Поставить эту цену"}
+                      className="rounded-lg border border-neutral-100 bg-neutral-50/60 px-2 py-1 text-xs transition hover:border-sky-300 hover:bg-sky-50/50 disabled:cursor-default disabled:opacity-60 disabled:hover:border-neutral-100 disabled:hover:bg-neutral-50/60"
+                    >
+                      <span className="text-neutral-400">{r}%</span> <b className="tabular-nums text-neutral-800">{isNaN(v) ? "—" : money(v)}</b>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* расширенный редактор */}
@@ -3623,7 +3646,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               "Конкуренты",
               <>
                 {competitors.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
                     {competitors.map((c) => (<CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />))}
                   </div>
                 ) : (
