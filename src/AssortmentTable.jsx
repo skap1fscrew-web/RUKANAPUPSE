@@ -4033,12 +4033,11 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
       <div className="flex border-t border-neutral-100">
         <button
           onClick={() => onEditOp(op)}
-          className="group flex shrink-0 flex-col items-start justify-center py-2 pl-2 pr-2 text-left hover:bg-neutral-50"
+          className="group flex shrink-0 items-center py-2 pl-2 pr-2 text-left hover:bg-neutral-50"
           style={{ width: LW }}
           title="Настроить график"
         >
-          <span className="w-full truncate text-[12px] text-neutral-700">{op.name}</span>
-          <span className="w-full truncate text-[10px] text-neutral-400 group-hover:text-neutral-500">{describeRecur(op.recur)}</span>
+          <span className="w-full truncate text-[12px] text-neutral-700 group-hover:text-neutral-900">{op.name}</span>
         </button>
         <div className="relative flex shrink-0 items-center" style={{ width: timelineW, height: 44 }}>
           {Array.from({ length: daysInMonth }, (_, i) => {
@@ -4082,11 +4081,11 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
       <div className="relative" style={{ minWidth: LW + timelineW }}>
         {/* линия «сегодня» на всю высоту */}
         {todayInMonth && (
-          <div className="pointer-events-none absolute bottom-0 z-10 w-px bg-orange-400" style={{ left: LW + (todayCol - 1) * DW + DW / 2, top: 22 }} />
+          <div className="pointer-events-none absolute bottom-0 z-10 w-px bg-orange-400" style={{ left: LW + (todayCol - 1) * DW + DW / 2, top: 36 }} />
         )}
 
         {/* шапка дней */}
-        <div className="flex">
+        <div className="flex" style={{ height: 36 }}>
           <div className="shrink-0" style={{ width: LW }} />
           <div className="flex shrink-0" style={{ width: timelineW }}>
             {Array.from({ length: daysInMonth }, (_, i) => {
@@ -4094,8 +4093,9 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
               const we = d.getDay() === 0 || d.getDay() === 6;
               const isToday = i + 1 === todayCol;
               return (
-                <div key={i} className={"text-center text-[10px] font-medium " + (we ? "text-neutral-300" : "text-neutral-400")} style={{ width: DW }}>
-                  <span className={isToday ? "inline-flex h-4 w-4 items-center justify-center rounded-full bg-orange-600 font-bold text-white" : ""}>{i + 1}</span>
+                <div key={i} className="flex flex-col items-center gap-0.5 pt-0.5" style={{ width: DW }}>
+                  <span className={"text-[11px] font-medium leading-none " + (isToday ? "inline-flex h-4 w-4 items-center justify-center rounded-full bg-orange-600 font-bold text-white" : we ? "text-neutral-300" : "text-neutral-500")}>{i + 1}</span>
+                  <span className={"text-[9px] font-medium leading-none " + (we ? "text-neutral-300" : "text-neutral-400")}>{WD_LABEL[d.getDay()]}</span>
                 </div>
               );
             })}
@@ -4103,7 +4103,7 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
         </div>
 
         {/* фон выходных */}
-        <div className="pointer-events-none absolute inset-y-0 flex" style={{ left: LW, top: 22 }}>
+        <div className="pointer-events-none absolute inset-y-0 flex" style={{ left: LW, top: 36 }}>
           {Array.from({ length: daysInMonth }, (_, i) => {
             const d = new Date(ym.y, ym.m, i + 1);
             const we = d.getDay() === 0 || d.getDay() === 6;
