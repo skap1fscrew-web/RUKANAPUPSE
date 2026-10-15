@@ -42,6 +42,7 @@ const TABS = [
   { id: "calendar", label: "Календарь" },
   { id: "shipment", label: "План отгрузок ВБ" },
   { id: "purchases", label: "Закупки" },
+  { id: "tasks", label: "Задачи" },
 ];
 
 // Задачи диаграммы Ганта (общие для всех товаров). kind задаёт поведение строки.
@@ -403,6 +404,8 @@ export default function AssortmentTable() {
   const [metricsByGroup, setMetricsByGroup] = useState(DEFAULT_METRICS_BY_GROUP);
   const [warehouses, setWarehouses] = useState(DEFAULT_WAREHOUSES);
   const [purchases, setPurchases] = useState([]);
+  const [jobs, setJobs] = useState([]); // блок «Задачи» — задачи с датой [{id,title,date,done,labelId,productId}]
+  const [jobEditor, setJobEditor] = useState(null); // {id?...} открытое окно задачи
   const [rnpStartDate, setRnpStartDate] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString().slice(0, 10);
   });
@@ -442,8 +445,8 @@ export default function AssortmentTable() {
 
   const syncedRef = useRef({ products: new Map(), settings: {} });
   const dirtyRef = useRef({ products: new Set(), settings: new Set() });
-  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [] });
-  listSettingsRef.current = { bloggerDB, razdachDB, purchases };
+  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], jobs: [] });
+  listSettingsRef.current = { bloggerDB, razdachDB, purchases, jobs };
 
   // UI-настройки (личные) — localStorage
   useEffect(() => {
@@ -467,6 +470,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.statuses) && settings.statuses.length) { setStatuses(settings.statuses); syncedRef.current.settings.statuses = JSON.stringify(settings.statuses); }
         if (Array.isArray(settings.warehouses) && settings.warehouses.length) { setWarehouses(settings.warehouses); syncedRef.current.settings.warehouses = JSON.stringify(settings.warehouses); }
         if (Array.isArray(settings.purchases)) { setPurchases(settings.purchases); syncedRef.current.settings.purchases = JSON.stringify(settings.purchases); }
+        if (Array.isArray(settings.jobs)) { setJobs(settings.jobs); syncedRef.current.settings.jobs = JSON.stringify(settings.jobs); }
         if (Array.isArray(settings.bloggerDB)) { setBloggerDB(settings.bloggerDB); syncedRef.current.settings.bloggerDB = JSON.stringify(settings.bloggerDB); }
         if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = JSON.stringify(settings.razdachDB); }
         if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
@@ -514,7 +518,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, taskLabels, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -553,7 +557,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, bloggerDB, razdachDB, defaultTasks, taskLabels, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -581,6 +585,7 @@ export default function AssortmentTable() {
         if (key === "statuses") setStatuses(value);
         else if (key === "warehouses") setWarehouses(value);
         else if (key === "purchases") setPurchases(value);
+        else if (key === "jobs") setJobs(value || []);
         else if (key === "bloggerDB") setBloggerDB(value);
         else if (key === "razdachDB") setRazdachDB(value);
         else if (key === "defaultTasks") setDefaultTasks(value || []);
@@ -620,6 +625,8 @@ export default function AssortmentTable() {
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, competitors } : x)));
   const setProductSeasonality = (id, seasonality) =>
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, seasonality } : x)));
+  const upsertJob = (job) => setJobs((js) => { const i = js.findIndex((j) => j.id === job.id); if (i === -1) return [...js, job]; const c = js.slice(); c[i] = job; return c; });
+  const removeJob = (id) => setJobs((js) => js.filter((j) => j.id !== id));
   const removeProduct = (id) => {
     if (!confirm("Вы точно хотите удалить товар?")) return;
     setProducts((p) => p.filter((x) => x.id !== id));
@@ -1046,11 +1053,11 @@ export default function AssortmentTable() {
                 );
               })}
             </div>
-            <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchases.length} в плане закупок` : `${filteredProducts.length} товаров`}</span>
-            {activeTab !== "purchases" && (
+            <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchases.length} в плане закупок` : activeTab === "tasks" ? `${jobs.length} задач` : `${filteredProducts.length} товаров`}</span>
+            {activeTab !== "purchases" && activeTab !== "tasks" && (
               <input value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Фильтр по коду" className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-sm text-neutral-700 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ width: 140 }} />
             )}
-            {activeTab !== "purchases" && (
+            {activeTab !== "purchases" && activeTab !== "tasks" && (
               <div className="relative inline-block">
                 <button
                   onClick={() => setStatusFilterOpen((v) => !v)}
@@ -1203,7 +1210,7 @@ export default function AssortmentTable() {
         )}
 
         {/* Таблица товаров (Ассортимент / Продвижение / План отгрузок) */}
-        {activeTab !== "purchases" && (
+        {activeTab !== "purchases" && activeTab !== "tasks" && (
         <div ref={scrollRef} className="rounded-xl overflow-auto border border-neutral-200 bg-white shadow-sm">
           <table className="text-sm" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
             <thead>
@@ -1461,7 +1468,28 @@ export default function AssortmentTable() {
             onTransfer={transferPurchase}
           />
         )}
+
+        {activeTab === "tasks" && (
+          <TasksCalendar
+            jobs={jobs}
+            taskLabels={taskLabels}
+            products={products}
+            onAddOnDay={(date) => setJobEditor({ id: uid(), title: "", date, done: false, labelId: null, productId: null, _new: true })}
+            onOpen={(job) => setJobEditor({ ...job })}
+          />
+        )}
       </div>
+
+      {jobEditor && (
+        <JobEditor
+          job={jobEditor}
+          taskLabels={taskLabels}
+          products={products}
+          onSave={(j) => { const { _new, ...rest } = j; if (rest.title.trim()) upsertJob(rest); setJobEditor(null); }}
+          onDelete={(id) => { removeJob(id); setJobEditor(null); }}
+          onClose={() => setJobEditor(null)}
+        />
+      )}
 
       {settingsOpen && (
         <SettingsModal
@@ -3406,28 +3434,6 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const toneColor = (v) => isNaN(v) ? "#0f172a" : (v >= 0 ? "#15803d" : "#dc2626");
   const pct = (v) => isNaN(v) ? "—" : Math.round(v) + "%";
 
-  // поле-ввод внутри плитки (функция, не компонент — чтобы не терять фокус)
-  const unitInput = (field, suffix) => (
-    <div className="mt-0.5 flex items-baseline gap-1">
-      <input
-        value={product[field] ?? ""}
-        onChange={(e) => onSetField && onSetField(field, e.target.value)}
-        inputMode="decimal"
-        placeholder="0"
-        className="w-full min-w-0 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-lg font-bold tabular-nums text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
-      />
-      {suffix && <span className="shrink-0 text-sm text-neutral-400">{suffix}</span>}
-    </div>
-  );
-  const tileWrap = (label, body) => (
-    <div className="rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">
-      <div className="text-[11px] uppercase tracking-wide text-neutral-400">{label}</div>
-      {body}
-    </div>
-  );
-  const resultTile = (label, text, colorNum) => tileWrap(label,
-    <div className="mt-0.5 text-lg font-bold tabular-nums" style={{ color: colorNum === undefined ? "#0f172a" : toneColor(colorNum) }}>{text}</div>
-  );
   // компактная строка-поле «label … input» (функция, не компонент)
   const unitField = (label, field, suffix) => (
     <div className="flex items-center justify-between gap-2">
@@ -3592,6 +3598,13 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   {unitField("Цена", MP.f.price)}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-neutral-400">После СПП</span>
+                    <div className="flex items-center gap-1">
+                      <span className="w-24 text-right text-sm font-bold tabular-nums text-neutral-500">{money(afterSpp)}</span>
+                      <span className="w-2.5" />
+                    </div>
+                  </div>
                   {unitField("СПП, %", MP.f.spp, "%")}
                   {unitField("ДРР, %", MP.f.drr, "%")}
                 </div>
@@ -3621,21 +3634,20 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                 })}
               </div>
 
-              {/* расширенный редактор */}
+              {/* расширенный редактор — тот же компактный размер строк, что и сверху */}
               {unitOpen && (
-                <div className="mt-4 border-t border-neutral-100 pt-4">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Параметры товара</p>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {tileWrap("Себестоимость", unitInput("cost"))}
-                    {tileWrap("Комиссия", unitInput(MP.f.commission, "%"))}
-                    {tileWrap("% выкупа", unitInput(MP.f.buyback, "%"))}
-                    {tileWrap("Базовая логистика", unitInput(MP.f.logistics))}
+                <div className="mt-3 border-t border-neutral-100 pt-3">
+                  <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">Параметры товара</p>
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+                    {unitField("Себестоимость", "cost")}
+                    {unitField("Комиссия, %", MP.f.commission, "%")}
+                    {unitField("% выкупа", MP.f.buyback, "%")}
+                    {unitField("Базовая логистика", MP.f.logistics)}
                   </div>
-                  <p className="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-neutral-400">Результат</p>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {resultTile("Цена после СПП", money(afterSpp))}
-                    {resultTile("Итоговая логистика", money(logRub))}
-                    {resultTile("Общие затраты", money(totalCostsV))}
+                  <p className="mb-2 mt-3 text-[11px] font-medium uppercase tracking-wide text-neutral-400">Результат</p>
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5 sm:grid-cols-2">
+                    {resRow("Итоговая логистика", money(logRub))}
+                    {resRow("Общие затраты", money(totalCostsV))}
                   </div>
                 </div>
               )}
@@ -3695,6 +3707,124 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
 /* ----------------------------------------------------------------------------
    Настройки: статусы + задачи по умолчанию
 ---------------------------------------------------------------------------- */
+
+/* ----------------------------------------------------------------------------
+   Блок «Задачи» — календарь
+---------------------------------------------------------------------------- */
+const MONTHS_FULL = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+const WD_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const pad2 = (n) => String(n).padStart(2, "0");
+const isoYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+function TasksCalendar({ jobs, taskLabels, products, onAddOnDay, onOpen }) {
+  const now = new Date();
+  const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
+  const todayStr = isoYMD(now);
+
+  const byDate = {};
+  (jobs || []).forEach((j) => { if (j.date) (byDate[j.date] ||= []).push(j); });
+  const labelColor = (id) => (taskLabels || []).find((l) => l.id === id)?.color || "#cbd5e1";
+
+  const startOffset = (new Date(ym.y, ym.m, 1).getDay() + 6) % 7; // Пн=0
+  const cells = Array.from({ length: 42 }, (_, i) => new Date(ym.y, ym.m, 1 - startOffset + i));
+  const prevM = () => setYm((s) => { const d = new Date(s.y, s.m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const nextM = () => setYm((s) => { const d = new Date(s.y, s.m + 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const goToday = () => setYm({ y: now.getFullYear(), m: now.getMonth() });
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <button onClick={prevM} className="rounded-lg flex h-7 w-7 items-center justify-center border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /></button>
+        <button onClick={nextM} className="rounded-lg flex h-7 w-7 items-center justify-center border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} /></button>
+        <h2 className="ml-1 text-base font-semibold capitalize text-neutral-900">{MONTHS_FULL[ym.m]} {ym.y}</h2>
+        <button onClick={goToday} className="rounded-lg ml-2 border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">Сегодня</button>
+        <button onClick={() => onAddOnDay(todayStr)} className="rounded-lg ml-auto inline-flex items-center gap-1 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Задача</button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-px">
+        {WD_SHORT.map((w) => (<div key={w} className="pb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-neutral-400">{w}</div>))}
+        {cells.map((d, i) => {
+          const ds = isoYMD(d);
+          const inMonth = d.getMonth() === ym.m;
+          const isToday = ds === todayStr;
+          const list = byDate[ds] || [];
+          return (
+            <div
+              key={i}
+              onClick={() => onAddOnDay(ds)}
+              className={"min-h-[92px] cursor-pointer rounded-lg border p-1 transition hover:border-sky-300 " + (inMonth ? "border-neutral-100 bg-white" : "border-neutral-100 bg-neutral-50/40")}
+            >
+              <div className="mb-1 flex items-center justify-between px-0.5">
+                <span className={"inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs " + (isToday ? "bg-orange-600 font-bold text-white" : inMonth ? "text-neutral-600" : "text-neutral-300")}>{d.getDate()}</span>
+              </div>
+              <div className="space-y-0.5">
+                {list.slice(0, 3).map((j) => {
+                  const p = products.find((x) => x.id === j.productId);
+                  return (
+                    <button
+                      key={j.id}
+                      onClick={(e) => { e.stopPropagation(); onOpen(j); }}
+                      className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] hover:bg-neutral-100"
+                      title={(p ? p.code + " · " : "") + j.title}
+                    >
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: labelColor(j.labelId) }} />
+                      <span className="min-w-0 flex-1 truncate" style={j.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#404040" }}>{j.title || "—"}</span>
+                    </button>
+                  );
+                })}
+                {list.length > 3 && <div className="px-1 text-[10px] text-neutral-400">+{list.length - 3} ещё</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function JobEditor({ job, taskLabels, products, onSave, onDelete, onClose }) {
+  const [j, setJ] = useState(job);
+  const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
+      <div className="rounded-2xl w-full max-w-sm bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-neutral-900">{job._new ? "Новая задача" : "Задача"}</h2>
+          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+        </div>
+        <div className="space-y-3">
+          <input value={j.title} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => e.key === "Enter" && onSave(j)} placeholder="Название задачи…" autoFocus className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-sm text-neutral-600">Дата</span>
+            <input type="date" value={j.date || ""} onChange={(e) => set("date", e.target.value)} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
+          </label>
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-sm text-neutral-600">Метка</span>
+            <select value={j.labelId || ""} onChange={(e) => set("labelId", e.target.value || null)} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+              <option value="">Без метки</option>
+              {(taskLabels || []).map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-sm text-neutral-600">Товар</span>
+            <select value={j.productId || ""} onChange={(e) => set("productId", e.target.value || null)} className="max-w-[200px] rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+              <option value="">—</option>
+              {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
+            </select>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input type="checkbox" checked={!!j.done} onChange={(e) => set("done", e.target.checked)} className="h-4 w-4 accent-green-600" />
+            <span className="text-sm text-neutral-600">Выполнено</span>
+          </label>
+        </div>
+        <div className="mt-5 flex items-center gap-2">
+          <button onClick={() => onSave(j)} disabled={!j.title.trim()} className="rounded-lg flex-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Сохранить</button>
+          {!job._new && <button onClick={() => onDelete(j.id)} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600">Удалить</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, unitConst, setUnitConst, onClose }) {
   const [tab, setTab] = useState("statuses");
