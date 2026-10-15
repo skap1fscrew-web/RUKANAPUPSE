@@ -421,7 +421,9 @@ export default function AssortmentTable() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [defaultTasks, setDefaultTasks] = useState([]); // задачи по умолчанию (общие) — [{id, text, labelId}]
   const [taskLabels, setTaskLabels] = useState([]); // метки задач (общие) — [{id, name, color}]
-  const [opTypes, setOpTypes] = useState([]); // операционные задачи (шаблоны строк Ганта) — [{id, name}]
+  const [opTypes, setOpTypes] = useState([]); // операционные задачи (регулярные строки Ганта) — [{id, name, recur}]
+  const [opDone, setOpDone] = useState({}); // отметки выполнения операционных задач — {opId:{"YYYY-MM-DD":true}}
+  const [opEditor, setOpEditor] = useState(null); // открытая настройка операционной задачи (из Ганта)
   const [ganttModal, setGanttModal] = useState(null);
   const [cardModal, setCardModal] = useState(null); // id товара для окна «Задачи по карточке»
   const [codeFilter, setCodeFilter] = useState("");
@@ -477,6 +479,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
         if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = JSON.stringify(settings.taskLabels); }
         if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = JSON.stringify(settings.opTypes); }
+        if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = JSON.stringify(settings.opDone); }
         if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
@@ -520,7 +523,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -559,7 +562,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -593,6 +596,7 @@ export default function AssortmentTable() {
         else if (key === "defaultTasks") setDefaultTasks(value || []);
         else if (key === "taskLabels") setTaskLabels(value || []);
         else if (key === "opTypes") setOpTypes(value || []);
+        else if (key === "opDone") setOpDone(value || {});
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
@@ -630,6 +634,9 @@ export default function AssortmentTable() {
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, seasonality } : x)));
   const upsertJob = (job) => setJobs((js) => { const i = js.findIndex((j) => j.id === job.id); if (i === -1) return [...js, job]; const c = js.slice(); c[i] = job; return c; });
   const removeJob = (id) => setJobs((js) => js.filter((j) => j.id !== id));
+  const upsertOpType = (o) => setOpTypes((list) => { const i = (list || []).findIndex((x) => x.id === o.id); if (i === -1) return [...(list || []), o]; const c = list.slice(); c[i] = o; return c; });
+  const removeOpType = (id) => setOpTypes((list) => (list || []).filter((x) => x.id !== id));
+  const toggleOpDone = (opId, ds) => setOpDone((m) => { const day = { ...((m || {})[opId] || {}) }; if (day[ds]) delete day[ds]; else day[ds] = true; return { ...(m || {}), [opId]: day }; });
   const removeProduct = (id) => {
     if (!confirm("Вы точно хотите удалить товар?")) return;
     setProducts((p) => p.filter((x) => x.id !== id));
@@ -1478,7 +1485,10 @@ export default function AssortmentTable() {
             taskLabels={taskLabels}
             products={products}
             opTypes={opTypes}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, opId: null, _new: true, ...preset })}
+            opDone={opDone}
+            onToggleDone={toggleOpDone}
+            onEditOp={(op) => setOpEditor({ ...op })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
         )}
@@ -1493,6 +1503,15 @@ export default function AssortmentTable() {
           onSave={(j) => { const { _new, ...rest } = j; if (rest.title.trim()) upsertJob(rest); setJobEditor(null); }}
           onDelete={(id) => { removeJob(id); setJobEditor(null); }}
           onClose={() => setJobEditor(null)}
+        />
+      )}
+
+      {opEditor && (
+        <OpTypeModal
+          opType={opEditor}
+          onSave={(o) => { upsertOpType(o); setOpEditor(null); }}
+          onDelete={(id) => { removeOpType(id); setOpEditor(null); }}
+          onClose={() => setOpEditor(null)}
         />
       )}
 
@@ -3725,7 +3744,102 @@ const isoYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.get
 
 const parseISO = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
 
-function TasksView({ jobs, taskLabels, products, opTypes, onAddJob, onOpen }) {
+// --- регулярность операционных задач ---
+const WD_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Пн..Вс в терминах getDay()
+const WD_LABEL = { 1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт", 6: "Сб", 0: "Вс" };
+const WD_FULL = { 1: "понедельник", 2: "вторник", 3: "среда", 4: "четверг", 5: "пятница", 6: "суббота", 0: "воскресенье" };
+const ORD_LABEL = { 1: "Первый", 2: "Второй", 3: "Третий", 4: "Четвёртый", "-1": "Последний" };
+const normRecur = (r) => ({
+  mode: r && r.mode === "monthly" ? "monthly" : "weekly",
+  weekdays: r && Array.isArray(r.weekdays) ? r.weekdays : [1, 2, 3, 4, 5],
+  ordinal: r && r.ordinal != null ? r.ordinal : 1,
+  weekday: r && r.weekday != null ? r.weekday : 1,
+});
+function occurrenceDays(recur, y, m) {
+  const r = normRecur(recur);
+  const dim = new Date(y, m + 1, 0).getDate();
+  const out = [];
+  if (r.mode === "weekly") {
+    for (let d = 1; d <= dim; d++) if (r.weekdays.includes(new Date(y, m, d).getDay())) out.push(d);
+  } else {
+    const matches = [];
+    for (let d = 1; d <= dim; d++) if (new Date(y, m, d).getDay() === r.weekday) matches.push(d);
+    if (matches.length) {
+      if (r.ordinal === -1) out.push(matches[matches.length - 1]);
+      else if (matches[r.ordinal - 1]) out.push(matches[r.ordinal - 1]);
+    }
+  }
+  return out;
+}
+function describeRecur(recur) {
+  const r = normRecur(recur);
+  if (r.mode === "monthly") return `${ORD_LABEL[r.ordinal] || "Первый"} ${WD_FULL[r.weekday] || ""} месяца`.trim();
+  const wds = r.weekdays;
+  if (wds.length === 7) return "каждый день";
+  if (wds.length === 0) return "дни не выбраны";
+  return WD_ORDER.filter((w) => wds.includes(w)).map((w) => WD_LABEL[w]).join(" · ");
+}
+
+function RecurEditor({ recur, onChange }) {
+  const r = normRecur(recur);
+  const toggleWd = (w) => { const s = new Set(r.weekdays); s.has(w) ? s.delete(w) : s.add(w); onChange({ ...r, weekdays: WD_ORDER.filter((x) => s.has(x)) }); };
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="w-24 shrink-0 text-sm text-neutral-500">Повтор</span>
+        <div className="inline-flex rounded-lg bg-neutral-100 p-0.5 text-xs font-semibold">
+          <button onClick={() => onChange({ ...r, mode: "weekly" })} className={"rounded-md px-3 py-1 transition " + (r.mode === "weekly" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>По дням недели</button>
+          <button onClick={() => onChange({ ...r, mode: "monthly" })} className={"rounded-md px-3 py-1 transition " + (r.mode === "monthly" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>По числу месяца</button>
+        </div>
+      </div>
+      {r.mode === "weekly" ? (
+        <div className="flex items-start gap-2">
+          <span className="w-24 shrink-0 pt-1.5 text-sm text-neutral-500">Дни недели</span>
+          <div className="flex flex-wrap gap-1">
+            {WD_ORDER.map((w) => (
+              <button key={w} onClick={() => toggleWd(w)} className={"flex h-8 w-9 items-center justify-center rounded-lg text-xs font-semibold transition " + (r.weekdays.includes(w) ? "bg-neutral-900 text-white" : "border border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{WD_LABEL[w]}</button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="w-24 shrink-0 text-sm text-neutral-500">Когда</span>
+          <select value={r.ordinal} onChange={(e) => onChange({ ...r, ordinal: Number(e.target.value) })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+            {[1, 2, 3, 4, -1].map((o) => (<option key={o} value={o}>{ORD_LABEL[o]}</option>))}
+          </select>
+          <select value={r.weekday} onChange={(e) => onChange({ ...r, weekday: Number(e.target.value) })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+            {WD_ORDER.map((w) => (<option key={w} value={w}>{WD_FULL[w]}</option>))}
+          </select>
+          <span className="text-xs text-neutral-400">месяца</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OpTypeModal({ opType, onSave, onDelete, onClose }) {
+  const [o, setO] = useState({ ...opType, recur: normRecur(opType.recur) });
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
+      <div className="rounded-2xl w-full max-w-md bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-neutral-900">Операционная задача</h2>
+          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+        </div>
+        <div className="space-y-4">
+          <input value={o.name} onChange={(e) => setO({ ...o, name: e.target.value })} placeholder="Название…" autoFocus className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+          <RecurEditor recur={o.recur} onChange={(r) => setO({ ...o, recur: r })} />
+        </div>
+        <div className="mt-5 flex items-center gap-2">
+          <button onClick={() => o.name.trim() && onSave(o)} disabled={!o.name.trim()} className="rounded-lg flex-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Сохранить</button>
+          <button onClick={() => onDelete(o.id)} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600">Удалить</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TasksView({ jobs, taskLabels, products, opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("cal"); // cal | gantt
@@ -3761,7 +3875,7 @@ function TasksView({ jobs, taskLabels, products, opTypes, onAddJob, onOpen }) {
 
       {view === "cal"
         ? <CalendarGrid jobs={jobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
-        : <GanttBoard jobs={jobs} products={products} opTypes={opTypes} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} />}
+        : <GanttBoard jobs={jobs} products={products} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} />}
     </div>
   );
 }
@@ -3812,8 +3926,8 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
   );
 }
 
-function GanttBoard({ jobs, products, opTypes, ym, todayStr, labelColor, onAddJob, onOpen }) {
-  const LW = 168;      // ширина колонки с подписями
+function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen }) {
+  const LW = 200;      // ширина колонки с подписями
   const DW = 30;       // ширина дня
   const BAR_H = 20;    // высота бара
   const TRACK_H = 24;  // шаг дорожки (бар + зазор)
@@ -3849,17 +3963,11 @@ function GanttBoard({ jobs, products, opTypes, ym, todayStr, labelColor, onAddJo
     return { bars, tracks: Math.max(1, ends.length) };
   };
 
-  // раскладка задач по группам
-  const opIds = new Set((opTypes || []).map((o) => o.id));
+  // раскладка задач по группам (операционные — отдельно, через регулярность)
   const visible = (jobs || []).map((j) => ({ j, pos: place(j) })).filter((x) => x.pos);
-  const opRows = (opTypes || []).map((o) => ({
-    key: o.id, label: o.name, preset: { opId: o.id },
-    items: visible.filter((x) => x.j.opId === o.id),
-  }));
-  const genItems = visible.filter((x) => !(x.j.opId && opIds.has(x.j.opId)) && !x.j.productId);
+  const genItems = visible.filter((x) => !x.j.productId);
   const prodMap = new Map();
   visible.forEach((x) => {
-    if (x.j.opId && opIds.has(x.j.opId)) return;
     if (!x.j.productId) return;
     (prodMap.get(x.j.productId) || prodMap.set(x.j.productId, []).get(x.j.productId)).push(x);
   });
@@ -3916,6 +4024,50 @@ function GanttBoard({ jobs, products, opTypes, ym, todayStr, labelColor, onAddJo
     );
   };
 
+  // строка операционной задачи — чек-боксы по графику регулярности
+  const OpRow = ({ op }) => {
+    const days = occurrenceDays(op.recur, ym.y, ym.m);
+    const doneMap = (opDone && opDone[op.id]) || {};
+    const daySet = new Set(days);
+    return (
+      <div className="flex border-t border-neutral-100">
+        <button
+          onClick={() => onEditOp(op)}
+          className="group flex shrink-0 flex-col items-start justify-center py-2 pl-2 pr-2 text-left hover:bg-neutral-50"
+          style={{ width: LW }}
+          title="Настроить график"
+        >
+          <span className="w-full truncate text-[12px] text-neutral-700">{op.name}</span>
+          <span className="w-full truncate text-[10px] text-neutral-400 group-hover:text-neutral-500">{describeRecur(op.recur)}</span>
+        </button>
+        <div className="relative flex shrink-0 items-center" style={{ width: timelineW, height: 44 }}>
+          {Array.from({ length: daysInMonth }, (_, i) => {
+            const d = i + 1;
+            if (!daySet.has(d)) return <div key={i} style={{ width: DW }} />;
+            const ds = isoYMD(new Date(ym.y, ym.m, d));
+            const done = !!doneMap[ds];
+            const overdue = !done && d < todayCol;
+            return (
+              <div key={i} className="flex items-center justify-center" style={{ width: DW }}>
+                <button
+                  onClick={() => onToggleDone(op.id, ds)}
+                  title={done ? "Выполнено — снять отметку" : "Отметить выполнено"}
+                  className="flex items-center justify-center transition hover:scale-110"
+                  style={{
+                    width: 18, height: 18, borderRadius: 5,
+                    background: done ? "#16a34a" : overdue ? "#fef2f2" : "#fff",
+                    border: done ? "2px solid #16a34a" : overdue ? "2px solid #fca5a5" : "2px solid #d4d4d4",
+                    color: "#fff",
+                  }}
+                >{done && <Check size={12} strokeWidth={3} />}</button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const Section = ({ title, children }) => (
     <div className="mt-2 first:mt-0">
       <div className="flex" style={{ minWidth: LW + timelineW }}>
@@ -3961,9 +4113,9 @@ function GanttBoard({ jobs, products, opTypes, ym, todayStr, labelColor, onAddJo
 
         <div className="relative">
           <Section title="Операционные задачи">
-            {opRows.length === 0
+            {(opTypes || []).length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Добавьте операционные задачи в настройках</div>
-              : opRows.map((row) => <Row key={row.key} row={row} />)}
+              : (opTypes || []).map((op) => <OpRow key={op.id} op={op} />)}
           </Section>
 
           <Section title="Общие задачи">
@@ -4005,13 +4157,6 @@ function JobEditor({ job, taskLabels, products, opTypes, onSave, onDelete, onClo
           </label>
           <p className="-mt-1 text-[11px] text-neutral-400">Без даты начала задача длится 1 день (дедлайн).</p>
           <label className="flex items-center justify-between gap-3">
-            <span className="text-sm text-neutral-600">Операционная</span>
-            <select value={j.opId || ""} onChange={(e) => set("opId", e.target.value || null)} className="max-w-[200px] rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-              <option value="">—</option>
-              {(opTypes || []).map((o) => (<option key={o.id} value={o.id}>{o.name}</option>))}
-            </select>
-          </label>
-          <label className="flex items-center justify-between gap-3">
             <span className="text-sm text-neutral-600">Метка</span>
             <select value={j.labelId || ""} onChange={(e) => set("labelId", e.target.value || null)} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
               <option value="">Без метки</option>
@@ -4042,15 +4187,19 @@ function JobEditor({ job, taskLabels, products, opTypes, onSave, onDelete, onClo
 function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, opTypes, setOpTypes, unitConst, setUnitConst, onClose }) {
   const [tab, setTab] = useState("statuses");
 
-  // --- операционные задачи (строки Ганта) ---
+  // --- операционные задачи (регулярные строки Ганта) ---
   const [opName, setOpName] = useState("");
+  const [opOpen, setOpOpen] = useState(null); // id раскрытой задачи
   const addOpType = () => {
     const t = opName.trim();
     if (!t || (opTypes || []).some((o) => o.name === t)) return;
-    setOpTypes((list) => [...(list || []), { id: uid(), name: t }]);
+    const id = uid();
+    setOpTypes((list) => [...(list || []), { id, name: t, recur: { mode: "weekly", weekdays: [1, 2, 3, 4, 5], ordinal: 1, weekday: 1 } }]);
     setOpName("");
+    setOpOpen(id);
   };
   const setOpTypeName = (id, name) => setOpTypes((list) => (list || []).map((x) => (x.id === id ? { ...x, name } : x)));
+  const setOpTypeRecur = (id, recur) => setOpTypes((list) => (list || []).map((x) => (x.id === id ? { ...x, recur } : x)));
   const removeOpType = (id) => setOpTypes((list) => (list || []).filter((x) => x.id !== id));
 
   // --- статусы ---
@@ -4179,19 +4328,34 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
           {tab === "ops" && (
             <>
-              <p className="mb-3 text-xs text-neutral-400">Операционные задачи — постоянные строки в Ганте блока «Задачи» (например: «Фотосессия», «Инфографика», «Поставка»). На них можно планировать задачи по срокам.</p>
+              <p className="mb-3 text-xs text-neutral-400">Регулярные задачи — строки в Ганте блока «Задачи». У каждой свой график повтора (дни недели или порядковый день месяца); в эти дни появляется чек-бокс выполнения.</p>
               <div className="mb-4 space-y-1.5">
-                {(opTypes || []).map((o) => (
-                  <div key={o.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-300" />
-                    <input
-                      value={o.name}
-                      onChange={(e) => setOpTypeName(o.id, e.target.value)}
-                      className="min-w-0 flex-1 bg-transparent text-sm text-neutral-800 focus:outline-none"
-                    />
-                    <button onClick={() => removeOpType(o.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
-                  </div>
-                ))}
+                {(opTypes || []).map((o) => {
+                  const open = opOpen === o.id;
+                  return (
+                    <div key={o.id} className="rounded-lg border border-neutral-100 hover:border-neutral-200">
+                      <div className="group flex items-center gap-2 px-2 py-2">
+                        <button onClick={() => setOpOpen(open ? null : o.id)} className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-100" title={open ? "Свернуть" : "График"}>
+                          {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <input
+                            value={o.name}
+                            onChange={(e) => setOpTypeName(o.id, e.target.value)}
+                            className="w-full bg-transparent text-sm text-neutral-800 focus:outline-none"
+                          />
+                          <div className="truncate text-[11px] text-neutral-400">{describeRecur(o.recur)}</div>
+                        </div>
+                        <button onClick={() => removeOpType(o.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+                      </div>
+                      {open && (
+                        <div className="border-t border-neutral-100 bg-neutral-50/50 px-3 py-3">
+                          <RecurEditor recur={o.recur} onChange={(r) => setOpTypeRecur(o.id, r)} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                 {(!opTypes || opTypes.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Операционных задач пока нет</p>}
               </div>
               <div className="flex items-center gap-2">
