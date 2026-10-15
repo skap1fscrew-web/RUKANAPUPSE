@@ -29,6 +29,7 @@ const FROZEN = [
   { id: "image", label: "Фото", width: 48 },
   { id: "code", label: "Код", width: 68 },
   { id: "wb", label: "Артикул", width: 118 },
+  { id: "subject", label: "Предмет", width: 120 },
   { id: "name", label: "Наименование", width: 180 },
   { id: "status", label: "Статус", width: 120 },
 ];
@@ -162,7 +163,8 @@ const GROUPS = [
       { id: "price",      label: "Цена",               field: "price",      type: "priceStack", w: 72,
         sub: (p) => { const pr = toNum(p.price), sp = toNum(p.spp); return isNaN(pr) ? NaN : (isNaN(sp) ? pr : pr * (1 - sp / 100)); } },
       { id: "spp",        label: "СПП, %",             field: "spp",        type: "input", suffix: "%" },
-      { id: "commission", label: "Комиссия, %",        field: "commission", type: "input", suffix: "%" },
+      { id: "commission", label: "Комиссия, %",        type: "calc", suffix: "%",
+        fn: (p) => { const c = toNum(p.commission); return isNaN(c) ? NaN : c; } },
       { id: "buyback",    label: "% выкупа",            field: "buyback",    type: "input", suffix: "%" },
       { id: "drr",        label: "ДРР, %",              field: "drr",        type: "input", suffix: "%" },
       { id: "logistics",  label: "Базовая логистика",   field: "logistics",  type: "input" },
@@ -360,7 +362,7 @@ const normalizeProduct = (p) => {
     blocks[g.id] = { entries: existing || legacy || [] };
   }
   return {
-    image: null, code: "", wb: "", name: "", status: "", cost: "",
+    image: null, code: "", wb: "", subject: "", name: "", status: "", cost: "",
     ...p,
     id: p?.id || uid(),
     external: undefined,
@@ -414,6 +416,7 @@ export default function AssortmentTable() {
   const [hiddenCols, setHiddenCols] = useState({}); // скрытые столбцы юнита: { "unit:spp": true }
   const [colFilterOpen, setColFilterOpen] = useState(false);
   const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170" }); // единые для всех товаров
+  const [subjects, setSubjects] = useState([]); // предметы с комиссией ВБ — [{id, name, commission}]
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
   const [expanded, setExpanded] = useState({});
@@ -448,8 +451,8 @@ export default function AssortmentTable() {
 
   const syncedRef = useRef({ products: new Map(), settings: {} });
   const dirtyRef = useRef({ products: new Set(), settings: new Set() });
-  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], jobs: [], opTypes: [] });
-  listSettingsRef.current = { bloggerDB, razdachDB, purchases, jobs, opTypes };
+  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], jobs: [], opTypes: [], subjects: [] });
+  listSettingsRef.current = { bloggerDB, razdachDB, purchases, jobs, opTypes, subjects };
 
   // UI-настройки (личные) — localStorage
   useEffect(() => {
@@ -480,6 +483,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = JSON.stringify(settings.taskLabels); }
         if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = JSON.stringify(settings.opTypes); }
         if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = JSON.stringify(settings.opDone); }
+        if (Array.isArray(settings.subjects)) { setSubjects(settings.subjects); syncedRef.current.settings.subjects = JSON.stringify(settings.subjects); }
         if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
@@ -523,7 +527,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -562,7 +566,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -597,6 +601,7 @@ export default function AssortmentTable() {
         else if (key === "taskLabels") setTaskLabels(value || []);
         else if (key === "opTypes") setOpTypes(value || []);
         else if (key === "opDone") setOpDone(value || {});
+        else if (key === "subjects") setSubjects(value || []);
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
@@ -905,7 +910,8 @@ export default function AssortmentTable() {
   const visibleGroups = tabGroups.filter((g) => g.kind === "gantt" || g.kind === "calendar" || enabled[g.id]);
   const columnGroups = visibleGroups.filter((g) => g.kind === "columns");
   // единые константы (из шестерёнки) подставляются в каждый товар перед расчётом
-  const withConst = (p) => ({ ...p, acquiring: unitConst.acqWb, acquiringOz: unitConst.acqOz, whCoeff: unitConst.whCoeffWb, taxRate: unitConst.tax, taxRateOz: unitConst.tax });
+  const subjectComm = (name) => { const s = (subjects || []).find((x) => x.name === name); return s ? s.commission : ""; };
+  const withConst = (p) => ({ ...p, commission: subjectComm(p.subject), acquiring: unitConst.acqWb, acquiringOz: unitConst.acqOz, whCoeff: unitConst.whCoeffWb, taxRate: unitConst.tax, taxRateOz: unitConst.tax });
   // с учётом скрытых столбцов (фильтр столбцов)
   const columnGroupsView = columnGroups
     .map((g) => ({ ...g, allCols: g.columns, columns: g.columns.filter((c) => !hiddenCols[g.id + ":" + c.id]) }))
@@ -1007,7 +1013,7 @@ export default function AssortmentTable() {
       fname = "calendar";
     } else {
       head = [
-        "Код", "Артикул ВБ", "Наименование", "Статус",
+        "Код", "Артикул ВБ", "Предмет", "Наименование", "Статус",
         ...columnGroups.flatMap((g) => g.columns.map((c) => `${g.label}: ${c.label}`)),
       ];
       rows = products.map((p) => {
@@ -1019,7 +1025,7 @@ export default function AssortmentTable() {
             return isNaN(v) ? "" : Math.round(v * 100) / 100;
           })
         );
-        return [p.code, p.wb, p.name, p.status, ...right];
+        return [p.code, p.wb, p.subject || "", p.name, p.status, ...right];
       });
       fname = "assortment";
     }
@@ -1222,6 +1228,9 @@ export default function AssortmentTable() {
         {/* Таблица товаров (Ассортимент / Продвижение / План отгрузок) */}
         {activeTab !== "purchases" && activeTab !== "tasks" && (
         <div ref={scrollRef} className="rounded-xl overflow-auto border border-neutral-200 bg-white shadow-sm">
+          <datalist id="subjects-datalist">
+            {(subjects || []).map((s) => (<option key={s.id} value={s.name} />))}
+          </datalist>
           <table className="text-sm" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
             <thead>
               <tr>
@@ -1317,6 +1326,18 @@ export default function AssortmentTable() {
                                   </a>
                                 )}
                               </div>
+                            </td>
+                          );
+                        if (f.id === "subject")
+                          return (
+                            <td key="subject" style={base}>
+                              <input
+                                list="subjects-datalist"
+                                value={p.subject || ""}
+                                onChange={(e) => updateProduct(p.id, "subject", e.target.value)}
+                                placeholder="—"
+                                className="w-full bg-transparent px-2 py-1.5 text-sm text-neutral-800 placeholder:text-neutral-300 focus:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-neutral-400"
+                              />
                             </td>
                           );
                         if (f.id === "name") {
@@ -1525,6 +1546,8 @@ export default function AssortmentTable() {
           setTaskLabels={setTaskLabels}
           opTypes={opTypes}
           setOpTypes={setOpTypes}
+          subjects={subjects}
+          setSubjects={setSubjects}
           unitConst={unitConst}
           setUnitConst={setUnitConst}
           onClose={() => setSettingsOpen(false)}
@@ -3461,17 +3484,21 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const pct = (v) => isNaN(v) ? "—" : Math.round(v) + "%";
 
   // компактная строка-поле «label … input» (функция, не компонент)
-  const unitField = (label, field, suffix) => (
+  const unitField = (label, field, suffix, opts) => (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-neutral-600">{label}</span>
+      <span className="text-xs text-neutral-600">{label}{opts && opts.hint && <span className="ml-1 text-[10px] text-neutral-400">{opts.hint}</span>}</span>
       <div className="flex items-center gap-1">
-        <input
-          value={product[field] ?? ""}
-          onChange={(e) => onSetField && onSetField(field, e.target.value)}
-          inputMode="decimal"
-          placeholder="0"
-          className="w-24 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-sm font-semibold tabular-nums text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
-        />
+        {opts && opts.readOnly ? (
+          <span className="w-24 rounded-lg border border-neutral-100 bg-neutral-50 px-2 py-1 text-right text-sm font-semibold tabular-nums text-neutral-700">{(product[field] ?? "") === "" ? "—" : product[field]}</span>
+        ) : (
+          <input
+            value={product[field] ?? ""}
+            onChange={(e) => onSetField && onSetField(field, e.target.value)}
+            inputMode="decimal"
+            placeholder="0"
+            className="w-24 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-sm font-semibold tabular-nums text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+          />
+        )}
         <span className="w-2.5 text-xs text-neutral-400">{suffix || ""}</span>
       </div>
     </div>
@@ -3666,7 +3693,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                   <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">Параметры товара</p>
                   <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
                     {unitField("Себестоимость", "cost")}
-                    {unitField("Комиссия, %", MP.f.commission, "%")}
+                    {unitField("Комиссия, %", MP.f.commission, "%", mp === "oz" ? undefined : { readOnly: true, hint: "из предмета" })}
                     {unitField("% выкупа", MP.f.buyback, "%")}
                     {unitField("Базовая логистика", MP.f.logistics)}
                   </div>
@@ -3939,6 +3966,10 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
   const todayInMonth = todayD >= monthFirst && todayD <= monthLast;
   const todayCol = todayInMonth ? todayD.getDate() : 0;
 
+  // свёрнутые секции (сохраняем в localStorage)
+  const [collapsed, setCollapsed] = useState(() => { try { return JSON.parse(localStorage.getItem("rnp-gantt-collapsed") || "{}"); } catch { return {}; } });
+  const toggleSection = (id) => setCollapsed((c) => { const n = { ...c, [id]: !c[id] }; try { localStorage.setItem("rnp-gantt-collapsed", JSON.stringify(n)); } catch {} return n; });
+
   // позиция задачи внутри месяца (или null, если вне диапазона)
   const place = (j) => {
     if (!j.date && !j.start) return null;
@@ -4067,14 +4098,23 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
     );
   };
 
-  const Section = ({ title, children }) => (
-    <div className="mt-2 first:mt-0">
-      <div className="flex" style={{ minWidth: LW + timelineW }}>
-        <div className="bg-neutral-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500" style={{ width: LW + timelineW }}>{title}</div>
+  const Section = ({ id, title, count, children }) => {
+    const open = !collapsed[id];
+    return (
+      <div className="mt-2 first:mt-0">
+        <button
+          onClick={() => toggleSection(id)}
+          className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1 text-left transition hover:bg-neutral-100"
+          style={{ width: LW + timelineW }}
+        >
+          <ChevronDown size={13} className="shrink-0 text-neutral-400 transition-transform" style={{ transform: open ? "none" : "rotate(-90deg)" }} />
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</span>
+          <span className="rounded-full bg-neutral-200/80 px-1.5 text-[10px] font-semibold leading-[16px] text-neutral-500">{count}</span>
+        </button>
+        {open && children}
       </div>
-      {children}
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="overflow-x-auto">
@@ -4112,19 +4152,19 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
         </div>
 
         <div className="relative">
-          <Section title="Операционные задачи">
+          <Section id="op" title="Операционные задачи" count={(opTypes || []).length}>
             {(opTypes || []).length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Добавьте операционные задачи в настройках</div>
               : (opTypes || []).map((op) => <OpRow key={op.id} op={op} />)}
           </Section>
 
-          <Section title="Общие задачи">
+          <Section id="gen" title="Общие задачи" count={genItems.length}>
             {genItems.length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет общих задач в этом месяце</div>
               : genItems.map((x) => <Row key={x.j.id} row={{ key: x.j.id, label: x.j.title || "—", preset: null, items: [x] }} />)}
           </Section>
 
-          <Section title="Задачи по товарам">
+          <Section id="prod" title="Задачи по товарам" count={prodRows.length}>
             {prodRows.length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет задач по товарам в этом месяце</div>
               : prodRows.map((row) => <Row key={row.key} row={row} />)}
@@ -4184,8 +4224,20 @@ function JobEditor({ job, taskLabels, products, opTypes, onSave, onDelete, onClo
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, opTypes, setOpTypes, unitConst, setUnitConst, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, opTypes, setOpTypes, subjects, setSubjects, unitConst, setUnitConst, onClose }) {
   const [tab, setTab] = useState("statuses");
+
+  // --- предметы и комиссии ВБ ---
+  const [subjName, setSubjName] = useState("");
+  const addSubject = () => {
+    const t = subjName.trim();
+    if (!t || (subjects || []).some((s) => s.name === t)) return;
+    setSubjects((list) => [...(list || []), { id: uid(), name: t, commission: "" }]);
+    setSubjName("");
+  };
+  const setSubjectName = (id, name) => setSubjects((list) => (list || []).map((x) => (x.id === id ? { ...x, name } : x)));
+  const setSubjectComm = (id, commission) => setSubjects((list) => (list || []).map((x) => (x.id === id ? { ...x, commission } : x)));
+  const removeSubject = (id) => setSubjects((list) => (list || []).filter((x) => x.id !== id));
 
   // --- операционные задачи (регулярные строки Ганта) ---
   const [opName, setOpName] = useState("");
@@ -4258,6 +4310,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
           <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
           <TabBtn id="ops">Операционные</TabBtn>
           <TabBtn id="labels">Метки</TabBtn>
+          <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
         </div>
 
@@ -4400,6 +4453,49 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                     <button key={c} onClick={() => setLColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: lColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />
                   ))}
                 </div>
+              </div>
+            </>
+          )}
+
+          {tab === "subjects" && (
+            <>
+              <p className="mb-3 text-xs text-neutral-400">Предметы и их комиссия ВБ (%). Комиссия в юнит-экономике ВБ берётся по предмету, указанному у товара. Предметы подсказываются в колонке «Предмет».</p>
+              <div className="mb-4 space-y-1.5">
+                {(subjects || []).map((s) => (
+                  <div key={s.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-300" />
+                    <input
+                      value={s.name}
+                      onChange={(e) => setSubjectName(s.id, e.target.value)}
+                      placeholder="Предмет (напр. Рубашка)"
+                      className="min-w-0 flex-1 bg-transparent text-sm text-neutral-800 focus:outline-none"
+                    />
+                    <div className="flex shrink-0 items-center gap-1">
+                      <input
+                        value={s.commission ?? ""}
+                        onChange={(e) => setSubjectComm(s.id, e.target.value)}
+                        inputMode="decimal"
+                        placeholder="0"
+                        className="w-16 rounded-lg border border-neutral-200 px-2 py-1 text-right text-sm tabular-nums text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                      />
+                      <span className="w-3 text-xs text-neutral-400">%</span>
+                    </div>
+                    <button onClick={() => removeSubject(s.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+                  </div>
+                ))}
+                {(!subjects || subjects.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Предметов пока нет</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  value={subjName}
+                  onChange={(e) => setSubjName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addSubject()}
+                  placeholder="Новый предмет…"
+                  className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                />
+                <button onClick={addSubject} disabled={!subjName.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+                  <Plus size={14} /> Добавить
+                </button>
               </div>
             </>
           )}
