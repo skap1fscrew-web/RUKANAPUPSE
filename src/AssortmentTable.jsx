@@ -41,7 +41,6 @@ const TABS = [
   { id: "assortment", label: "Юнит" },
   { id: "promotion", label: "Продвижение" },
   { id: "calendar", label: "Календарь" },
-  { id: "shipment", label: "План отгрузок ВБ" },
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
 ];
@@ -505,7 +504,7 @@ export default function AssortmentTable() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("rnp-ui");
-      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); }
+      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); }
     } catch {}
   }, []);
   useEffect(() => {
@@ -4676,7 +4675,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
           <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
         </div>
 
-        <div className="flex gap-1.5 border-b border-neutral-100 px-5 py-2.5">
+        <div className="flex flex-wrap gap-1.5 border-b border-neutral-100 px-5 py-2.5">
           <TabBtn id="statuses">Статусы</TabBtn>
           <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
           <TabBtn id="ops">Операционные</TabBtn>
