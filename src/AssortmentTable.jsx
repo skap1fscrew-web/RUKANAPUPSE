@@ -630,11 +630,14 @@ export default function AssortmentTable() {
         const js = JSON.stringify(value);
         if (syncedRef.current.settings[key] === js) return;
         if (dirtyRef.current.settings.has(key)) return;
-        // Защита: не даём входящему пустому массиву затереть непустой локальный
-        // список (эхо старого состояния во время несохранённой правки).
+        // Защита: не даём входящему пустому/обрезанному значению затереть непустой
+        // локальный список. Это ловит и эхо старого состояния, и усечённый realtime —
+        // Supabase присылает value=null, когда запись больше лимита (крупные таблицы,
+        // например комиссии ВБ на тысячи предметов).
         const liveLists = listSettingsRef.current;
-        if (key in liveLists && Array.isArray(value) && value.length === 0 && (liveLists[key] || []).length > 0) {
-          return;
+        if (key in liveLists) {
+          const incoming = Array.isArray(value) ? value : [];
+          if (incoming.length === 0 && (liveLists[key] || []).length > 0) return;
         }
         syncedRef.current.settings[key] = js;
         if (key === "statuses") setStatuses(value);
@@ -3263,12 +3266,11 @@ async function parseCommissionsXlsx(arrayBuffer) {
   if (!rows.length) throw new Error("Лист пуст.");
   const header = rows[0].cells;
   const norm = (s) => String(s || "").toLowerCase().replace(/\s|\n/g, "");
-  let colSubj = -1, colFbw = -1, colCat = -1;
+  let colSubj = -1, colFbw = -1;
   for (const [k, v] of Object.entries(header)) {
     const h = norm(v);
     if (colSubj < 0 && h.includes("предмет")) colSubj = +k;
     if (colFbw < 0 && h.includes("fbw")) colFbw = +k;
-    if (colCat < 0 && h.includes("категори")) colCat = +k;
   }
   if (colSubj < 0 || colFbw < 0)
     throw new Error("Не найдены столбцы «Предмет» и «Склад WB (FBW), %».");
@@ -3279,7 +3281,7 @@ async function parseCommissionsXlsx(arrayBuffer) {
     const comm = parseFloat(String(c[colFbw] ?? "").replace(",", "."));
     if (!name || isNaN(comm) || seen.has(name)) continue;
     seen.add(name);
-    out.push({ id: uid(), name, commission: comm, category: colCat >= 0 ? String(c[colCat] ?? "").trim() : "" });
+    out.push({ id: uid(), name, commission: comm });
   }
   if (!out.length) throw new Error("Не удалось прочитать комиссии из файла.");
   return out;
@@ -4781,7 +4783,6 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                         onChange={(e) => setSubjectName(s.id, e.target.value)}
                         className="w-full bg-transparent text-sm text-neutral-800 focus:outline-none"
                       />
-                      {s.category && <div className="truncate text-[10px] text-neutral-400">{s.category}</div>}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <input
