@@ -39,8 +39,6 @@ const FROZEN = [
 //   "matrix"  — раскрывается под строкой товара (метрики × интеграции, как Внешка).
 const TABS = [
   { id: "assortment", label: "Юнит" },
-  { id: "promotion", label: "Продвижение" },
-  { id: "calendar", label: "Календарь" },
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
 ];
@@ -480,15 +478,16 @@ export default function AssortmentTable() {
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   const [bloggerDB, setBloggerDB] = useState([]);
   const [razdachDB, setRazdachDB] = useState([]);
-  const [showBloggerDB, setShowBloggerDB] = useState(false);
-  const [showRazdachDB, setShowRazdachDB] = useState(false);
+  const [dbOpen, setDbOpen] = useState(false);
+  const [dbActive, setDbActive] = useState("blogger"); // blogger | razdach | <customId>
+  const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
   const [wbOrdersMeta, setWbOrdersMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbLoading, setWbLoading] = useState(false);
   const [wbProgress, setWbProgress] = useState(null);
-  const [wbSettingsOpen, setWbSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("statuses"); // стартовая вкладка окна настроек
   const [panelW, setPanelW] = useState(0);
 
   const fileInputRef = useRef(null);
@@ -497,8 +496,8 @@ export default function AssortmentTable() {
 
   const syncedRef = useRef({ products: new Map(), settings: {} });
   const dirtyRef = useRef({ products: new Set(), settings: new Set() });
-  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], jobs: [], opTypes: [], subjects: [] });
-  listSettingsRef.current = { bloggerDB, razdachDB, purchases, jobs, opTypes, subjects };
+  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], jobs: [], opTypes: [], subjects: [], customDBs: [] });
+  listSettingsRef.current = { bloggerDB, razdachDB, purchases, jobs, opTypes, subjects, customDBs };
 
   // UI-настройки (личные) — localStorage
   useEffect(() => {
@@ -530,6 +529,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = JSON.stringify(settings.opTypes); }
         if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = JSON.stringify(settings.opDone); }
         if (Array.isArray(settings.subjects)) { setSubjects(settings.subjects); syncedRef.current.settings.subjects = JSON.stringify(settings.subjects); }
+        if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
         if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
@@ -573,7 +573,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -612,7 +612,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -651,6 +651,7 @@ export default function AssortmentTable() {
         else if (key === "opTypes") setOpTypes(value || []);
         else if (key === "opDone") setOpDone(value || {});
         else if (key === "subjects") setSubjects(value || []);
+        else if (key === "customDBs") setCustomDBs(value || []);
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
@@ -825,7 +826,7 @@ export default function AssortmentTable() {
 
   // Загрузка заказов из WB API
   const fetchWbOrders = async () => {
-    if (!wbApiKey) { setWbSettingsOpen(true); return; }
+    if (!wbApiKey) { setSettingsTab("wbapi"); setSettingsOpen(true); return; }
     const nmIdList = products.map((p) => parseInt(p.wb)).filter((n) => n > 0);
     if (nmIdList.length === 0) { alert("Нет артикулов ВБ — заполните столбец «Артикул ВБ»."); return; }
 
@@ -1167,19 +1168,9 @@ export default function AssortmentTable() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {activeTab === "promotion" && (
-              <>
-                <button onClick={() => setWbSettingsOpen(true)} title="Настройки WB API" className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white px-2.5 py-1.5 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700">
-                  <Settings2 size={16} />
-                </button>
-                <button onClick={() => setShowBloggerDB(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100">
-                  База блогеров
-                </button>
-                <button onClick={() => setShowRazdachDB(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100">
-                  Раздачницы
-                </button>
-              </>
-            )}
+            <button onClick={() => setDbOpen(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100">
+              База
+            </button>
             {hasExpandable && products.length > 0 && (
               <button onClick={allOpen ? collapseAll : expandAll} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
                 {allOpen ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
@@ -1189,7 +1180,7 @@ export default function AssortmentTable() {
             <button onClick={exportCsv} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Download size={15} /> Экспорт CSV
             </button>
-            <button onClick={() => setSettingsOpen(true)} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+            <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Settings2 size={15} /> Настройки
             </button>
           </div>
@@ -1592,6 +1583,10 @@ export default function AssortmentTable() {
           setSubjects={setSubjects}
           unitConst={unitConst}
           setUnitConst={setUnitConst}
+          initialTab={settingsTab}
+          wbApiKey={wbApiKey}
+          setWbApiKey={setWbApiKey}
+          onFetchWb={() => { setSettingsOpen(false); fetchWbOrders(); }}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -1609,6 +1604,12 @@ export default function AssortmentTable() {
             onSetCompetitors={(c) => setProductCompetitors(cp.id, c)}
             onSetSeasonality={(s) => setProductSeasonality(cp.id, s)}
             onSetField={(f, v) => updateProduct(cp.id, f, v)}
+            productList={products}
+            onCalEntry={(v) => setCalEntry(cp.id, v)}
+            onCalStart={(v) => setCalStart(cp.id, v)}
+            onCalName={(v) => setCalName(cp.id, v)}
+            onCalComponents={(c) => setCalComponents(cp.id, c)}
+            onCalCopyFrom={(sid) => copyCalendarFrom(cp.id, sid)}
             hiddenTasks={hiddenTasks}
             rnpStartDate={rnpStartDate}
             rnpDays={rnpDays}
@@ -1658,70 +1659,76 @@ export default function AssortmentTable() {
         );
       })()}
 
-      {showBloggerDB && (
-        <RefDB
-          title="База блогеров"
-          fields={[
-            { id: "image", label: "Фото", type: "image" },
-            { id: "name", label: "Исполнитель", type: "text" },
-            { id: "status", label: "Статус", type: "select", options: BLOGGER_STATUSES },
-            { id: "inst", label: "Инстаграм", type: "link" },
-            { id: "tg", label: "Телеграм", type: "link" },
-            { id: "tiktok", label: "Тикток", type: "link" },
-            { id: "count", label: "Кол-во интеграций", type: "calc", fn: (r) => bloggerIntegrationCount(r.name) },
-            { id: "rating", label: "Рейтинг", type: "stars" },
-            { id: "price", label: "Стоимость поста", type: "num" },
-          ]}
-          rows={bloggerDB}
-          setRows={setBloggerDB}
-          onClose={() => setShowBloggerDB(false)}
-        />
-      )}
-      {showRazdachDB && (
-        <RefDB
-          title="Раздачницы"
-          fields={[
-            { id: "image", label: "Фото", type: "image" },
-            { id: "name", label: "Исполнитель", type: "text" },
-            { id: "inst", label: "Инстаграм", type: "link" },
-            { id: "tg", label: "Телеграм", type: "link" },
-            { id: "rating", label: "Рейтинг", type: "stars" },
-            { id: "comment", label: "Комментарий", type: "text" },
-          ]}
-          rows={razdachDB}
-          setRows={setRazdachDB}
-          onClose={() => setShowRazdachDB(false)}
-        />
-      )}
-
-      {wbSettingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={() => setWbSettingsOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-neutral-900">Настройки WB API</h2>
-              <button onClick={() => setWbSettingsOpen(false)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
-            </div>
-            <p className="mb-3 text-sm text-neutral-500">
-              Ключ берётся в кабинете ВБ → Настройки → Доступ к API → категория «Статистика». Ключ хранится в базе, доступен только вашей команде.
-            </p>
-            <label className="block text-xs font-medium text-neutral-500 mb-1">API-ключ (Статистика)</label>
-            <input
-              value={wbApiKey}
-              onChange={(e) => setWbApiKey(e.target.value)}
-              type="password"
-              placeholder="eyJhbGci..."
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"
-              style={{ fontFamily: "monospace" }}
-            />
-            <div className="mt-4 flex items-center justify-between">
-              <button onClick={() => { setWbSettingsOpen(false); fetchWbOrders(); }} disabled={!wbApiKey} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
-                Сохранить и загрузить
-              </button>
-              <span className="text-xs text-neutral-400">{wbApiKey ? "✓ ключ задан" : "ключ не задан"}</span>
-            </div>
+      {dbOpen && (() => {
+        const BLOGGER_FIELDS_DB = [
+          { id: "image", label: "Фото", type: "image" },
+          { id: "name", label: "Исполнитель", type: "text" },
+          { id: "status", label: "Статус", type: "select", options: BLOGGER_STATUSES },
+          { id: "inst", label: "Инстаграм", type: "link" },
+          { id: "tg", label: "Телеграм", type: "link" },
+          { id: "tiktok", label: "Тикток", type: "link" },
+          { id: "count", label: "Кол-во интеграций", type: "calc", fn: (r) => bloggerIntegrationCount(r.name) },
+          { id: "rating", label: "Рейтинг", type: "stars" },
+          { id: "price", label: "Стоимость поста", type: "num" },
+        ];
+        const RAZDACH_FIELDS_DB = [
+          { id: "image", label: "Фото", type: "image" },
+          { id: "name", label: "Исполнитель", type: "text" },
+          { id: "inst", label: "Инстаграм", type: "link" },
+          { id: "tg", label: "Телеграм", type: "link" },
+          { id: "rating", label: "Рейтинг", type: "stars" },
+          { id: "comment", label: "Комментарий", type: "text" },
+        ];
+        const CUSTOM_FIELDS_DB = [
+          { id: "image", label: "Фото", type: "image" },
+          { id: "name", label: "Название", type: "text" },
+          { id: "link", label: "Ссылка", type: "link" },
+          { id: "contact", label: "Контакт", type: "text" },
+          { id: "rating", label: "Рейтинг", type: "stars" },
+          { id: "comment", label: "Комментарий", type: "text" },
+        ];
+        const active = (customDBs || []).some((c) => c.id === dbActive) ? dbActive
+          : dbActive === "razdach" ? "razdach" : "blogger";
+        const activeCustom = (customDBs || []).find((c) => c.id === active);
+        const cfg = active === "blogger"
+          ? { title: "Блогеры", fields: BLOGGER_FIELDS_DB, rows: bloggerDB, setRows: setBloggerDB }
+          : active === "razdach"
+          ? { title: "Раздачницы", fields: RAZDACH_FIELDS_DB, rows: razdachDB, setRows: setRazdachDB }
+          : {
+              title: activeCustom?.name || "База",
+              fields: CUSTOM_FIELDS_DB,
+              rows: activeCustom?.rows || [],
+              setRows: (upd) => setCustomDBs((list) => (list || []).map((c) => (c.id === active ? { ...c, rows: typeof upd === "function" ? upd(c.rows || []) : upd } : c))),
+            };
+        const addType = () => { const n = (typeof window !== "undefined" && window.prompt("Название нового вида базы:") || "").trim(); if (!n) return; const id = uid(); setCustomDBs((list) => [...(list || []), { id, name: n, rows: [] }]); setDbActive(id); };
+        const removeType = (id) => { if (typeof window !== "undefined" && !window.confirm("Удалить этот вид базы со всеми записями?")) return; setCustomDBs((list) => (list || []).filter((c) => c.id !== id)); setDbActive("blogger"); };
+        const TabChip = ({ id, name, custom }) => (
+          <span className={"group/chip inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-sm font-semibold transition " + (active === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>
+            <button onClick={() => setDbActive(id)}>{name}</button>
+            {custom && active === id && <button onClick={() => removeType(id)} className="rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить вид"><X size={12} /></button>}
+          </span>
+        );
+        const tabs = (
+          <div className="mt-2 inline-flex flex-wrap items-center gap-1 rounded-lg bg-neutral-100 p-0.5">
+            <TabChip id="blogger" name="Блогеры" />
+            <TabChip id="razdach" name="Раздачницы" />
+            {(customDBs || []).map((c) => <TabChip key={c.id} id={c.id} name={c.name} custom />)}
+            <button onClick={addType} className="rounded-md px-2 py-1 text-sm font-semibold text-neutral-400 hover:text-neutral-700" title="Добавить вид">+ Вид</button>
           </div>
-        </div>
-      )}
+        );
+        return (
+          <RefDB
+            key={active}
+            title={cfg.title}
+            tabs={tabs}
+            fields={cfg.fields}
+            rows={cfg.rows}
+            setRows={cfg.setRows}
+            onClose={() => setDbOpen(false)}
+          />
+        );
+      })()}
+
     </div>
   );
 }
@@ -2945,7 +2952,7 @@ function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, on
    Справочная база (Блогеры / Раздачницы)
 ---------------------------------------------------------------------------- */
 
-function RefDB({ title, fields, rows, setRows, onClose }) {
+function RefDB({ title, fields, rows, setRows, tabs, onClose }) {
   const fileRef = useRef(null);
   const target = useRef(null);
 
@@ -2970,10 +2977,11 @@ function RefDB({ title, fields, rows, setRows, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
       <div className="w-full overflow-auto rounded-2xl bg-white p-5 shadow-xl" style={{ maxWidth: "min(1100px, 95vw)", maxHeight: "88vh" }} onClick={(e) => e.stopPropagation()}>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-start justify-between">
           <div>
-            <h2 className="text-base font-semibold text-neutral-900">{title}</h2>
+            <h2 className="text-base font-semibold text-neutral-900">База <span className="text-neutral-400">· {title}</span></h2>
             <p className="text-sm text-neutral-400">{rows.length} записей</p>
+            {tabs}
           </div>
           <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
         </div>
@@ -3549,7 +3557,7 @@ function PromoDayEditor({ product, dkey, wbOrders = {}, onSetCell, onSetFlag, on
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onSetField, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onSetField, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -3559,6 +3567,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [showDone, setShowDone] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [calBlockOpen, setCalBlockOpen] = useState(false);
   const [unitOpen, setUnitOpen] = useState(false);
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoView, setPromoView] = useState("gantt"); // gantt | cal
@@ -4005,17 +4014,15 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                   {(isNaN(puCny) || isNaN(puUsd) || isNaN(puCargo)) && (
                     <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Укажите курс юаня, курс доллара и ставку карго в «Настройки → Единые данные» — иначе расчёт неполный.</p>
                   )}
-                  <label className="mb-3 flex items-center gap-2">
-                    <span className="w-28 shrink-0 text-xs text-neutral-600">Ссылка на закупку</span>
-                    <div className="relative flex-1">
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <span className="shrink-0 text-xs text-neutral-600">Ссылка</span>
+                    <div className="relative min-w-[180px] flex-[2]">
                       <input value={pu.link ?? ""} onChange={(e) => setPu("link", e.target.value)} placeholder="https://…" className="w-full rounded-lg border border-neutral-200 px-3 py-1.5 pr-8 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
                       {String(pu.link || "").trim() && <a href={pu.link} target="_blank" rel="noreferrer" className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-sky-600" title="Открыть"><ExternalLink size={14} /></a>}
                     </div>
-                  </label>
-                  <label className="mb-4 flex items-center gap-2">
-                    <span className="w-28 shrink-0 text-xs text-neutral-600">Параметр</span>
-                    <input value={pu.param ?? ""} onChange={(e) => setPu("param", e.target.value)} placeholder="Напр. цвет / размер" className="flex-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                  </label>
+                    <span className="shrink-0 text-xs text-neutral-600">Параметр</span>
+                    <input value={pu.param ?? ""} onChange={(e) => setPu("param", e.target.value)} placeholder="цвет / размер" className="min-w-[120px] flex-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                  </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
@@ -4082,6 +4089,25 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                       {product.seasonality?.points?.length > 0 && <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}
                     </button>
                     {seasonOpen && <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} />}
+                  </div>
+
+                  {/* Календарь производства */}
+                  <div className="border-t border-neutral-100 pt-4">
+                    <button onClick={() => setCalBlockOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">
+                      {calBlockOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Календарь</h4>
+                    </button>
+                    {calBlockOpen && (
+                      <CalendarBlock
+                        product={product}
+                        productList={productList || []}
+                        onSetEntry={onCalEntry}
+                        onSetStart={onCalStart}
+                        onSetName={onCalName}
+                        onSetComponents={onCalComponents}
+                        onCopyFrom={onCalCopyFrom}
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -4572,8 +4598,8 @@ function JobEditor({ job, taskLabels, products, opTypes, onSave, onDelete, onClo
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, opTypes, setOpTypes, subjects, setSubjects, unitConst, setUnitConst, onClose }) {
-  const [tab, setTab] = useState("statuses");
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, opTypes, setOpTypes, subjects, setSubjects, unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
+  const [tab, setTab] = useState(initialTab || "statuses");
 
   // --- предметы и комиссии ВБ (загрузка таблицей, опора на FBW) ---
   const [subjName, setSubjName] = useState("");
@@ -4682,6 +4708,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
           <TabBtn id="labels">Метки</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
+          <TabBtn id="wbapi">API ВБ</TabBtn>
         </div>
 
         <div className="flex-1 overflow-auto p-5">
@@ -4924,6 +4951,27 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                     />
                   </label>
                 ))}
+              </div>
+            </>
+          )}
+
+          {tab === "wbapi" && (
+            <>
+              <p className="mb-3 text-xs text-neutral-400">Ключ берётся в кабинете ВБ → Настройки → Доступ к API → категория «Статистика». Хранится в базе, доступен только вашей команде. Нужен для подгрузки заказов в блок «Продвижение».</p>
+              <label className="mb-1 block text-xs font-medium text-neutral-500">API-ключ (Статистика)</label>
+              <input
+                value={wbApiKey || ""}
+                onChange={(e) => setWbApiKey(e.target.value)}
+                type="password"
+                placeholder="eyJhbGci..."
+                className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                style={{ fontFamily: "monospace" }}
+              />
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <button onClick={() => onFetchWb && onFetchWb()} disabled={!wbApiKey} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+                  Сохранить и загрузить
+                </button>
+                <span className="text-xs text-neutral-400">{wbApiKey ? "✓ ключ задан" : "ключ не задан"}</span>
               </div>
             </>
           )}
