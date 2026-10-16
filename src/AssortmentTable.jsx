@@ -3558,6 +3558,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [newText, setNewText] = useState("");
   const [showDone, setShowDone] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [unitOpen, setUnitOpen] = useState(false);
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoView, setPromoView] = useState("gantt"); // gantt | cal
@@ -3960,47 +3961,56 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               )}
             </section>
 
-            {/* Конкуренты */}
-            {card(
-              "Конкуренты",
-              <>
-                {competitors.length > 0 ? (
-                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
-                    {competitors.map((c) => (<CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>
-                )}
-                <div className="mt-3 flex items-center gap-2">
-                  <input
-                    value={compUrl}
-                    onChange={(e) => setCompUrl(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addComp()}
-                    placeholder="Ссылка на карточку ВБ…"
-                    className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
-                  />
-                  <button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex shrink-0 items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
-                    <Plus size={14} /> Добавить
-                  </button>
-                </div>
-              </>,
-              competitors.length > 0 ? <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span> : null
-            )}
-
-            {/* Сезонность — раскрывающийся дашборд */}
+            {/* Аналитика — конкуренты + сезонность */}
             <section className="rounded-2xl border border-neutral-200 bg-white">
-              <button onClick={() => setSeasonOpen((v) => !v)} className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left">
+              <button onClick={() => setAnalyticsOpen((v) => !v)} className="flex w-full items-center gap-2 px-4 py-3 text-left">
                 <span className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-800">
-                  {seasonOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  Сезонность
+                  {analyticsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  Аналитика
                 </span>
-                {product.seasonality?.points?.length > 0 && (
-                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                  {competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-500">Конкуренты: {competitors.length}</span>}
+                  {product.seasonality?.points?.length > 0 && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}
+                </div>
               </button>
-              {seasonOpen && (
-                <div className="border-t border-neutral-100 px-4 py-4">
-                  <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} />
+              {analyticsOpen && (
+                <div className="space-y-5 border-t border-neutral-100 px-4 py-4">
+                  {/* Конкуренты */}
+                  <div>
+                    <div className="mb-2 flex items-center gap-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Конкуренты</h4>
+                      {competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span>}
+                    </div>
+                    {competitors.length > 0 ? (
+                      <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
+                        {competitors.map((c) => (<CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>
+                    )}
+                    <div className="mt-3 flex items-center gap-2">
+                      <input
+                        value={compUrl}
+                        onChange={(e) => setCompUrl(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && addComp()}
+                        placeholder="Ссылка на карточку ВБ…"
+                        className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                      />
+                      <button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex shrink-0 items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
+                        <Plus size={14} /> Добавить
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Сезонность */}
+                  <div className="border-t border-neutral-100 pt-4">
+                    <button onClick={() => setSeasonOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">
+                      {seasonOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Сезонность</h4>
+                      {product.seasonality?.points?.length > 0 && <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}
+                    </button>
+                    {seasonOpen && <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} />}
+                  </div>
                 </div>
               )}
             </section>
