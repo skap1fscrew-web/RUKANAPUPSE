@@ -402,6 +402,7 @@ const normalizeProduct = (p) => {
   return {
     image: null, code: "", wb: "", subject: "", name: "", status: "", cost: "",
     ...p,
+    purchase: p?.purchase || { link: "", param: "", priceCny: "", weightG: "", qty: "" },
     id: p?.id || uid(),
     external: undefined,
     blocks,
@@ -461,7 +462,7 @@ export default function AssortmentTable() {
   const [hiddenTasks, setHiddenTasks] = useState({});
   const [hiddenCols, setHiddenCols] = useState({}); // скрытые столбцы юнита: { "unit:spp": true }
   const [colFilterOpen, setColFilterOpen] = useState(false);
-  const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170" }); // единые для всех товаров
+  const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170", cny: "", usd: "", cargo: "" }); // единые для всех товаров
   const [subjects, setSubjects] = useState([]); // предметы с комиссией ВБ — [{id, name, commission}]
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
@@ -961,7 +962,7 @@ export default function AssortmentTable() {
   // единые константы (из шестерёнки) подставляются в каждый товар перед расчётом
   const subjMap = useMemo(() => { const m = new Map(); (subjects || []).forEach((s) => m.set(s.name, s.commission)); return m; }, [subjects]);
   const subjectComm = (name) => (subjMap.has(name) ? subjMap.get(name) : "");
-  const withConst = (p) => ({ ...p, commission: subjectComm(p.subject), acquiring: unitConst.acqWb, acquiringOz: unitConst.acqOz, whCoeff: unitConst.whCoeffWb, taxRate: unitConst.tax, taxRateOz: unitConst.tax });
+  const withConst = (p) => ({ ...p, commission: subjectComm(p.subject), acquiring: unitConst.acqWb, acquiringOz: unitConst.acqOz, whCoeff: unitConst.whCoeffWb, taxRate: unitConst.tax, taxRateOz: unitConst.tax, cny: unitConst.cny, usd: unitConst.usd, cargo: unitConst.cargo });
   // с учётом скрытых столбцов (фильтр столбцов)
   const columnGroupsView = columnGroups
     .map((g) => ({ ...g, allCols: g.columns, columns: g.columns.filter((c) => !hiddenCols[g.id + ":" + c.id]) }))
@@ -3563,6 +3564,17 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoView, setPromoView] = useState("gantt"); // gantt | cal
   const [promoDay, setPromoDay] = useState(null); // открытый день в календаре продвижения
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const pu = product.purchase || {};
+  const setPu = (k, v) => onSetField && onSetField("purchase", { ...(product.purchase || {}), [k]: v });
+  const puCny = toNum(product.cny), puUsd = toNum(product.usd), puCargo = toNum(product.cargo);
+  const puPriceCny = toNum(pu.priceCny), puWeightG = toNum(pu.weightG), puQty = toNum(pu.qty);
+  const puRubPerUnit = !isNaN(puPriceCny)
+    ? (isNaN(puCny) ? 0 : puCny) * puPriceCny + (isNaN(puCargo) ? 0 : puCargo) * ((isNaN(puWeightG) ? 0 : puWeightG) / 1000) * (isNaN(puUsd) ? 0 : puUsd)
+    : NaN;
+  const puLotRub = !isNaN(puRubPerUnit) && !isNaN(puQty) ? puRubPerUnit * puQty : NaN;
+  const puLotCny = !isNaN(puPriceCny) && !isNaN(puQty) ? puPriceCny * puQty : NaN;
+  const yuan = (n) => (isNaN(n) ? "—" : Math.round(n * 100) / 100 === Math.round(n) ? Math.round(n).toLocaleString("ru-RU") + " ¥" : (Math.round(n * 100) / 100).toLocaleString("ru-RU") + " ¥");
   const [mp, setMp] = useState("wb"); // маркетплейс для юнит-экономики: wb | oz
   const promoBudget = rnpBudget(product);
   const done = tasks.filter((t) => t.done).length;
@@ -3700,6 +3712,15 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
     <div className="flex items-center justify-between gap-2">
       <span className="text-xs text-neutral-600">{label}</span>
       <b className="text-sm font-bold tabular-nums" style={{ color: colorNum === undefined ? "#0f172a" : toneColor(colorNum) }}>{text}</b>
+    </div>
+  );
+  const puField = (label, value, onChange, suffix) => (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs text-neutral-600">{label}</span>
+      <div className="flex items-center gap-1">
+        <input value={value ?? ""} onChange={(e) => onChange(e.target.value)} inputMode="decimal" placeholder="0" className="w-24 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-sm font-semibold tabular-nums text-neutral-900 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+        <span className="w-4 text-xs text-neutral-400">{suffix || ""}</span>
+      </div>
     </div>
   );
 
@@ -3957,6 +3978,58 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                   ) : (
                     <PromoCalendar product={product} wbOrders={wbOrders} onOpenDay={(ds) => setPromoDay(ds)} />
                   )}
+                </div>
+              )}
+            </section>
+
+            {/* Закупка — расчёт себестоимости из Китая */}
+            <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => setPurchaseOpen((v) => !v)} className="flex items-center gap-1.5 text-left">
+                  {purchaseOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  <h3 className="text-sm font-semibold text-neutral-800">Закупка</h3>
+                </button>
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <div className="rounded-xl border border-neutral-200 px-3 py-1">
+                    <div className="text-[10px] text-neutral-500">Цена за ед.</div>
+                    <div className="text-sm font-bold tabular-nums text-neutral-800">{money(puRubPerUnit)}</div>
+                  </div>
+                  <div className="rounded-xl border border-neutral-200 px-3 py-1">
+                    <div className="text-[10px] text-neutral-500">Партия, ₽</div>
+                    <div className="text-sm font-bold tabular-nums text-neutral-800">{money(puLotRub)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {purchaseOpen && (
+                <div className="mt-3 border-t border-neutral-100 pt-3">
+                  {(isNaN(puCny) || isNaN(puUsd) || isNaN(puCargo)) && (
+                    <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Укажите курс юаня, курс доллара и ставку карго в «Настройки → Единые данные» — иначе расчёт неполный.</p>
+                  )}
+                  <label className="mb-3 flex items-center gap-2">
+                    <span className="w-28 shrink-0 text-xs text-neutral-600">Ссылка на закупку</span>
+                    <div className="relative flex-1">
+                      <input value={pu.link ?? ""} onChange={(e) => setPu("link", e.target.value)} placeholder="https://…" className="w-full rounded-lg border border-neutral-200 px-3 py-1.5 pr-8 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                      {String(pu.link || "").trim() && <a href={pu.link} target="_blank" rel="noreferrer" className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-sky-600" title="Открыть"><ExternalLink size={14} /></a>}
+                    </div>
+                  </label>
+                  <label className="mb-4 flex items-center gap-2">
+                    <span className="w-28 shrink-0 text-xs text-neutral-600">Параметр</span>
+                    <input value={pu.param ?? ""} onChange={(e) => setPu("param", e.target.value)} placeholder="Напр. цвет / размер" className="flex-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                  </label>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      {puField("Цена в юанях за ед.", pu.priceCny, (v) => setPu("priceCny", v), "¥")}
+                      {puField("Вес, г", pu.weightG, (v) => setPu("weightG", v), "г")}
+                      {puField("Кол-во", pu.qty, (v) => setPu("qty", v), "шт")}
+                    </div>
+                    <div className="flex flex-col justify-center gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">
+                      {resRow("Цена в руб за ед.", money(puRubPerUnit))}
+                      {resRow("Цена партии в рублях", money(puLotRub))}
+                      {resRow("Цена партии в юанях", yuan(puLotCny))}
+                    </div>
+                  </div>
                 </div>
               )}
             </section>
@@ -4829,13 +4902,16 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
           {tab === "unit" && (
             <>
-              <p className="mb-4 text-xs text-neutral-400">Применяются ко всем товарам в расчёте юнит-экономики.</p>
+              <p className="mb-4 text-xs text-neutral-400">Применяются ко всем товарам — в расчёте юнит-экономики и закупки.</p>
               <div className="space-y-2.5">
                 {[
                   { k: "tax", label: "Налог, %" },
                   { k: "acqWb", label: "Эквайринг ВБ, %" },
                   { k: "acqOz", label: "Эквайринг Озон, %" },
                   { k: "whCoeffWb", label: "КФ склада ВБ, %" },
+                  { k: "cny", label: "Курс юаня, ₽" },
+                  { k: "usd", label: "Курс доллара, ₽" },
+                  { k: "cargo", label: "Ставка карго, $/кг" },
                 ].map((r) => (
                   <label key={r.k} className="flex items-center justify-between gap-3">
                     <span className="text-sm text-neutral-700">{r.label}</span>
