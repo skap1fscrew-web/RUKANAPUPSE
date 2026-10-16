@@ -38,7 +38,7 @@ const FROZEN = [
 //   "columns" — добавляет столбцы к каждой строке товара (как Юнит);
 //   "matrix"  — раскрывается под строкой товара (метрики × интеграции, как Внешка).
 const TABS = [
-  { id: "assortment", label: "Юнит" },
+  { id: "assortment", label: "Товары" },
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
 ];
@@ -186,7 +186,7 @@ const GROUPS = [
     id: "unit",
     label: "Юнит ВБ",
     accent: "#7c3aed",
-    tab: "assortment",
+    tab: "card",
     kind: "columns",
     // Формулы юнит-экономики ВБ — как в таблице «Ассортимент»:
     //   Цена после СПП = Цена*(1−СПП)
@@ -251,7 +251,7 @@ const GROUPS = [
     id: "unitoz",
     label: "Юнит Озон",
     accent: "#2563eb",
-    tab: "assortment",
+    tab: "card",
     kind: "columns",
     // Озон: себес — общий (p.cost). Итог.логистика без КФ склада.
     //   Итог.лог = Баз.лог/%выкупа + (Баз.лог/%выкупа − Баз.лог)
@@ -463,6 +463,7 @@ export default function AssortmentTable() {
   const [subjects, setSubjects] = useState([]); // предметы с комиссией ВБ — [{id, name, commission}]
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
+  const [productsView, setProductsView] = useState("list"); // list | tiles
   const [expanded, setExpanded] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -503,12 +504,12 @@ export default function AssortmentTable() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("rnp-ui");
-      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); }
+      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); if (ui.productsView) setProductsView(ui.productsView); }
     } catch {}
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks, hiddenCols })); } catch {}
-  }, [enabled, activeTab, hiddenTasks, hiddenCols]);
+    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks, hiddenCols, productsView })); } catch {}
+  }, [enabled, activeTab, hiddenTasks, hiddenCols, productsView]);
 
   // загрузка из Supabase
   useEffect(() => {
@@ -1230,44 +1231,18 @@ export default function AssortmentTable() {
           </div>
         )}
 
-        {/* Юнит: фильтр столбцов + шестерёнка единых настроек */}
+        {/* Товары: переключатель вида список / плитки */}
         {activeTab === "assortment" && (
           <div className="mb-3 flex items-center gap-2">
-            <div className="relative inline-block">
-              <button
-                onClick={() => setColFilterOpen((v) => !v)}
-                className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-              >
-                <Settings2 size={14} /> Столбцы
-                <ChevronDown size={14} className="text-neutral-400" />
-              </button>
-              {colFilterOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setColFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-50 mt-1 max-h-80 w-64 overflow-auto rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
-                    {columnGroups.map((g) => (
-                      <div key={g.id}>
-                        <div className="px-3 pb-0.5 pt-2 text-xs font-bold uppercase tracking-wide" style={{ color: g.accent }}>{g.label}</div>
-                        {g.columns.map((col) => {
-                          const on = !hiddenCols[g.id + ":" + col.id];
-                          return (
-                            <label key={col.id} className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-neutral-50">
-                              <input type="checkbox" checked={on} onChange={() => setHiddenCols((h) => { const k = g.id + ":" + col.id; const n = { ...h }; if (on) n[k] = true; else delete n[k]; return n; })} className="h-3.5 w-3.5 accent-orange-600" />
-                              <span className={on ? "text-neutral-700" : "text-neutral-400"}>{col.label}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
+            <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+              <button onClick={() => setProductsView("list")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (productsView === "list" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Список</button>
+              <button onClick={() => setProductsView("tiles")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (productsView === "tiles" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Плитки</button>
             </div>
           </div>
         )}
 
-        {/* Таблица товаров (Ассортимент / Продвижение / План отгрузок) */}
-        {activeTab !== "purchases" && activeTab !== "tasks" && (
+        {/* Таблица товаров — вид «Список» */}
+        {activeTab === "assortment" && productsView === "list" && (
         <div ref={scrollRef} className="rounded-xl overflow-auto border border-neutral-200 bg-white shadow-sm">
           <SubjectsDatalist subjects={subjects} />
           <table className="text-sm" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
@@ -1521,6 +1496,39 @@ export default function AssortmentTable() {
             <div className="px-4 py-10 text-center text-sm text-neutral-400">Пока нет товаров. Нажмите «Добавить товар», чтобы начать.</div>
           )}
         </div>
+        )}
+
+        {/* Товары — вид «Плитки» (акцент на фото) */}
+        {activeTab === "assortment" && productsView === "tiles" && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {filteredProducts.map((p) => {
+              const sc = statusColor(p.status);
+              return (
+                <div key={p.id} className="group relative overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm transition hover:shadow-md">
+                  <div className="relative aspect-square w-full overflow-hidden bg-neutral-50">
+                    <button onClick={() => setCardModal(p.id)} className="block h-full w-full" title="Открыть карточку">
+                      {p.image
+                        ? <img src={p.image} alt="" className="h-full w-full object-cover transition group-hover:scale-[1.03]" />
+                        : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={28} /></div>}
+                    </button>
+                    {p.status && <span className="rounded-full absolute left-2 top-2 px-2 py-0.5 text-[11px] font-semibold" style={{ background: sc + "26", color: sc }}>{p.status}</span>}
+                    <button onClick={() => triggerUpload(p.id)} className="rounded-lg absolute bottom-2 right-2 bg-white/90 p-1.5 text-neutral-500 opacity-0 shadow transition hover:text-neutral-800 group-hover:opacity-100" title="Загрузить фото"><ImagePlus size={14} /></button>
+                    <button onClick={() => removeProduct(p.id)} className="rounded-md absolute right-2 top-2 bg-white/90 p-1 text-neutral-400 opacity-0 shadow transition hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+                  </div>
+                  <button onClick={() => setCardModal(p.id)} className="block w-full px-3 py-2 text-left">
+                    <div className="flex items-center gap-1.5 truncate text-[11px] text-neutral-400">
+                      <span className="font-semibold text-neutral-500">{p.code || "—"}</span>
+                      {p.subject && <span className="truncate">· {p.subject}</span>}
+                    </div>
+                    <div className="mt-0.5 text-sm font-medium text-neutral-800 group-hover:text-orange-700" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.name || <span className="text-neutral-400">Без названия</span>}</div>
+                  </button>
+                </div>
+              );
+            })}
+            <button onClick={addProduct} className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-neutral-200 text-neutral-400 transition hover:border-orange-300 hover:bg-orange-50/30 hover:text-orange-600">
+              <Plus size={22} /> <span className="text-sm font-medium">Добавить товар</span>
+            </button>
+          </div>
         )}
 
         {activeTab === "purchases" && (
