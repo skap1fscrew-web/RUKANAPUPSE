@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, memo } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
@@ -106,6 +106,44 @@ const RNP_TASKS = [
   { id: "ab",       label: "А/Б тесты", kind: "rangeTask", cost: false, fields: AB_FIELDS },
 ];
 const RNP_COST_TASKS = RNP_TASKS.filter((t) => t.cost);
+const RNP_COLORS = { orders: "#16a34a", internal: "#2563eb", vykupy: "#16a34a", bloggers: "#db2777", razdachi: "#d97706", stars: "#7c3aed", wibes: "#0891b2", promo: "#ea580c", ab: "#64748b" };
+
+// Сумма затрат по строке РНП за весь период (для превью «Фонд / Затраты / Остаток»)
+function rnpTaskTotal(task, product) {
+  const entries = product.rnp?.entries || {};
+  const cells = product.rnp?.cells || {};
+  const rec = (e) => calcRecordCost(task.fields, e);
+  if (task.kind === "rangeTask") return (entries[`${task.id}:_ranges`] || []).reduce((a, e) => a + rec(e), 0);
+  return task.top === "entries"
+    ? Object.entries(entries).reduce((a, [k, arr]) => a + (k.startsWith(task.id + ":") && !k.endsWith(":_ranges") ? (arr || []).reduce((s, e) => s + rec(e), 0) : 0), 0)
+    : Object.entries(cells).reduce((a, [k, v]) => { if (k.startsWith(task.id + ":cost:")) { const n = toNum(v); if (!isNaN(n)) return a + n; } return a; }, 0);
+}
+function rnpBudget(product) {
+  const alc = toNum(product.rnp?.budget?.allocated);
+  const allocated = isNaN(alc) ? 0 : alc;
+  const spent = RNP_COST_TASKS.reduce((a, t) => a + rnpTaskTotal(t, product), 0);
+  return { allocated, spent, ostatok: allocated - spent };
+}
+// Затраты по строке за конкретный день (для суммы затрат за день в календаре)
+function rnpDayCost(task, product, dkey) {
+  const entries = product.rnp?.entries || {};
+  const cells = product.rnp?.cells || {};
+  if (task.kind === "singleCost") { const n = toNum(cells[`${task.id}:cost:${dkey}`]); return isNaN(n) ? 0 : n; }
+  if (task.kind === "twoRow" && task.top === "entries") return (entries[`${task.id}:${dkey}`] || []).reduce((s, e) => s + calcRecordCost(task.fields, e), 0);
+  return 0;
+}
+// Активность по строке за день (для чипов): null если ничего нет
+function rnpDayActivity(task, product, dkey, wbOrders = {}) {
+  const entries = product.rnp?.entries || {};
+  const cells = product.rnp?.cells || {};
+  const flags = product.rnp?.flags || {};
+  if (task.kind === "wbOrders") { const code = product.code || product.wb || ""; const c = wbOrders[`${code}:${dkey}`] || wbOrders[`${product.wb}:${dkey}`] || 0; return c > 0 ? { count: c, cost: 0 } : null; }
+  if (task.kind === "singleCost") { const n = toNum(cells[`${task.id}:cost:${dkey}`]); return (!isNaN(n) && n > 0) ? { count: 0, cost: n } : null; }
+  if (task.kind === "twoRow" && task.top === "entries") { const arr = entries[`${task.id}:${dkey}`] || []; return arr.length ? { count: arr.length, cost: arr.reduce((s, e) => s + calcRecordCost(task.fields, e), 0) } : null; }
+  if (task.kind === "checkbox") return flags[`${task.id}:${dkey}`] ? { count: 0, cost: 0 } : null;
+  if (task.kind === "rangeTask") { const act = (entries[`${task.id}:_ranges`] || []).some((r) => r.start <= dkey && r.end >= dkey); return act ? { count: 0, cost: 0 } : null; }
+  return null;
+}
 
 const FILL_COLORS = ["#bbf7d0", "#fed7aa", "#fde68a", "#fecaca", "#e9d5ff", "#bae6fd"];
 
@@ -399,6 +437,14 @@ function fileToThumb(file, max = 240) {
 /* ----------------------------------------------------------------------------
    Главный компонент
 ---------------------------------------------------------------------------- */
+
+const SubjectsDatalist = memo(function SubjectsDatalist({ subjects }) {
+  return (
+    <datalist id="subjects-datalist">
+      {(subjects || []).map((s) => (<option key={s.id || s.name} value={s.name} />))}
+    </datalist>
+  );
+});
 
 export default function AssortmentTable() {
   const [products, setProducts] = useState([]);
@@ -910,7 +956,8 @@ export default function AssortmentTable() {
   const visibleGroups = tabGroups.filter((g) => g.kind === "gantt" || g.kind === "calendar" || enabled[g.id]);
   const columnGroups = visibleGroups.filter((g) => g.kind === "columns");
   // единые константы (из шестерёнки) подставляются в каждый товар перед расчётом
-  const subjectComm = (name) => { const s = (subjects || []).find((x) => x.name === name); return s ? s.commission : ""; };
+  const subjMap = useMemo(() => { const m = new Map(); (subjects || []).forEach((s) => m.set(s.name, s.commission)); return m; }, [subjects]);
+  const subjectComm = (name) => (subjMap.has(name) ? subjMap.get(name) : "");
   const withConst = (p) => ({ ...p, commission: subjectComm(p.subject), acquiring: unitConst.acqWb, acquiringOz: unitConst.acqOz, whCoeff: unitConst.whCoeffWb, taxRate: unitConst.tax, taxRateOz: unitConst.tax });
   // с учётом скрытых столбцов (фильтр столбцов)
   const columnGroupsView = columnGroups
@@ -1228,9 +1275,7 @@ export default function AssortmentTable() {
         {/* Таблица товаров (Ассортимент / Продвижение / План отгрузок) */}
         {activeTab !== "purchases" && activeTab !== "tasks" && (
         <div ref={scrollRef} className="rounded-xl overflow-auto border border-neutral-200 bg-white shadow-sm">
-          <datalist id="subjects-datalist">
-            {(subjects || []).map((s) => (<option key={s.id} value={s.name} />))}
-          </datalist>
+          <SubjectsDatalist subjects={subjects} />
           <table className="text-sm" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
             <thead>
               <tr>
@@ -1341,16 +1386,10 @@ export default function AssortmentTable() {
                             </td>
                           );
                         if (f.id === "name") {
-                          const own = p.tasks || [];
-                          const ts = own.length ? own : defaultTasks;
-                          const done = own.length ? own.filter((t) => t.done).length : 0;
                           return (
                             <td key="name" style={base}>
                               <button onClick={() => setCardModal(p.id)} className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-sm text-neutral-900 hover:text-orange-700" title="Открыть задачи по карточке">
                                 <span className="min-w-0 flex-1 truncate">{p.name || <span className="text-neutral-400">Название товара</span>}</span>
-                                {ts.length > 0 && (
-                                  <span className="rounded-full shrink-0 px-1.5 text-xs font-semibold" style={{ background: done === ts.length ? "#dcfce7" : "#ffedd5", color: done === ts.length ? "#15803d" : "#c2410c" }}>{done}/{ts.length}</span>
-                                )}
                               </button>
                             </td>
                           );
@@ -1567,6 +1606,22 @@ export default function AssortmentTable() {
             onSetCompetitors={(c) => setProductCompetitors(cp.id, c)}
             onSetSeasonality={(s) => setProductSeasonality(cp.id, s)}
             onSetField={(f, v) => updateProduct(cp.id, f, v)}
+            hiddenTasks={hiddenTasks}
+            rnpStartDate={rnpStartDate}
+            rnpDays={rnpDays}
+            onSetRnpStartDate={setRnpStartDate}
+            onSetRnpDays={setRnpDays}
+            onSetRnpCell={(k, v) => setRnpCell(cp.id, k, v)}
+            onSetRnpEntries={(k, arr) => setRnpEntries(cp.id, k, arr)}
+            onSetRnpFill={(k, c) => setRnpFill(cp.id, k, c)}
+            onSetRnpFlag={(f, v) => setRnpFlag(cp.id, f, v)}
+            onSetRnpBudget={(v) => setRnpBudget(cp.id, v)}
+            onOpenPopup={(task, dateKey) => setGanttModal({ productId: cp.id, mode: "popup", task, dateKey })}
+            onOpenDB={(task) => setGanttModal({ productId: cp.id, mode: "db", task })}
+            wbOrders={wbOrders}
+            wbLoading={wbLoading}
+            wbProgress={wbProgress}
+            onFetchWb={fetchWbOrders}
             onClose={() => setCardModal(null)}
           />
         );
@@ -2216,7 +2271,7 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStart, onSe
    Блок «РНП» — диаграмма Ганта (задачи × дни) + Фонд маркетинга. Один на товар.
 ---------------------------------------------------------------------------- */
 
-function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, wbProgress, onFetchWb }) {
+function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, wbProgress, onFetchWb, hideBudget = false }) {
   const [fillMode, setFillMode] = useState(false);
   const [fillColor, setFillColor] = useState(FILL_COLORS[0]);
   const [bd, setBd] = useState(null); // позиция окна разбивки затрат
@@ -2395,6 +2450,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
         </label>
 
         {/* Фонд маркетинга */}
+        {!hideBudget && (
         <div className="rounded-xl ml-auto inline-flex flex-wrap items-center gap-2 border border-neutral-200 bg-white px-2.5 py-1">
           <span className="text-xs font-semibold text-neutral-800">Фонд маркетинга</span>
           <label className="flex items-center gap-1 text-xs text-neutral-500">
@@ -2413,6 +2469,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
             <span className="px-1.5 py-0.5 text-xs font-bold" style={{ fontVariantNumeric: "tabular-nums", background: ostatok < 0 ? "#fee2e2" : "#f0fdf4", color: ostatok < 0 ? "#b91c1c" : "#15803d" }}>{money(ostatok)}</span>
           </div>
         </div>
+        )}
       </div>
 
       <div style={{ overflowX: "auto", paddingBottom: 12 }}>
@@ -3155,7 +3212,8 @@ const decodeXml = (s) => s
 const colIndex = (ref) => { const m = ref.match(/^[A-Z]+/); let n = 0; for (const ch of m[0]) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
 const serialToISO = (n) => new Date(Math.round((n - 25569) * 86400000)).toISOString().slice(0, 10);
 
-async function parseSeasonalityXlsx(arrayBuffer) {
+// Чтение первого листа xlsx → массив строк [{rnum, cells}]
+async function readSheetRows(arrayBuffer) {
   const zip = await readZip(arrayBuffer);
   // общие строки
   const ssXml = await zip.read("xl/sharedStrings.xml");
@@ -3196,6 +3254,39 @@ async function parseSeasonalityXlsx(arrayBuffer) {
     while ((cm = cRe.exec(rm[2]))) cells[colIndex(cm[1])] = cellVal(cm[2], cm[3]);
     rows.push({ rnum, cells });
   }
+  return rows;
+}
+
+// Парсинг таблицы комиссий ВБ → [{name, commission, category}] (комиссия из колонки «Склад WB (FBW), %»)
+async function parseCommissionsXlsx(arrayBuffer) {
+  const rows = await readSheetRows(arrayBuffer);
+  if (!rows.length) throw new Error("Лист пуст.");
+  const header = rows[0].cells;
+  const norm = (s) => String(s || "").toLowerCase().replace(/\s|\n/g, "");
+  let colSubj = -1, colFbw = -1, colCat = -1;
+  for (const [k, v] of Object.entries(header)) {
+    const h = norm(v);
+    if (colSubj < 0 && h.includes("предмет")) colSubj = +k;
+    if (colFbw < 0 && h.includes("fbw")) colFbw = +k;
+    if (colCat < 0 && h.includes("категори")) colCat = +k;
+  }
+  if (colSubj < 0 || colFbw < 0)
+    throw new Error("Не найдены столбцы «Предмет» и «Склад WB (FBW), %».");
+  const out = []; const seen = new Set();
+  for (let i = 1; i < rows.length; i++) {
+    const c = rows[i].cells;
+    const name = String(c[colSubj] ?? "").trim();
+    const comm = parseFloat(String(c[colFbw] ?? "").replace(",", "."));
+    if (!name || isNaN(comm) || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ id: uid(), name, commission: comm, category: colCat >= 0 ? String(c[colCat] ?? "").trim() : "" });
+  }
+  if (!out.length) throw new Error("Не удалось прочитать комиссии из файла.");
+  return out;
+}
+
+async function parseSeasonalityXlsx(arrayBuffer) {
+  const rows = await readSheetRows(arrayBuffer);
   if (!rows.length) throw new Error("Лист пуст.");
 
   // шапка: ищем нужные столбцы по названию
@@ -3361,7 +3452,102 @@ function SeasonalityPanel({ data, onChange }) {
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onSetField, onClose }) {
+// Вид «Календарь» для блока продвижения одного товара
+function PromoCalendar({ product, wbOrders = {}, onOpenDay }) {
+  const now = new Date();
+  const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
+  const todayStr = isoYMD(now);
+  const startOffset = (new Date(ym.y, ym.m, 1).getDay() + 6) % 7;
+  const cells = Array.from({ length: 42 }, (_, i) => new Date(ym.y, ym.m, 1 - startOffset + i));
+  const prevM = () => setYm((s) => { const d = new Date(s.y, s.m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const nextM = () => setYm((s) => { const d = new Date(s.y, s.m + 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const goToday = () => setYm({ y: now.getFullYear(), m: now.getMonth() });
+  return (
+    <div>
+      <div className="mb-3 flex items-center gap-2">
+        <button onClick={prevM} className="rounded-lg flex h-7 w-7 items-center justify-center border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /></button>
+        <button onClick={nextM} className="rounded-lg flex h-7 w-7 items-center justify-center border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} /></button>
+        <h2 className="ml-1 text-sm font-semibold capitalize text-neutral-900">{MONTHS_FULL[ym.m]} {ym.y}</h2>
+        <button onClick={goToday} className="rounded-lg ml-1 border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">Сегодня</button>
+      </div>
+      <div className="grid grid-cols-7 gap-px">
+        {WD_SHORT.map((w) => (<div key={w} className="pb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-neutral-400">{w}</div>))}
+        {cells.map((d, i) => {
+          const ds = isoYMD(d);
+          const inMonth = d.getMonth() === ym.m;
+          const isToday = ds === todayStr;
+          const acts = RNP_TASKS.map((t) => ({ t, a: rnpDayActivity(t, product, ds, wbOrders) })).filter((x) => x.a);
+          const spend = RNP_TASKS.reduce((s, t) => s + rnpDayCost(t, product, ds), 0);
+          return (
+            <div key={i} onClick={() => inMonth && onOpenDay(ds)} className={"min-h-[92px] cursor-pointer rounded-lg border p-1 transition hover:border-orange-300 " + (inMonth ? "border-neutral-100 bg-white" : "border-neutral-100 bg-neutral-50/40")}>
+              <div className="mb-1 flex items-center justify-between px-0.5">
+                <span className={"inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs " + (isToday ? "bg-orange-600 font-bold text-white" : inMonth ? "text-neutral-600" : "text-neutral-300")}>{d.getDate()}</span>
+                {spend > 0 && <span className="text-[10px] font-bold tabular-nums text-amber-700">{spend.toLocaleString("ru-RU")} ₽</span>}
+              </div>
+              <div className="space-y-0.5">
+                {acts.slice(0, 3).map(({ t, a }) => (
+                  <div key={t.id} className="flex items-center gap-1 px-0.5 text-[11px]" title={t.label}>
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: RNP_COLORS[t.id] || "#cbd5e1" }} />
+                    <span className="min-w-0 flex-1 truncate text-neutral-600">{t.label}{a.count ? " ·" + a.count : ""}</span>
+                  </div>
+                ))}
+                {acts.length > 3 && <div className="px-1 text-[10px] text-neutral-400">+{acts.length - 3} ещё</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Редактор одного дня продвижения (открывается кликом по дню в календаре)
+function PromoDayEditor({ product, dkey, wbOrders = {}, onSetCell, onSetFlag, onOpenPopup, onClose }) {
+  const entries = product.rnp?.entries || {};
+  const cells = product.rnp?.cells || {};
+  const flags = product.rnp?.flags || {};
+  const [y, m, dd] = dkey.split("-");
+  const title = `${dd} ${MONTHS_FULL[+m - 1].toLowerCase()} ${y}`;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
+      <div className="rounded-2xl w-full max-w-md bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold capitalize text-neutral-900">{title}</h2>
+          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+        </div>
+        <div className="space-y-1.5">
+          {RNP_TASKS.map((t) => {
+            const dot = <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RNP_COLORS[t.id] || "#cbd5e1" }} />;
+            if (t.kind === "wbOrders") {
+              const code = product.code || product.wb || "";
+              const c = wbOrders[`${code}:${dkey}`] || wbOrders[`${product.wb}:${dkey}`] || 0;
+              return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><span className="ml-auto text-sm font-semibold tabular-nums text-neutral-700">{c || "—"}</span></div>);
+            }
+            if (t.kind === "singleCost") {
+              return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><div className="ml-auto flex items-center gap-1"><input value={cells[`${t.id}:cost:${dkey}`] ?? ""} onChange={(e) => onSetCell(`${t.id}:cost:${dkey}`, e.target.value)} inputMode="decimal" placeholder="0" className="w-24 rounded-lg border border-neutral-200 px-2 py-1 text-right text-sm tabular-nums focus:border-neutral-400 focus:outline-none" /><span className="text-xs text-neutral-400">₽</span></div></div>);
+            }
+            if (t.kind === "twoRow" && t.top === "entries") {
+              const arr = entries[`${t.id}:${dkey}`] || [];
+              return (<button key={t.id} onClick={() => { onOpenPopup(t, dkey); onClose(); }} className="flex w-full items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2 text-left hover:border-orange-200 hover:bg-orange-50/40"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><span className="ml-auto inline-flex items-center gap-1 text-sm text-neutral-500">{arr.length ? `${arr.length} зап.` : "добавить"}<Plus size={13} /></span></button>);
+            }
+            if (t.kind === "checkbox") {
+              const on = !!flags[`${t.id}:${dkey}`];
+              return (<label key={t.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><input type="checkbox" checked={on} onChange={() => onSetFlag(`${t.id}:${dkey}`, !on)} className="ml-auto h-4 w-4 accent-green-600" /></label>);
+            }
+            if (t.kind === "rangeTask") {
+              const active = (entries[`${t.id}:_ranges`] || []).some((r) => r.start <= dkey && r.end >= dkey);
+              return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><span className="ml-auto text-xs text-neutral-400">{active ? "активно" : "—"}</span></div>);
+            }
+            return null;
+          })}
+        </div>
+        <p className="mt-3 text-[11px] text-neutral-400">Диапазонные задачи (Баллы, А/Б) редактируются в базе записей из вида «Гант».</p>
+      </div>
+    </div>
+  );
+}
+
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onSetField, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -3371,7 +3557,11 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [showDone, setShowDone] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [unitOpen, setUnitOpen] = useState(false);
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [promoView, setPromoView] = useState("gantt"); // gantt | cal
+  const [promoDay, setPromoDay] = useState(null); // открытый день в календаре продвижения
   const [mp, setMp] = useState("wb"); // маркетплейс для юнит-экономики: wb | oz
+  const promoBudget = rnpBudget(product);
   const done = tasks.filter((t) => t.done).length;
 
   // id задач по умолчанию — такие задачи нельзя удалять из карточки
@@ -3706,6 +3896,68 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               )}
             </section>
 
+            {/* Продвижение — превью (Фонд/Затраты/Остаток) + раскрытие Гант/Календарь */}
+            <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => setPromoOpen((v) => !v)} className="flex items-center gap-1.5 text-left">
+                  {promoOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  <h3 className="text-sm font-semibold text-neutral-800">Продвижение</h3>
+                </button>
+                {promoOpen && (
+                  <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
+                    <button onClick={() => setPromoView("gantt")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "gantt" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Гант</button>
+                    <button onClick={() => setPromoView("cal")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "cal" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Календарь</button>
+                  </div>
+                )}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <div className="rounded-xl border border-neutral-200 px-3 py-1">
+                    <div className="text-[10px] text-neutral-500">Фонд маркетинга</div>
+                    <div className="flex items-baseline gap-0.5">
+                      <input value={product.rnp?.budget?.allocated ?? ""} onChange={(e) => onSetRnpBudget(e.target.value)} inputMode="decimal" placeholder="0" className="w-20 bg-transparent text-sm font-bold tabular-nums text-neutral-900 focus:outline-none" />
+                      <span className="text-xs text-neutral-400">₽</span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-neutral-200 px-3 py-1">
+                    <div className="text-[10px] text-neutral-500">Затраты</div>
+                    <div className="text-sm font-bold tabular-nums text-neutral-800">{money(promoBudget.spent)}</div>
+                  </div>
+                  <div className="rounded-xl border px-3 py-1" style={{ background: promoBudget.ostatok < 0 ? "#fef2f2" : "#f0fdf4", borderColor: promoBudget.ostatok < 0 ? "#fecaca" : "#dcfce7" }}>
+                    <div className="text-[10px] text-neutral-500">Остаток</div>
+                    <div className="text-sm font-bold tabular-nums" style={{ color: promoBudget.ostatok < 0 ? "#b91c1c" : "#15803d" }}>{money(promoBudget.ostatok)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {promoOpen && (
+                <div className="mt-3 border-t border-neutral-100 pt-3">
+                  {promoView === "gantt" ? (
+                    <GanttBlock
+                      product={product}
+                      hiddenTasks={hiddenTasks}
+                      startDate={rnpStartDate}
+                      days={rnpDays}
+                      onSetStartDate={onSetRnpStartDate}
+                      onSetDays={onSetRnpDays}
+                      onSetCell={onSetRnpCell}
+                      onSetEntries={onSetRnpEntries}
+                      onSetFill={onSetRnpFill}
+                      onSetFlag={onSetRnpFlag}
+                      onSetBudget={onSetRnpBudget}
+                      onOpenPopup={onOpenPopup}
+                      onOpenDB={onOpenDB}
+                      wbOrders={wbOrders}
+                      wbLoading={wbLoading}
+                      wbProgress={wbProgress}
+                      onFetchWb={onFetchWb}
+                      hideBudget
+                    />
+                  ) : (
+                    <PromoCalendar product={product} wbOrders={wbOrders} onOpenDay={(ds) => setPromoDay(ds)} />
+                  )}
+                </div>
+              )}
+            </section>
+
             {/* Конкуренты */}
             {card(
               "Конкуренты",
@@ -3753,6 +4005,18 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
           </div>
         </div>
       </div>
+
+      {promoDay && (
+        <PromoDayEditor
+          product={product}
+          dkey={promoDay}
+          wbOrders={wbOrders}
+          onSetCell={onSetRnpCell}
+          onSetFlag={onSetRnpFlag}
+          onOpenPopup={onOpenPopup}
+          onClose={() => setPromoDay(null)}
+        />
+      )}
     </div>
   );
 }
@@ -4227,17 +4491,39 @@ function JobEditor({ job, taskLabels, products, opTypes, onSave, onDelete, onClo
 function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, opTypes, setOpTypes, subjects, setSubjects, unitConst, setUnitConst, onClose }) {
   const [tab, setTab] = useState("statuses");
 
-  // --- предметы и комиссии ВБ ---
+  // --- предметы и комиссии ВБ (загрузка таблицей, опора на FBW) ---
   const [subjName, setSubjName] = useState("");
+  const [subjSearch, setSubjSearch] = useState("");
+  const [subjBusy, setSubjBusy] = useState(false);
+  const [subjErr, setSubjErr] = useState("");
+  const subjFileRef = useRef(null);
+  const onCommFile = async (file) => {
+    if (!file) return;
+    setSubjBusy(true); setSubjErr("");
+    try {
+      const buf = await file.arrayBuffer();
+      const parsed = await parseCommissionsXlsx(buf);
+      setSubjects(parsed);
+    } catch (e) {
+      setSubjErr(e?.message || "Не удалось обработать файл.");
+    } finally {
+      setSubjBusy(false);
+      if (subjFileRef.current) subjFileRef.current.value = "";
+    }
+  };
   const addSubject = () => {
     const t = subjName.trim();
     if (!t || (subjects || []).some((s) => s.name === t)) return;
-    setSubjects((list) => [...(list || []), { id: uid(), name: t, commission: "" }]);
+    setSubjects((list) => [{ id: uid(), name: t, commission: "" }, ...(list || [])]);
     setSubjName("");
   };
   const setSubjectName = (id, name) => setSubjects((list) => (list || []).map((x) => (x.id === id ? { ...x, name } : x)));
   const setSubjectComm = (id, commission) => setSubjects((list) => (list || []).map((x) => (x.id === id ? { ...x, commission } : x)));
   const removeSubject = (id) => setSubjects((list) => (list || []).filter((x) => x.id !== id));
+  const subjQuery = subjSearch.trim().toLowerCase();
+  const subjMatches = subjQuery
+    ? (subjects || []).filter((s) => (s.name || "").toLowerCase().includes(subjQuery)).slice(0, 60)
+    : (subjects || []).slice(0, 12);
 
   // --- операционные задачи (регулярные строки Ганта) ---
   const [opName, setOpName] = useState("");
@@ -4459,17 +4745,44 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
           {tab === "subjects" && (
             <>
-              <p className="mb-3 text-xs text-neutral-400">Предметы и их комиссия ВБ (%). Комиссия в юнит-экономике ВБ берётся по предмету, указанному у товара. Предметы подсказываются в колонке «Предмет».</p>
-              <div className="mb-4 space-y-1.5">
-                {(subjects || []).map((s) => (
+              <p className="mb-3 text-xs text-neutral-400">Загрузите таблицу комиссий ВБ (.xlsx). Комиссия берётся из колонки «Склад WB (FBW), %» и сопоставляется по столбцу «Предмет». В юнит-экономике ВБ у товара берётся комиссия его предмета.</p>
+
+              <input ref={subjFileRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => onCommFile(e.target.files?.[0])} />
+              <button
+                onClick={() => subjFileRef.current?.click()}
+                disabled={subjBusy}
+                className="mb-3 flex w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-neutral-200 py-5 text-sm text-neutral-500 hover:border-sky-300 hover:bg-sky-50/40 disabled:opacity-50"
+              >
+                <Download size={18} className="rotate-180 text-neutral-400" />
+                {subjBusy ? "Обработка…" : "Загрузить таблицу комиссий ВБ — .xlsx"}
+              </button>
+              {subjErr && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{subjErr}</p>}
+
+              {(subjects || []).length > 0 && (
+                <div className="mb-3 flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2">
+                  <span className="text-xs text-neutral-600">Загружено предметов: <b>{subjects.length}</b> · комиссия из <b>FBW</b></span>
+                  <button onClick={() => { if (confirm("Очистить все предметы и комиссии?")) setSubjects([]); }} className="rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600">Очистить</button>
+                </div>
+              )}
+
+              <input
+                value={subjSearch}
+                onChange={(e) => setSubjSearch(e.target.value)}
+                placeholder="Найти предмет…"
+                className="mb-2 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+              />
+              <div className="mb-3 space-y-1.5">
+                {subjMatches.map((s) => (
                   <div key={s.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-300" />
-                    <input
-                      value={s.name}
-                      onChange={(e) => setSubjectName(s.id, e.target.value)}
-                      placeholder="Предмет (напр. Рубашка)"
-                      className="min-w-0 flex-1 bg-transparent text-sm text-neutral-800 focus:outline-none"
-                    />
+                    <div className="min-w-0 flex-1">
+                      <input
+                        value={s.name}
+                        onChange={(e) => setSubjectName(s.id, e.target.value)}
+                        className="w-full bg-transparent text-sm text-neutral-800 focus:outline-none"
+                      />
+                      {s.category && <div className="truncate text-[10px] text-neutral-400">{s.category}</div>}
+                    </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <input
                         value={s.commission ?? ""}
@@ -4483,14 +4796,17 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                     <button onClick={() => removeSubject(s.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
                   </div>
                 ))}
-                {(!subjects || subjects.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Предметов пока нет</p>}
+                {(subjects || []).length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Предметов пока нет — загрузите таблицу</p>}
+                {(subjects || []).length > 0 && subjMatches.length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Ничего не найдено</p>}
+                {!subjQuery && (subjects || []).length > subjMatches.length && <p className="pt-1 text-center text-[11px] text-neutral-400">Показаны первые {subjMatches.length}. Используйте поиск.</p>}
               </div>
+
               <div className="flex items-center gap-2">
                 <input
                   value={subjName}
                   onChange={(e) => setSubjName(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addSubject()}
-                  placeholder="Новый предмет…"
+                  placeholder="Добавить предмет вручную…"
                   className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
                 />
                 <button onClick={addSubject} disabled={!subjName.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
