@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -4679,16 +4679,63 @@ function normStrategy(v) {
 // прогресс блока: по подзадачам, иначе по галочке
 function nodeIsDone(n) { return (n.checklist && n.checklist.length) ? n.checklist.every((c) => c.done) : !!n.done; }
 
+// Готовые шаблоны карт стратегии
+function makeStrategyTemplate(kind) {
+  const N = (x, y, title, o = {}) => ({ id: uid(), x, y, title, note: o.note || "", color: o.color || "#2563eb", done: false, hasCheck: o.hasCheck === false ? false : true, type: o.type || "stage", checklist: (o.cl || []).map((t) => ({ id: uid(), text: t, done: false })) });
+  const E = (a, b) => ({ id: uid(), from: a.id, to: b.id });
+
+  if (kind === "hierarchy") {
+    const head = N(560, 40, "Руководитель", { type: "goal", color: "#6366f1", note: "стратегия, цели, контроль" });
+    const mkt = N(120, 260, "Маркетинг", { color: "#2563eb" });
+    const ops = N(560, 260, "Операции", { color: "#0ea5e9" });
+    const fin = N(1000, 260, "Финансы", { color: "#10b981" });
+    const mkt1 = N(120, 460, "Трафик и реклама", { color: "#2563eb" });
+    const mkt2 = N(120, 620, "Контент и дизайн", { color: "#2563eb" });
+    const ops1 = N(560, 460, "Логистика и поставки", { color: "#0ea5e9" });
+    const ops2 = N(560, 620, "Закупки", { color: "#0ea5e9" });
+    const fin1 = N(1000, 460, "Учёт и аналитика", { color: "#10b981" });
+    const nodes = [head, mkt, ops, fin, mkt1, mkt2, ops1, ops2, fin1];
+    const edges = [E(head, mkt), E(head, ops), E(head, fin), E(mkt, mkt1), E(mkt, mkt2), E(ops, ops1), E(ops, ops2), E(fin, fin1)];
+    return { name: "Иерархия", nodes, edges, groups: [] };
+  }
+
+  if (kind === "process") {
+    const p1 = N(60, 140, "Выбор ниши / товара", { color: "#2563eb" });
+    const p2 = N(360, 140, "Анализ спроса и конкурентов", { color: "#2563eb" });
+    const p3 = N(660, 140, "Поиск поставщика", { color: "#2563eb" });
+    const p4 = N(960, 140, "Закуп тестовой партии", { color: "#2563eb" });
+    const p5 = N(960, 400, "Фотоконтент и карточка", { color: "#0ea5e9" });
+    const p6 = N(660, 400, "Запуск и реклама", { color: "#0ea5e9" });
+    const p7 = N(360, 400, "Сбор аналитики", { color: "#0ea5e9" });
+    const p8 = N(60, 400, "Масштабировать?", { type: "decision", color: "#7c3aed", hasCheck: false });
+    const yes = N(60, 640, "Докупка и рост", { type: "goal", color: "#10b981" });
+    const no = N(360, 640, "Доработать / вывести", { type: "risk", color: "#dc2626" });
+    const nodes = [p1, p2, p3, p4, p5, p6, p7, p8, yes, no];
+    const edges = [E(p1, p2), E(p2, p3), E(p3, p4), E(p4, p5), E(p5, p6), E(p6, p7), E(p7, p8), E(p8, yes), E(p8, no)];
+    return { name: "Процесс", nodes, edges, groups: [] };
+  }
+
+  // duties — функциональные обязанности
+  const r1 = N(80, 150, "Руководитель", { type: "goal", color: "#6366f1", cl: ["Стратегия и цели", "Бюджет и P&L", "Найм и команда", "Контроль ключевых метрик"] });
+  const r2 = N(380, 150, "Менеджер WB", { color: "#2563eb", cl: ["Карточки и SEO", "Цены и акции", "Остатки и поставки", "Отзывы и вопросы"] });
+  const r3 = N(680, 150, "Контент и дизайн", { color: "#ec4899", cl: ["Фотосессии", "Инфографика", "Видео и рилс", "Обновление карточек"] });
+  const r4 = N(980, 150, "Логистика и закупки", { color: "#0ea5e9", cl: ["Поиск поставщиков", "Закупки", "Отгрузки FBW / FBS", "Приёмка и возвраты"] });
+  const groups = [{ id: uid(), x: 40, y: 80, w: 1220, h: 200, name: "Команда", color: "#6366f1" }];
+  return { name: "Функциональные обязанности", nodes: [r1, r2, r3, r4], edges: [], groups };
+}
+
 // Обёртка: список карт-стратегий + переключатель; каждая карта — отдельный холст.
 function StrategySection({ strategy, onChange, onCreateTask }) {
   const st = normStrategy(strategy);
   const maps = st.maps;
   const active = maps.find((m) => m.id === st.activeId) || maps[0];
   const [editingId, setEditingId] = useState(null);
+  const [tplOpen, setTplOpen] = useState(false);
 
   const updateActive = (next) => onChange({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges, groups: next.groups } : m)), activeId: active.id });
   const selectMap = (id) => { setEditingId(null); onChange({ maps, activeId: id }); };
   const addMap = () => { const id = uid(); onChange({ maps: [...maps, { id, name: `Стратегия ${maps.length + 1}`, nodes: [], edges: [], groups: [] }], activeId: id }); };
+  const addTemplate = (kind) => { const t = makeStrategyTemplate(kind); const id = uid(); setTplOpen(false); onChange({ maps: [...maps, { id, name: t.name, nodes: t.nodes, edges: t.edges, groups: t.groups }], activeId: id }); };
   const dupMap = (id) => {
     const src = maps.find((m) => m.id === id); if (!src) return;
     const nid = uid();
@@ -4733,6 +4780,22 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
           );
         })}
         <button onClick={addMap} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Карта</button>
+        <div className="relative">
+          <button onClick={() => setTplOpen((o) => !o)} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><LayoutTemplate size={14} /> Шаблоны <ChevronDown size={13} /></button>
+          {tplOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setTplOpen(false)} />
+              <div className="absolute left-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+                {[["hierarchy", "Иерархия", "оргструктура: кто кому подчиняется"], ["process", "Процесс", "этапы вывода товара по шагам"], ["duties", "Функциональные обязанности", "роли и их задачи (чек-листы)"]].map(([k, t, d]) => (
+                  <button key={k} onClick={() => addTemplate(k)} className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-neutral-50">
+                    <div className="text-sm font-semibold text-neutral-800">{t}</div>
+                    <div className="text-[11px] text-neutral-400">{d}</div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
       <StrategyBoard key={active.id} strategy={{ nodes: active.nodes, edges: active.edges, groups: active.groups }} onChange={updateActive} onCreateTask={onCreateTask} />
     </div>
@@ -4767,6 +4830,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
   const selRef = useRef(sel); selRef.current = sel;
   const [selGroup, setSelGroup] = useState(null);
   const [editGroup, setEditGroup] = useState(null);
+  const [settingsFor, setSettingsFor] = useState(null); // id блока с открытой панелью настроек (⚙)
   const [connPos, setConnPos] = useState(null);
   const [marquee, setMarquee] = useState(null);
   const [taskFor, setTaskFor] = useState(null);
@@ -4839,6 +4903,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
     if (e.shiftKey) cur = cur.includes(n.id) ? cur.filter((i) => i !== n.id) : [...cur, n.id];
     else if (!cur.includes(n.id)) cur = [n.id];
     setSel(cur);
+    setSettingsFor((p) => (p === n.id ? p : null)); // не открывать настройки при перетаскивании/выборе
     const ids = cur.includes(n.id) ? cur : [n.id];
     const starts = {}; stateRef.current.nodes.forEach((nd) => { if (ids.includes(nd.id)) starts[nd.id] = { x: nd.x, y: nd.y }; });
     dragRef.current = { ids, starts, sx: e.clientX, sy: e.clientY, moved: false };
@@ -4871,7 +4936,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
   };
   const onBgDown = (e) => {
     if (e.button !== 0) return;
-    setSel([]); setSelGroup(null); setTaskFor(null);
+    setSel([]); setSelGroup(null); setTaskFor(null); setSettingsFor(null);
     if (e.shiftKey) {
       const p = toWorld(e.clientX, e.clientY); marqueeRef.current = { x0: p.x, y0: p.y }; setMarquee({ x: p.x, y: p.y, w: 0, h: 0 });
       window.addEventListener("pointermove", onMarqueeMove); window.addEventListener("pointerup", onMarqueeUp);
@@ -5080,6 +5145,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
                   ))}
                   <TI size={14} className="mt-1 shrink-0" style={{ color: tc }} title={STRAT_TYPES[n.type || "stage"].label} />
                   <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
+                  <button onPointerDown={stop} onClick={() => { setSel([n.id]); setSettingsFor(settingsFor === n.id ? null : n.id); setTaskFor(null); }} title="Настройки блока" className={"mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-neutral-100 hover:text-neutral-700 " + (settingsFor === n.id ? "bg-neutral-100 text-neutral-700" : (on ? "text-neutral-400 opacity-100" : "text-neutral-400 opacity-0 group-hover:opacity-100"))}><Settings2 size={14} /></button>
                 </div>
 
                 {hasCl && (
@@ -5089,11 +5155,11 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
                   </div>
                 )}
 
-                {!on && <div style={{ height: 10 }} />}
+                {settingsFor !== n.id && <div style={{ height: 10 }} />}
 
-                {on && (
+                {settingsFor === n.id && (
                   <div className="border-t border-neutral-100">
-                    {/* заметка (только при выборе) */}
+                    {/* заметка */}
                     <textarea value={n.note || ""} onPointerDown={stop} onFocus={pushHist} onChange={(e) => patchLive(n.id, { note: e.target.value })} placeholder="заметка…" rows={2} className="w-full resize-none bg-transparent px-2.5 pt-2 pb-1 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
                     {/* подзадачи */}
                     <div className="px-2.5 py-1.5">
