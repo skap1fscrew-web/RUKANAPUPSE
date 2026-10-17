@@ -3,6 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -1560,7 +1561,11 @@ export default function AssortmentTable() {
         )}
 
         {activeTab === "strategy" && (
-          <StrategySection strategy={strategy} onChange={setStrategy} />
+          <StrategySection
+            strategy={strategy}
+            onChange={setStrategy}
+            onCreateTask={(title, date) => upsertJob({ id: uid(), title: (title || "Задача").slice(0, 200), date: date || null, start: null, done: false, labelId: null, productId: null })}
+          />
         )}
       </div>
 
@@ -4617,15 +4622,46 @@ function JobEditor({ job, taskLabels, products, opTypes, onSave, onDelete, onClo
 /* ----------------------------------------------------------------------------
    Блок «Стратегия» — свободный холст: блоки + стрелки (вручную), ветвления
 ---------------------------------------------------------------------------- */
-// Приводит любое сохранённое значение стратегии к модели { maps:[{id,name,nodes,edges}], activeId }
+// Типы блоков стратегии
+const STRAT_TYPES = {
+  stage: { label: "Этап", icon: Flag },
+  goal: { label: "Цель", icon: Target },
+  risk: { label: "Риск", icon: AlertTriangle },
+  decision: { label: "Решение", icon: GitBranch },
+};
+
+// Приводит любое сохранённое значение стратегии к модели { maps:[{id,name,nodes,edges,groups}], activeId }
 function normStrategy(v) {
-  const mk = (name) => ({ id: uid(), name: name || "Стратегия 1", nodes: [], edges: [] });
+  const normNode = (n, k) => ({
+    id: n && n.id ? n.id : uid(),
+    x: n && typeof n.x === "number" ? n.x : 60 + (k % 4) * 30,
+    y: n && typeof n.y === "number" ? n.y : 60 + (k % 4) * 30,
+    title: (n && n.title) || "",
+    note: (n && n.note) || "",
+    color: (n && n.color) || "#2563eb",
+    done: !!(n && n.done),
+    type: n && STRAT_TYPES[n.type] ? n.type : "stage",
+    checklist: n && Array.isArray(n.checklist)
+      ? n.checklist.filter((c) => c && typeof c === "object").map((c) => ({ id: c.id || uid(), text: c.text || "", done: !!c.done }))
+      : [],
+  });
+  const normGroup = (g) => ({
+    id: g && g.id ? g.id : uid(),
+    x: g && typeof g.x === "number" ? g.x : 40,
+    y: g && typeof g.y === "number" ? g.y : 40,
+    w: g && typeof g.w === "number" ? g.w : 360,
+    h: g && typeof g.h === "number" ? g.h : 260,
+    name: (g && g.name) || "Фаза",
+    color: (g && g.color) || "#6366f1",
+  });
   const normMap = (m, i) => ({
     id: m && m.id ? m.id : uid(),
     name: (m && m.name) || `Стратегия ${i + 1}`,
-    nodes: m && Array.isArray(m.nodes) ? m.nodes : [],
-    edges: m && Array.isArray(m.edges) ? m.edges : [],
+    nodes: m && Array.isArray(m.nodes) ? m.nodes.map(normNode) : [],
+    edges: m && Array.isArray(m.edges) ? m.edges.filter((e) => e && e.from && e.to).map((e) => ({ id: e.id || uid(), from: e.from, to: e.to })) : [],
+    groups: m && Array.isArray(m.groups) ? m.groups.map(normGroup) : [],
   });
+  const mk = () => normMap({ name: "Стратегия 1" }, 0);
   if (!v || typeof v !== "object") return { maps: [mk()], activeId: null };
   let maps;
   if (Array.isArray(v.maps)) {
@@ -4639,19 +4675,30 @@ function normStrategy(v) {
   return { maps, activeId };
 }
 
+// прогресс блока: по подзадачам, иначе по галочке
+function nodeIsDone(n) { return (n.checklist && n.checklist.length) ? n.checklist.every((c) => c.done) : !!n.done; }
+
 // Обёртка: список карт-стратегий + переключатель; каждая карта — отдельный холст.
-function StrategySection({ strategy, onChange }) {
+function StrategySection({ strategy, onChange, onCreateTask }) {
   const st = normStrategy(strategy);
   const maps = st.maps;
   const active = maps.find((m) => m.id === st.activeId) || maps[0];
   const [editingId, setEditingId] = useState(null);
 
-  const updateActive = (next) => onChange({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges } : m)), activeId: active.id });
+  const updateActive = (next) => onChange({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges, groups: next.groups } : m)), activeId: active.id });
   const selectMap = (id) => { setEditingId(null); onChange({ maps, activeId: id }); };
-  const addMap = () => { const id = uid(); onChange({ maps: [...maps, { id, name: `Стратегия ${maps.length + 1}`, nodes: [], edges: [] }], activeId: id }); };
+  const addMap = () => { const id = uid(); onChange({ maps: [...maps, { id, name: `Стратегия ${maps.length + 1}`, nodes: [], edges: [], groups: [] }], activeId: id }); };
+  const dupMap = (id) => {
+    const src = maps.find((m) => m.id === id); if (!src) return;
+    const nid = uid();
+    const copy = JSON.parse(JSON.stringify({ ...src, id: nid, name: `${src.name} (копия)` }));
+    const at = maps.findIndex((m) => m.id === id);
+    const next = maps.slice(); next.splice(at + 1, 0, copy);
+    onChange({ maps: next, activeId: nid });
+  };
   const renameMap = (id, name) => onChange({ maps: maps.map((m) => (m.id === id ? { ...m, name: name.trim() || "Без названия" } : m)), activeId: st.activeId });
   const removeMap = (id) => {
-    if (maps.length <= 1) { const nid = uid(); onChange({ maps: [{ id: nid, name: "Стратегия 1", nodes: [], edges: [] }], activeId: nid }); return; }
+    if (maps.length <= 1) { const nid = uid(); onChange({ maps: [{ id: nid, name: "Стратегия 1", nodes: [], edges: [], groups: [] }], activeId: nid }); return; }
     const rest = maps.filter((m) => m.id !== id);
     onChange({ maps: rest, activeId: id === st.activeId ? rest[0].id : st.activeId });
   };
@@ -4676,8 +4723,9 @@ function StrategySection({ strategy, onChange }) {
               <span className="max-w-[220px] truncate">{m.name}</span>
               {on && (
                 <>
-                  <Pencil size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingId(m.id); }} />
-                  <Trash2 size={12} className="opacity-70 hover:opacity-100 hover:text-red-300" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Удалить карту «${m.name}»?`)) removeMap(m.id); }} />
+                  <Pencil size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingId(m.id); }} title="Переименовать" />
+                  <Copy size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); dupMap(m.id); }} title="Дублировать карту" />
+                  <Trash2 size={12} className="opacity-70 hover:opacity-100 hover:text-red-300" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Удалить карту «${m.name}»?`)) removeMap(m.id); }} title="Удалить карту" />
                 </>
               )}
             </button>
@@ -4685,43 +4733,117 @@ function StrategySection({ strategy, onChange }) {
         })}
         <button onClick={addMap} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Карта</button>
       </div>
-      <StrategyBoard key={active.id} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} />
+      <StrategyBoard key={active.id} strategy={{ nodes: active.nodes, edges: active.edges, groups: active.groups }} onChange={updateActive} onCreateTask={onCreateTask} />
     </div>
   );
 }
 
-function StrategyBoard({ strategy, onChange }) {
-  const W = 210, PORTY = 22;
+const GROUP_COLORS = ["#6366f1", "#0ea5e9", "#f59e0b", "#ec4899", "#10b981", "#8b5cf6"];
+const TYPE_COLOR = { stage: "#a3a3a3", goal: "#059669", risk: "#d97706", decision: "#7c3aed" };
+
+function StrategyBoard({ strategy, onChange, onCreateTask }) {
+  const W = 220, PORTY = 26, GRID = 20, CW = 5200, CH = 3600;
   const nodes = (strategy && strategy.nodes) || [];
   const edges = (strategy && strategy.edges) || [];
-  const stateRef = useRef({ nodes, edges });
-  stateRef.current = { nodes, edges };
-  const scrollRef = useRef(null);
-  const contentRef = useRef(null);
+  const groups = (strategy && strategy.groups) || [];
+  const stateRef = useRef({ nodes, edges, groups });
+  stateRef.current = { nodes, edges, groups };
+
+  const vpRef = useRef(null);
   const dragRef = useRef(null);
   const connRef = useRef(null);
-  const [selected, setSelected] = useState(null);
-  const [connPos, setConnPos] = useState(null);
+  const panRef = useRef(null);
+  const marqueeRef = useRef(null);
+  const gDragRef = useRef(null);
+  const gResRef = useRef(null);
+  const histRef = useRef({ past: [], future: [] });
 
-  const patchNode = (id, p) => { const s = stateRef.current; onChange({ nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)), edges: s.edges }); };
-  const removeNode = (id) => { const s = stateRef.current; onChange({ nodes: s.nodes.filter((n) => n.id !== id), edges: s.edges.filter((e) => e.from !== id && e.to !== id) }); setSelected(null); };
-  const addEdge = (from, to) => { const s = stateRef.current; if (from === to || s.edges.some((e) => e.from === from && e.to === to)) return; onChange({ nodes: s.nodes, edges: [...s.edges, { id: uid(), from, to }] }); };
-  const removeEdge = (id) => { const s = stateRef.current; onChange({ nodes: s.nodes, edges: s.edges.filter((e) => e.id !== id) }); };
+  const [view, setView] = useState({ s: 1, tx: 40, ty: 20 });
+  const viewRef = useRef(view); viewRef.current = view;
+  const [sel, setSel] = useState([]);
+  const selRef = useRef(sel); selRef.current = sel;
+  const [selGroup, setSelGroup] = useState(null);
+  const [editGroup, setEditGroup] = useState(null);
+  const [connPos, setConnPos] = useState(null);
+  const [marquee, setMarquee] = useState(null);
+  const [taskFor, setTaskFor] = useState(null);
+  const [vpSize, setVpSize] = useState({ w: 1000, h: 600 });
+  const [toast, setToast] = useState("");
+  const [, force] = useState(0);
+  const snapG = (v) => Math.round(v / GRID) * GRID;
+
+  // ---- история ----
+  const snap = () => JSON.parse(JSON.stringify(stateRef.current));
+  const apply = (next) => onChange(next);
+  const pushHist = () => { const h = histRef.current; h.past.push(snap()); if (h.past.length > 60) h.past.shift(); h.future = []; force((n) => n + 1); };
+  const commit = (next) => { pushHist(); apply(next); };
+  const undo = () => { const h = histRef.current; if (!h.past.length) return; h.future.push(snap()); apply(h.past.pop()); force((n) => n + 1); };
+  const redo = () => { const h = histRef.current; if (!h.future.length) return; h.past.push(snap()); apply(h.future.pop()); force((n) => n + 1); };
+
+  // ---- координаты ----
+  const toWorld = (cx, cy) => { const r = vpRef.current.getBoundingClientRect(); const v = viewRef.current; return { x: (cx - r.left - v.tx) / v.s, y: (cy - r.top - v.ty) / v.s }; };
+
+  // ---- мутаторы блоков ----
+  const patchLive = (id, p) => { const s = stateRef.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) }); };
+  const patchNode = (id, p) => { commit({ ...stateRef.current, nodes: stateRef.current.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) }); };
+  const removeNode = (id) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.filter((n) => n.id !== id), edges: s.edges.filter((e) => e.from !== id && e.to !== id) }); setSel((x) => x.filter((i) => i !== id)); };
+  const removeSelected = () => { const s = stateRef.current; const ids = new Set(selRef.current); if (!ids.size) return; commit({ ...s, nodes: s.nodes.filter((n) => !ids.has(n.id)), edges: s.edges.filter((e) => !ids.has(e.from) && !ids.has(e.to)) }); setSel([]); };
+  const duplicateNode = (id) => { const s = stateRef.current; const src = s.nodes.find((n) => n.id === id); if (!src) return; const nid = uid(); const copy = { ...JSON.parse(JSON.stringify(src)), id: nid, x: snapG(src.x + 30), y: snapG(src.y + 30), checklist: (src.checklist || []).map((c) => ({ ...c, id: uid() })) }; commit({ ...s, nodes: [...s.nodes, copy] }); setSel([nid]); };
+  const addEdge = (from, to) => { const s = stateRef.current; if (from === to || s.edges.some((e) => e.from === from && e.to === to)) return; commit({ ...s, edges: [...s.edges, { id: uid(), from, to }] }); };
+  const removeEdge = (id) => { const s = stateRef.current; commit({ ...s, edges: s.edges.filter((e) => e.id !== id) }); };
   const addNode = () => {
-    const s = stateRef.current; const k = s.nodes.length; const el = scrollRef.current;
-    const x = (el ? el.scrollLeft : 0) + 60 + (k % 4) * 26;
-    const y = (el ? el.scrollTop : 0) + 50 + (k % 4) * 26;
+    const s = stateRef.current; const r = vpRef.current.getBoundingClientRect(); const v = viewRef.current; const k = s.nodes.length;
+    const cx = (r.width / 2 - v.tx) / v.s, cy = (r.height / 2 - v.ty) / v.s;
     const id = uid();
-    onChange({ nodes: [...s.nodes, { id, x, y, title: "Новый этап", note: "", color: SWATCHES[k % SWATCHES.length], done: false }], edges: s.edges });
-    setSelected(id);
+    commit({ ...s, nodes: [...s.nodes, { id, x: snapG(cx - W / 2 + (k % 3) * 20), y: snapG(cy - 40 + (k % 3) * 20), title: "Новый этап", note: "", color: SWATCHES[k % SWATCHES.length], done: false, type: "stage", checklist: [] }] });
+    setSel([id]);
+  };
+  // чек-лист
+  const addCheck = (id) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: [...(n.checklist || []), { id: uid(), text: "", done: false }] } : n)) }); };
+  const toggleCheck = (id, cid) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: n.checklist.map((c) => (c.id === cid ? { ...c, done: !c.done } : c)) } : n)) }); };
+  const setCheckText = (id, cid, text) => { const s = stateRef.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: n.checklist.map((c) => (c.id === cid ? { ...c, text } : c)) } : n)) }); };
+  const removeCheck = (id, cid) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: n.checklist.filter((c) => c.id !== cid) } : n)) }); };
+  // группы
+  const addGroup = () => {
+    const s = stateRef.current; let gx, gy, gw, gh;
+    const sn = s.nodes.filter((n) => selRef.current.includes(n.id));
+    if (sn.length) {
+      const minX = Math.min(...sn.map((n) => n.x)), minY = Math.min(...sn.map((n) => n.y));
+      const maxX = Math.max(...sn.map((n) => n.x + W)), maxY = Math.max(...sn.map((n) => n.y + 110));
+      gx = snapG(minX - 24); gy = snapG(minY - 44); gw = snapG(maxX - minX + 48); gh = snapG(maxY - minY + 68);
+    } else {
+      const r = vpRef.current.getBoundingClientRect(); const v = viewRef.current;
+      gx = snapG((40 - v.tx) / v.s + 10); gy = snapG((40 - v.ty) / v.s + 10); gw = 380; gh = 280;
+    }
+    const id = uid();
+    commit({ ...s, groups: [...s.groups, { id, x: gx, y: gy, w: gw, h: gh, name: `Фаза ${s.groups.length + 1}`, color: GROUP_COLORS[s.groups.length % GROUP_COLORS.length] }] });
+    setSelGroup(id); setSel([]);
+  };
+  const patchGroup = (id, p) => { const s = stateRef.current; commit({ ...s, groups: s.groups.map((g) => (g.id === id ? { ...g, ...p } : g)) }); };
+  const removeGroup = (id) => { const s = stateRef.current; commit({ ...s, groups: s.groups.filter((g) => g.id !== id) }); setSelGroup(null); };
+
+  // ---- перетаскивание блоков (с мультивыбором) ----
+  const onNodeMove = (e) => {
+    const d = dragRef.current; if (!d) return; const v = viewRef.current;
+    if (!d.moved) { if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) < 3) return; pushHist(); d.moved = true; }
+    const dx = (e.clientX - d.sx) / v.s, dy = (e.clientY - d.sy) / v.s; const s = stateRef.current;
+    apply({ ...s, nodes: s.nodes.map((n) => (d.starts[n.id] ? { ...n, x: Math.max(0, snapG(d.starts[n.id].x + dx)), y: Math.max(0, snapG(d.starts[n.id].y + dy)) } : n)) });
+  };
+  const onNodeUp = () => { dragRef.current = null; window.removeEventListener("pointermove", onNodeMove); window.removeEventListener("pointerup", onNodeUp); };
+  const onNodeDown = (e, n) => {
+    if (e.button !== 0) return; e.stopPropagation(); setSelGroup(null); setTaskFor(null);
+    let cur = selRef.current;
+    if (e.shiftKey) cur = cur.includes(n.id) ? cur.filter((i) => i !== n.id) : [...cur, n.id];
+    else if (!cur.includes(n.id)) cur = [n.id];
+    setSel(cur);
+    const ids = cur.includes(n.id) ? cur : [n.id];
+    const starts = {}; stateRef.current.nodes.forEach((nd) => { if (ids.includes(nd.id)) starts[nd.id] = { x: nd.x, y: nd.y }; });
+    dragRef.current = { ids, starts, sx: e.clientX, sy: e.clientY, moved: false };
+    window.addEventListener("pointermove", onNodeMove); window.addEventListener("pointerup", onNodeUp);
   };
 
-  const onDragMove = (e) => { const d = dragRef.current; if (!d) return; patchNode(d.id, { x: Math.max(0, d.ox + (e.clientX - d.sx)), y: Math.max(0, d.oy + (e.clientY - d.sy)) }); };
-  const onDragUp = () => { dragRef.current = null; window.removeEventListener("pointermove", onDragMove); window.removeEventListener("pointerup", onDragUp); };
-  const onNodePointerDown = (e, n) => { if (e.button !== 0) return; setSelected(n.id); dragRef.current = { id: n.id, sx: e.clientX, sy: e.clientY, ox: n.x, oy: n.y }; window.addEventListener("pointermove", onDragMove); window.addEventListener("pointerup", onDragUp); };
-
-  const relPos = (e) => { const el = contentRef.current; const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-  const onConnMove = (e) => { if (!contentRef.current) return; setConnPos(relPos(e)); };
+  // ---- соединения ----
+  const onConnMove = (e) => setConnPos(toWorld(e.clientX, e.clientY));
   const onConnUp = (e) => {
     const c = connRef.current; connRef.current = null; setConnPos(null);
     window.removeEventListener("pointermove", onConnMove); window.removeEventListener("pointerup", onConnUp);
@@ -4730,74 +4852,273 @@ function StrategyBoard({ strategy, onChange }) {
     const host = el && el.closest ? el.closest("[data-node]") : null;
     if (host) { const to = host.getAttribute("data-node"); if (to && to !== c.from) addEdge(c.from, to); }
   };
-  const onPortPointerDown = (e, n) => { e.stopPropagation(); e.preventDefault(); connRef.current = { from: n.id }; setConnPos(relPos(e)); window.addEventListener("pointermove", onConnMove); window.addEventListener("pointerup", onConnUp); };
+  const onPortDown = (e, n) => { e.stopPropagation(); e.preventDefault(); connRef.current = { from: n.id }; setConnPos(toWorld(e.clientX, e.clientY)); window.addEventListener("pointermove", onConnMove); window.addEventListener("pointerup", onConnUp); };
+
+  // ---- панорамирование / рамка выбора ----
+  const onPanMove = (e) => { const p = panRef.current; if (!p) return; setView((v) => ({ ...v, tx: p.tx + (e.clientX - p.sx), ty: p.ty + (e.clientY - p.sy) })); };
+  const onPanUp = () => { panRef.current = null; window.removeEventListener("pointermove", onPanMove); window.removeEventListener("pointerup", onPanUp); };
+  const onMarqueeMove = (e) => { const m = marqueeRef.current; if (!m) return; const p = toWorld(e.clientX, e.clientY); setMarquee({ x: Math.min(m.x0, p.x), y: Math.min(m.y0, p.y), w: Math.abs(p.x - m.x0), h: Math.abs(p.y - m.y0) }); };
+  const onMarqueeUp = (e) => {
+    const m = marqueeRef.current; marqueeRef.current = null;
+    window.removeEventListener("pointermove", onMarqueeMove); window.removeEventListener("pointerup", onMarqueeUp);
+    const p = toWorld(e.clientX, e.clientY); const r = { x: Math.min(m.x0, p.x), y: Math.min(m.y0, p.y), w: Math.abs(p.x - m.x0), h: Math.abs(p.y - m.y0) };
+    setMarquee(null); if (r.w < 5 && r.h < 5) return;
+    const hit = stateRef.current.nodes.filter((n) => n.x < r.x + r.w && n.x + W > r.x && n.y < r.y + r.h && n.y + 80 > r.y).map((n) => n.id);
+    setSel(hit);
+  };
+  const onBgDown = (e) => {
+    if (e.button !== 0) return;
+    setSel([]); setSelGroup(null); setTaskFor(null);
+    if (e.shiftKey) {
+      const p = toWorld(e.clientX, e.clientY); marqueeRef.current = { x0: p.x, y0: p.y }; setMarquee({ x: p.x, y: p.y, w: 0, h: 0 });
+      window.addEventListener("pointermove", onMarqueeMove); window.addEventListener("pointerup", onMarqueeUp);
+    } else {
+      const v = viewRef.current; panRef.current = { sx: e.clientX, sy: e.clientY, tx: v.tx, ty: v.ty };
+      window.addEventListener("pointermove", onPanMove); window.addEventListener("pointerup", onPanUp);
+    }
+  };
+
+  // ---- перетаскивание/ресайз групп ----
+  const onGroupMove = (e) => {
+    const d = gDragRef.current; if (!d) return; const v = viewRef.current;
+    if (!d.moved) { if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) < 3) return; pushHist(); d.moved = true; }
+    const dx = (e.clientX - d.sx) / v.s, dy = (e.clientY - d.sy) / v.s; const s = stateRef.current;
+    apply({ ...s, groups: s.groups.map((g) => (g.id === d.id ? { ...g, x: snapG(d.gx + dx), y: snapG(d.gy + dy) } : g)), nodes: s.nodes.map((n) => (d.starts[n.id] ? { ...n, x: snapG(d.starts[n.id].x + dx), y: snapG(d.starts[n.id].y + dy) } : n)) });
+  };
+  const onGroupUp = () => { gDragRef.current = null; window.removeEventListener("pointermove", onGroupMove); window.removeEventListener("pointerup", onGroupUp); };
+  const onGroupDown = (e, g) => {
+    if (e.button !== 0) return; e.stopPropagation(); setSelGroup(g.id); setSel([]); setTaskFor(null);
+    const s = stateRef.current;
+    const members = s.nodes.filter((n) => n.x + W / 2 >= g.x && n.x + W / 2 <= g.x + g.w && n.y + 30 >= g.y && n.y + 30 <= g.y + g.h);
+    const starts = {}; members.forEach((n) => { starts[n.id] = { x: n.x, y: n.y }; });
+    gDragRef.current = { id: g.id, gx: g.x, gy: g.y, starts, sx: e.clientX, sy: e.clientY, moved: false };
+    window.addEventListener("pointermove", onGroupMove); window.addEventListener("pointerup", onGroupUp);
+  };
+  const onGResMove = (e) => { const d = gResRef.current; if (!d) return; const v = viewRef.current; if (!d.moved) { pushHist(); d.moved = true; } const dw = (e.clientX - d.sx) / v.s, dh = (e.clientY - d.sy) / v.s; const s = stateRef.current; apply({ ...s, groups: s.groups.map((g) => (g.id === d.id ? { ...g, w: Math.max(160, snapG(d.w + dw)), h: Math.max(120, snapG(d.h + dh)) } : g)) }); };
+  const onGResUp = () => { gResRef.current = null; window.removeEventListener("pointermove", onGResMove); window.removeEventListener("pointerup", onGResUp); };
+  const onGResDown = (e, g) => { e.stopPropagation(); e.preventDefault(); gResRef.current = { id: g.id, w: g.w, h: g.h, sx: e.clientX, sy: e.clientY, moved: false }; window.addEventListener("pointermove", onGResMove); window.addEventListener("pointerup", onGResUp); };
+
+  // ---- зум ----
+  const zoomAt = (cx, cy, factor) => setView((v) => { const ns = Math.min(2, Math.max(0.3, v.s * factor)); const k = ns / v.s; return { s: ns, tx: cx - (cx - v.tx) * k, ty: cy - (cy - v.ty) * k }; });
+  const zoomBtn = (factor) => { const r = vpRef.current.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, factor); };
+  const fitView = () => {
+    const s = stateRef.current; const its = [...s.nodes.map((n) => ({ x: n.x, y: n.y, w: W, h: 100 })), ...s.groups.map((g) => ({ x: g.x, y: g.y, w: g.w, h: g.h }))];
+    const r = vpRef.current.getBoundingClientRect(); const pad = 48;
+    if (!its.length) { setView({ s: 1, tx: 40, ty: 20 }); return; }
+    const minX = Math.min(...its.map((i) => i.x)), minY = Math.min(...its.map((i) => i.y));
+    const maxX = Math.max(...its.map((i) => i.x + i.w)), maxY = Math.max(...its.map((i) => i.y + i.h));
+    const sc = Math.min((r.width - pad * 2) / (maxX - minX || 1), (r.height - pad * 2) / (maxY - minY || 1), 1.2);
+    const ns = Math.max(0.3, Math.min(2, sc));
+    setView({ s: ns, tx: (r.width - (maxX - minX) * ns) / 2 - minX * ns, ty: (r.height - (maxY - minY) * ns) / 2 - minY * ns });
+  };
+  // ---- авто-раскладка по стрелкам ----
+  const autoLayout = () => {
+    const s = stateRef.current; const ns = s.nodes; if (!ns.length) return;
+    const idset = new Set(ns.map((n) => n.id)); const out = {}, indeg = {};
+    ns.forEach((n) => { out[n.id] = []; indeg[n.id] = 0; });
+    s.edges.forEach((e) => { if (idset.has(e.from) && idset.has(e.to)) { out[e.from].push(e.to); indeg[e.to] += 1; } });
+    const layer = {}; ns.forEach((n) => (layer[n.id] = 0));
+    const indc = { ...indeg }; const q = ns.filter((n) => indc[n.id] === 0).map((n) => n.id); let guard = 0;
+    while (q.length && guard++ < 20000) { const u = q.shift(); out[u].forEach((v) => { layer[v] = Math.max(layer[v], layer[u] + 1); if (--indc[v] === 0) q.push(v); }); }
+    const cols = {}; ns.forEach((n) => { (cols[layer[n.id]] = cols[layer[n.id]] || []).push(n.id); });
+    const pos = {}; Object.keys(cols).sort((a, b) => a - b).forEach((L) => { cols[L].forEach((id, i) => { pos[id] = { x: 80 + Number(L) * 300, y: 60 + i * 160 }; }); });
+    commit({ ...s, nodes: ns.map((n) => (pos[n.id] ? { ...n, x: pos[n.id].x, y: pos[n.id].y } : n)) });
+    setTimeout(fitView, 20);
+  };
+
+  // ---- эффекты: wheel, клавиатура, размеры, fit на монтировании ----
+  const actRef = useRef({}); actRef.current = { undo, redo, removeSelected };
+  useEffect(() => {
+    const el = vpRef.current; if (!el) return;
+    const onWheel = (e) => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1); };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    const ro = new ResizeObserver(() => { const r = el.getBoundingClientRect(); setVpSize({ w: r.width, h: r.height }); });
+    ro.observe(el);
+    const t = setTimeout(() => { fitView(); const r = el.getBoundingClientRect(); setVpSize({ w: r.width, h: r.height }); }, 0);
+    const onKey = (e) => {
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? actRef.current.redo() : actRef.current.undo(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); actRef.current.redo(); }
+      else if (e.key === "Delete") { e.preventDefault(); actRef.current.removeSelected(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { el.removeEventListener("wheel", onWheel); ro.disconnect(); clearTimeout(t); window.removeEventListener("keydown", onKey); };
+  }, []);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 1800); return () => clearTimeout(t); }, [toast]);
+
+  const createTask = (n, date) => { if (onCreateTask) onCreateTask(n.title || "Задача", date); setTaskFor(null); setToast("Задача создана во вкладке «Задачи»"); };
 
   const stop = (e) => e.stopPropagation();
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  const maxX = nodes.reduce((m, n) => Math.max(m, n.x + W), 0);
-  const maxY = nodes.reduce((m, n) => Math.max(m, n.y + 140), 0);
-  const cw = Math.max(1700, maxX + 260);
-  const ch = Math.max(900, maxY + 220);
   const curve = (sx, sy, tx, ty) => `M${sx},${sy} C${sx + 60},${sy} ${tx - 60},${ty} ${tx},${ty}`;
   const fromNode = connRef.current ? byId[connRef.current.from] : null;
-  const doneCount = nodes.filter((n) => n.done).length;
+  const doneCount = nodes.filter(nodeIsDone).length;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const canUndo = histRef.current.past.length > 0, canRedo = histRef.current.future.length > 0;
+
+  // мини-карта
+  const mmW = 168, mmH = 116;
+  const its = [...nodes.map((n) => ({ x: n.x, y: n.y, w: W, h: 100 })), ...groups.map((g) => ({ x: g.x, y: g.y, w: g.w, h: g.h }))];
+  const bMinX = its.length ? Math.min(0, ...its.map((i) => i.x)) : 0;
+  const bMinY = its.length ? Math.min(0, ...its.map((i) => i.y)) : 0;
+  const bMaxX = its.length ? Math.max(800, ...its.map((i) => i.x + i.w)) : 800;
+  const bMaxY = its.length ? Math.max(600, ...its.map((i) => i.y + i.h)) : 600;
+  const mm = Math.min(mmW / (bMaxX - bMinX || 1), mmH / (bMaxY - bMinY || 1));
+  const mmx = (x) => (x - bMinX) * mm, mmy = (y) => (y - bMinY) * mm;
+  const vx = -view.tx / view.s, vy = -view.ty / view.s, vw = vpSize.w / view.s, vh = vpSize.h / view.s;
+  const onMiniDown = (e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    const wx = bMinX + (e.clientX - r.left) / mm, wy = bMinY + (e.clientY - r.top) / mm;
+    setView((v) => ({ ...v, tx: vpSize.w / 2 - wx * v.s, ty: vpSize.h / 2 - wy * v.s }));
+  };
+
+  const tBtn = "flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-30";
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-100 px-3 py-2.5">
         <button onClick={addNode} className="rounded-lg inline-flex items-center gap-1.5 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Блок</button>
-        <span className="text-xs text-neutral-400">Перетаскивайте блоки · тяните стрелку от кружка справа к другому блоку · клик по стрелке — удалить</span>
-        {nodes.length > 0 && <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-500">Готово {doneCount}/{nodes.length}</span>}
+        <button onClick={addGroup} className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" title="Рамка-фаза вокруг выбранных блоков"><Square size={14} /> Фаза</button>
+        <button onClick={autoLayout} className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" title="Выровнять по стрелкам"><Wand2 size={14} /> Раскладка</button>
+        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <button onClick={() => actRef.current.undo()} disabled={!canUndo} className={tBtn} title="Отменить (Ctrl+Z)"><Undo2 size={15} /></button>
+        <button onClick={() => actRef.current.redo()} disabled={!canRedo} className={tBtn} title="Повторить (Ctrl+Shift+Z)"><Redo2 size={15} /></button>
+        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <button onClick={() => zoomBtn(1 / 1.2)} className={tBtn} title="Отдалить"><ZoomOut size={15} /></button>
+        <span className="w-10 text-center text-xs font-semibold text-neutral-500">{Math.round(view.s * 100)}%</span>
+        <button onClick={() => zoomBtn(1.2)} className={tBtn} title="Приблизить"><ZoomIn size={15} /></button>
+        <button onClick={fitView} className={tBtn} title="Вписать в экран"><Maximize2 size={15} /></button>
+        {nodes.length > 0 && <span className="ml-auto rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-semibold text-neutral-500">Готово {doneCount}/{nodes.length}</span>}
       </div>
-      <div ref={scrollRef} className="relative overflow-auto" style={{ height: "68vh" }} onPointerDown={() => setSelected(null)}>
-        <div ref={contentRef} className="relative" style={{ width: cw, height: ch, backgroundImage: "radial-gradient(#e8e8ea 1px, transparent 1px)", backgroundSize: "18px 18px" }}>
-          <svg width={cw} height={ch} className="pointer-events-none absolute inset-0">
+
+      <div ref={vpRef} onPointerDown={onBgDown} className="relative overflow-hidden" style={{ height: "68vh", touchAction: "none", cursor: "default", background: "#fafafa" }}>
+        <div style={{ position: "absolute", left: 0, top: 0, width: CW, height: CH, transformOrigin: "0 0", transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`, backgroundImage: "radial-gradient(#e2e2e5 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
+          {/* группы (под блоками) */}
+          {groups.map((g) => {
+            const gs = selGroup === g.id;
+            return (
+              <div key={g.id} className="absolute rounded-xl" style={{ left: g.x, top: g.y, width: g.w, height: g.h, border: `2px ${gs ? "solid" : "dashed"} ${g.color}`, background: `${g.color}0d`, zIndex: 1 }}>
+                <div className="absolute -top-0.5 left-0 flex max-w-full items-center gap-1 rounded-tl-xl rounded-br-lg px-2 py-0.5" style={{ background: g.color, transform: "translateY(-1px)" }}>
+                  {editGroup === g.id ? (
+                    <input autoFocus defaultValue={g.name} onPointerDown={stop}
+                      onBlur={(e) => { patchGroup(g.id, { name: e.target.value.trim() || "Фаза" }); setEditGroup(null); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setEditGroup(null); }}
+                      className="w-32 rounded bg-white/90 px-1 text-xs font-bold text-neutral-800 focus:outline-none" />
+                  ) : (
+                    <span onPointerDown={(e) => onGroupDown(e, g)} onDoubleClick={() => setEditGroup(g.id)} className="cursor-grab select-none text-xs font-bold text-white" title="Тяните — переместить фазу (вместе с блоками) · двойной клик — переименовать">{g.name}</span>
+                  )}
+                  {gs && <Pencil size={11} className="shrink-0 cursor-pointer text-white/80 hover:text-white" onPointerDown={stop} onClick={() => setEditGroup(g.id)} title="Переименовать" />}
+                  {gs && <Trash2 size={12} className="shrink-0 cursor-pointer text-white/80 hover:text-white" onPointerDown={stop} onClick={() => removeGroup(g.id)} title="Удалить фазу" />}
+                </div>
+                <div onPointerDown={(e) => onGResDown(e, g)} className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize" style={{ borderRight: `3px solid ${g.color}`, borderBottom: `3px solid ${g.color}`, borderBottomRightRadius: 10 }} />
+              </div>
+            );
+          })}
+
+          <svg width={CW} height={CH} className="pointer-events-none absolute inset-0" style={{ zIndex: 2 }}>
             <defs><marker id="stratArrow" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#f59e0b" /></marker></defs>
             {edges.map((ed) => {
               const a = byId[ed.from], b = byId[ed.to]; if (!a || !b) return null;
               const sx = a.x + W, sy = a.y + PORTY, tx = b.x, ty = b.y + PORTY;
               return (
                 <g key={ed.id} className="pointer-events-auto" style={{ cursor: "pointer" }} onClick={() => removeEdge(ed.id)}>
-                  <path d={curve(sx, sy, tx, ty)} stroke="transparent" strokeWidth="12" fill="none" />
+                  <path d={curve(sx, sy, tx, ty)} stroke="transparent" strokeWidth="14" fill="none" />
                   <path d={curve(sx, sy, tx, ty)} stroke="#f59e0b" strokeWidth="2" fill="none" markerEnd="url(#stratArrow)" />
                 </g>
               );
             })}
             {fromNode && connPos && <path d={curve(fromNode.x + W, fromNode.y + PORTY, connPos.x, connPos.y)} stroke="#f59e0b" strokeWidth="2" strokeDasharray="4 4" fill="none" />}
+            {marquee && <rect x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} fill="#3b82f61a" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 3" />}
           </svg>
 
           {nodes.map((n) => {
-            const sel = selected === n.id;
+            const on = sel.includes(n.id); const done = nodeIsDone(n); const hasCl = !!(n.checklist && n.checklist.length);
+            const cdone = hasCl ? n.checklist.filter((c) => c.done).length : 0;
+            const TI = STRAT_TYPES[n.type || "stage"].icon; const tc = TYPE_COLOR[n.type || "stage"];
             return (
-              <div
-                key={n.id}
-                data-node={n.id}
-                onPointerDown={(e) => onNodePointerDown(e, n)}
-                className="rounded-xl absolute select-none border bg-white shadow-sm"
-                style={{ left: n.x, top: n.y, width: W, cursor: "grab", borderLeft: `3px solid ${n.color || "#a3a3a3"}`, background: n.done ? "#f0fdf4" : "#fff", borderColor: sel ? (n.color || "#a3a3a3") : n.done ? "#bbf7d0" : "#e5e5e5", boxShadow: sel ? `0 0 0 2px ${(n.color || "#a3a3a3")}33` : undefined, zIndex: sel ? 5 : 2 }}
-              >
-                <div className="flex items-start gap-2 px-2.5 pt-2.5">
-                  <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
-                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onPointerDown={(e) => { e.stopPropagation(); setSelected(n.id); }} onChange={(e) => patchNode(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={n.done ? { textDecoration: "line-through", color: "#737373" } : undefined} />
-                  {sel && <button onPointerDown={stop} onClick={() => removeNode(n.id)} className="rounded shrink-0 p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить"><Trash2 size={13} /></button>}
+              <div key={n.id} data-node={n.id} onPointerDown={(e) => onNodeDown(e, n)}
+                className="absolute select-none rounded-xl border bg-white shadow-sm"
+                style={{ left: n.x, top: n.y, width: W, cursor: "grab", borderLeft: `3px solid ${n.color || "#a3a3a3"}`, background: done ? "#f0fdf4" : "#fff", borderColor: on ? (n.color || "#2563eb") : done ? "#bbf7d0" : "#e5e5e5", boxShadow: on ? `0 0 0 2px ${(n.color || "#2563eb")}40` : undefined, zIndex: on ? 6 : 3 }}>
+                <div className="flex items-start gap-1.5 px-2.5 pt-2.5">
+                  {hasCl ? (
+                    <span title="Прогресс по подзадачам" className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: done ? "#16a34a" : "#fff", border: done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }}>{done ? <Check size={12} strokeWidth={3} /> : (cdone > 0 && <Minus size={12} strokeWidth={3} style={{ color: "#a3a3a3" }} />)}</span>
+                  ) : (
+                    <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
+                  )}
+                  <TI size={14} className="mt-1 shrink-0" style={{ color: tc }} title={STRAT_TYPES[n.type || "stage"].label} />
+                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={done ? { textDecoration: "line-through", color: "#737373" } : undefined} />
                 </div>
-                <textarea value={n.note || ""} onPointerDown={(e) => { e.stopPropagation(); setSelected(n.id); }} onChange={(e) => patchNode(n.id, { note: e.target.value })} placeholder="заметка…" rows={2} className="mt-1 w-full resize-none bg-transparent px-2.5 pb-2 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
-                {sel && (
-                  <div className="flex flex-wrap items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
-                    {SWATCHES.map((c) => (<button key={c} onPointerDown={stop} onClick={() => patchNode(n.id, { color: c })} className="h-4 w-4 rounded-full transition" style={{ background: c, boxShadow: (n.color === c) ? `0 0 0 2px #fff, 0 0 0 3.5px ${c}` : "none" }} />))}
+
+                {hasCl && (
+                  <div className="mt-1 flex items-center gap-1.5 px-2.5">
+                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.round((cdone / n.checklist.length) * 100)}%`, background: done ? "#16a34a" : (n.color || "#2563eb") }} /></div>
+                    <span className="text-[10px] font-semibold text-neutral-400">{cdone}/{n.checklist.length}</span>
                   </div>
                 )}
-                <span onPointerDown={(e) => onPortPointerDown(e, n)} className="rounded-full absolute cursor-crosshair bg-white" style={{ right: -7, top: PORTY - 6, width: 13, height: 13, border: `2px solid ${n.color || "#f59e0b"}` }} title="Потяните, чтобы соединить" />
+
+                <textarea value={n.note || ""} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { note: e.target.value })} placeholder="заметка…" rows={1} className="mt-1 w-full resize-none bg-transparent px-2.5 pb-1.5 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
+
+                {on && (
+                  <div className="border-t border-neutral-100">
+                    {/* подзадачи */}
+                    <div className="px-2.5 py-1.5">
+                      {(n.checklist || []).map((c) => (
+                        <div key={c.id} className="flex items-center gap-1.5 py-0.5">
+                          <button onPointerDown={stop} onClick={() => toggleCheck(n.id, c.id)} className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border" style={{ background: c.done ? "#16a34a" : "#fff", borderColor: c.done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{c.done && <Check size={9} strokeWidth={3} />}</button>
+                          <input value={c.text} onPointerDown={stop} onFocus={pushHist} onChange={(e) => setCheckText(n.id, c.id, e.target.value)} placeholder="подзадача…" className="min-w-0 flex-1 bg-transparent text-[11px] text-neutral-700 focus:outline-none" style={c.done ? { textDecoration: "line-through", color: "#a3a3a3" } : undefined} />
+                          <X size={11} className="shrink-0 cursor-pointer text-neutral-300 hover:text-red-500" onPointerDown={stop} onClick={() => removeCheck(n.id, c.id)} />
+                        </div>
+                      ))}
+                      <button onPointerDown={stop} onClick={() => addCheck(n.id)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={11} /> подзадача</button>
+                    </div>
+                    {/* тип */}
+                    <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
+                      {Object.keys(STRAT_TYPES).map((tk) => { const Ic = STRAT_TYPES[tk].icon; const act = (n.type || "stage") === tk; return (
+                        <button key={tk} onPointerDown={stop} onClick={() => patchNode(n.id, { type: tk })} title={STRAT_TYPES[tk].label} className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold" style={{ background: act ? `${TYPE_COLOR[tk]}1a` : "transparent", color: act ? TYPE_COLOR[tk] : "#a3a3a3" }}><Ic size={12} />{act && STRAT_TYPES[tk].label}</button>
+                      ); })}
+                    </div>
+                    {/* цвет */}
+                    <div className="flex flex-wrap items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
+                      {SWATCHES.map((c) => (<button key={c} onPointerDown={stop} onClick={() => patchNode(n.id, { color: c })} className="h-4 w-4 rounded-full transition" style={{ background: c, boxShadow: n.color === c ? `0 0 0 2px #fff, 0 0 0 3.5px ${c}` : "none" }} />))}
+                    </div>
+                    {/* действия */}
+                    <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
+                      <button onPointerDown={stop} onClick={() => setTaskFor(taskFor === n.id ? null : n.id)} className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-1 text-[11px] font-semibold text-neutral-600 hover:bg-neutral-200"><CalendarPlus size={12} /> В задачу</button>
+                      <button onPointerDown={stop} onClick={() => duplicateNode(n.id)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Дублировать блок"><Copy size={13} /></button>
+                      <button onPointerDown={stop} onClick={() => removeNode(n.id)} className="rounded-md p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500" title="Удалить блок"><Trash2 size={13} /></button>
+                    </div>
+                    {taskFor === n.id && (
+                      <div className="flex items-center gap-1.5 border-t border-neutral-100 bg-neutral-50 px-2.5 py-2">
+                        <input type="date" defaultValue={todayISO} onPointerDown={stop} id={`sd-${n.id}`} className="rounded-md border border-neutral-200 px-1.5 py-1 text-[11px] text-neutral-700 focus:outline-none" />
+                        <button onPointerDown={stop} onClick={() => { const el = document.getElementById(`sd-${n.id}`); createTask(n, el ? el.value : todayISO); }} className="rounded-md bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-neutral-800">Создать задачу</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <span onPointerDown={(e) => onPortDown(e, n)} className="absolute cursor-crosshair rounded-full bg-white" style={{ right: -7, top: PORTY - 6, width: 13, height: 13, border: `2px solid ${n.color || "#f59e0b"}`, zIndex: 7 }} title="Потяните, чтобы соединить" />
               </div>
             );
           })}
-
-          {nodes.length === 0 && (
-            <div className="absolute left-1/2 top-24 -translate-x-1/2 text-center text-sm text-neutral-400">
-              Пусто. Нажмите «+ Блок», чтобы добавить первый этап стратегии.
-            </div>
-          )}
         </div>
+
+        {/* мини-карта */}
+        {(nodes.length > 0 || groups.length > 0) && (
+          <div onPointerDown={onMiniDown} className="absolute bottom-3 right-3 cursor-pointer overflow-hidden rounded-lg border border-neutral-200 bg-white/90 shadow-sm" style={{ width: mmW, height: mmH }} title="Клик — перейти">
+            <svg width={mmW} height={mmH}>
+              {groups.map((g) => <rect key={g.id} x={mmx(g.x)} y={mmy(g.y)} width={g.w * mm} height={g.h * mm} fill={`${g.color}14`} stroke={g.color} strokeWidth="0.5" rx="2" />)}
+              {nodes.map((n) => <rect key={n.id} x={mmx(n.x)} y={mmy(n.y)} width={W * mm} height={Math.max(3, 70 * mm)} rx="1.5" fill={nodeIsDone(n) ? "#16a34a" : (n.color || "#94a3b8")} opacity="0.85" />)}
+              <rect x={mmx(vx)} y={mmy(vy)} width={vw * mm} height={vh * mm} fill="none" stroke="#111827" strokeWidth="1" />
+            </svg>
+          </div>
+        )}
+
+        {nodes.length === 0 && groups.length === 0 && (
+          <div className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 text-center text-sm text-neutral-400">Пусто. «+ Блок» — добавить этап, «+ Фаза» — рамку.</div>
+        )}
+        {toast && <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">{toast}</div>}
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/80 px-2 py-1 text-[10px] text-neutral-400">Перетаскивание фона — панорама · Shift+рамка — выбор · колесо — зум</div>
       </div>
     </div>
   );
