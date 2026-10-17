@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, memo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
@@ -4640,6 +4640,7 @@ function normStrategy(v) {
     note: (n && n.note) || "",
     color: (n && n.color) || "#2563eb",
     done: !!(n && n.done),
+    hasCheck: n && n.hasCheck === false ? false : true,
     type: n && STRAT_TYPES[n.type] ? n.type : "stage",
     checklist: n && Array.isArray(n.checklist)
       ? n.checklist.filter((c) => c && typeof c === "object").map((c) => ({ id: c.id || uid(), text: c.text || "", done: !!c.done }))
@@ -4757,6 +4758,8 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
   const gDragRef = useRef(null);
   const gResRef = useRef(null);
   const histRef = useRef({ past: [], future: [] });
+  const sizeRef = useRef({});       // id → измеренная высота блока (для якорей стрелок)
+  const contentElRef = useRef(null);
 
   const [view, setView] = useState({ s: 1, tx: 40, ty: 20 });
   const viewRef = useRef(view); viewRef.current = view;
@@ -4795,7 +4798,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
     const s = stateRef.current; const r = vpRef.current.getBoundingClientRect(); const v = viewRef.current; const k = s.nodes.length;
     const cx = (r.width / 2 - v.tx) / v.s, cy = (r.height / 2 - v.ty) / v.s;
     const id = uid();
-    commit({ ...s, nodes: [...s.nodes, { id, x: snapG(cx - W / 2 + (k % 3) * 20), y: snapG(cy - 40 + (k % 3) * 20), title: "Новый этап", note: "", color: SWATCHES[k % SWATCHES.length], done: false, type: "stage", checklist: [] }] });
+    commit({ ...s, nodes: [...s.nodes, { id, x: snapG(cx - W / 2 + (k % 3) * 20), y: snapG(cy - 40 + (k % 3) * 20), title: "Новый этап", note: "", color: SWATCHES[k % SWATCHES.length], done: false, hasCheck: true, type: "stage", checklist: [] }] });
     setSel([id]);
   };
   // чек-лист
@@ -4852,7 +4855,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
     const host = el && el.closest ? el.closest("[data-node]") : null;
     if (host) { const to = host.getAttribute("data-node"); if (to && to !== c.from) addEdge(c.from, to); }
   };
-  const onPortDown = (e, n) => { e.stopPropagation(); e.preventDefault(); connRef.current = { from: n.id }; setConnPos(toWorld(e.clientX, e.clientY)); window.addEventListener("pointermove", onConnMove); window.addEventListener("pointerup", onConnUp); };
+  const onPortDown = (e, n, side) => { e.stopPropagation(); e.preventDefault(); connRef.current = { from: n.id, side }; setConnPos(toWorld(e.clientX, e.clientY)); window.addEventListener("pointermove", onConnMove); window.addEventListener("pointerup", onConnUp); };
 
   // ---- панорамирование / рамка выбора ----
   const onPanMove = (e) => { const p = panRef.current; if (!p) return; setView((v) => ({ ...v, tx: p.tx + (e.clientX - p.sx), ty: p.ty + (e.clientY - p.sy) })); };
@@ -4946,14 +4949,39 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
     return () => { el.removeEventListener("wheel", onWheel); ro.disconnect(); clearTimeout(t); window.removeEventListener("keydown", onKey); };
   }, []);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 1800); return () => clearTimeout(t); }, [toast]);
+  // измеряем реальные высоты блоков, чтобы стрелки цеплялись за правильные стороны
+  useLayoutEffect(() => {
+    if (!contentElRef.current) return; let changed = false;
+    contentElRef.current.querySelectorAll("[data-node]").forEach((el) => { const id = el.getAttribute("data-node"); const h = el.offsetHeight; if (sizeRef.current[id] !== h) { sizeRef.current[id] = h; changed = true; } });
+    if (changed) force((n) => n + 1);
+  });
 
   const createTask = (n, date) => { if (onCreateTask) onCreateTask(n.title || "Задача", date); setTaskFor(null); setToast("Задача создана во вкладке «Задачи»"); };
 
   const stop = (e) => e.stopPropagation();
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  const curve = (sx, sy, tx, ty) => `M${sx},${sy} C${sx + 60},${sy} ${tx - 60},${ty} ${tx},${ty}`;
+  // якоря сторон блока (с учётом измеренной высоты) и построение кривой с любой стороны
+  const nh = (n) => sizeRef.current[n.id] || 92;
+  const sideAnchor = (n, side) => {
+    const h = nh(n);
+    if (side === "top") return { x: n.x + W / 2, y: n.y };
+    if (side === "bottom") return { x: n.x + W / 2, y: n.y + h };
+    if (side === "left") return { x: n.x, y: n.y + h / 2 };
+    return { x: n.x + W, y: n.y + h / 2 };
+  };
+  const ctrlOff = (p, side, k) => ({ x: p.x + (side === "left" ? -k : side === "right" ? k : 0), y: p.y + (side === "top" ? -k : side === "bottom" ? k : 0) });
+  const pickSides = (a, b) => {
+    const ax = a.x + W / 2, ay = a.y + nh(a) / 2, bx = b.x + W / 2, by = b.y + nh(b) / 2;
+    const dx = bx - ax, dy = by - ay;
+    if (Math.abs(dx) >= Math.abs(dy)) return [dx >= 0 ? "right" : "left", dx >= 0 ? "left" : "right"];
+    return [dy >= 0 ? "bottom" : "top", dy >= 0 ? "top" : "bottom"];
+  };
+  const edgePath = (a, b) => { const [sa, sb] = pickSides(a, b); const p1 = sideAnchor(a, sa), p2 = sideAnchor(b, sb); const c1 = ctrlOff(p1, sa, 55), c2 = ctrlOff(p2, sb, 55); return `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`; };
+  const tempPath = (a, side, p2) => { const p1 = sideAnchor(a, side); const c1 = ctrlOff(p1, side, 55); return `M${p1.x},${p1.y} C${c1.x},${c1.y} ${p2.x},${p2.y} ${p2.x},${p2.y}`; };
   const fromNode = connRef.current ? byId[connRef.current.from] : null;
-  const doneCount = nodes.filter(nodeIsDone).length;
+  const counted = (n) => n.hasCheck !== false;
+  const countTotal = nodes.filter(counted).length;
+  const doneCount = nodes.filter((n) => counted(n) && nodeIsDone(n)).length;
   const todayISO = new Date().toISOString().slice(0, 10);
   const canUndo = histRef.current.past.length > 0, canRedo = histRef.current.future.length > 0;
 
@@ -4990,11 +5018,11 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
         <span className="w-10 text-center text-xs font-semibold text-neutral-500">{Math.round(view.s * 100)}%</span>
         <button onClick={() => zoomBtn(1.2)} className={tBtn} title="Приблизить"><ZoomIn size={15} /></button>
         <button onClick={fitView} className={tBtn} title="Вписать в экран"><Maximize2 size={15} /></button>
-        {nodes.length > 0 && <span className="ml-auto rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-semibold text-neutral-500">Готово {doneCount}/{nodes.length}</span>}
+        {countTotal > 0 && <span className="ml-auto rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-semibold text-neutral-500">Готово {doneCount}/{countTotal}</span>}
       </div>
 
       <div ref={vpRef} onPointerDown={onBgDown} className="relative overflow-hidden" style={{ height: "68vh", touchAction: "none", cursor: "default", background: "#fafafa" }}>
-        <div style={{ position: "absolute", left: 0, top: 0, width: CW, height: CH, transformOrigin: "0 0", transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`, backgroundImage: "radial-gradient(#e2e2e5 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
+        <div ref={contentElRef} style={{ position: "absolute", left: 0, top: 0, width: CW, height: CH, transformOrigin: "0 0", transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`, backgroundImage: "radial-gradient(#e2e2e5 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
           {/* группы (под блоками) */}
           {groups.map((g) => {
             const gs = selGroup === g.id;
@@ -5021,47 +5049,52 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
             <defs><marker id="stratArrow" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#f59e0b" /></marker></defs>
             {edges.map((ed) => {
               const a = byId[ed.from], b = byId[ed.to]; if (!a || !b) return null;
-              const sx = a.x + W, sy = a.y + PORTY, tx = b.x, ty = b.y + PORTY;
+              const d = edgePath(a, b);
               return (
                 <g key={ed.id} className="pointer-events-auto" style={{ cursor: "pointer" }} onClick={() => removeEdge(ed.id)}>
-                  <path d={curve(sx, sy, tx, ty)} stroke="transparent" strokeWidth="14" fill="none" />
-                  <path d={curve(sx, sy, tx, ty)} stroke="#f59e0b" strokeWidth="2" fill="none" markerEnd="url(#stratArrow)" />
+                  <path d={d} stroke="transparent" strokeWidth="14" fill="none" />
+                  <path d={d} stroke="#f59e0b" strokeWidth="2" fill="none" markerEnd="url(#stratArrow)" />
                 </g>
               );
             })}
-            {fromNode && connPos && <path d={curve(fromNode.x + W, fromNode.y + PORTY, connPos.x, connPos.y)} stroke="#f59e0b" strokeWidth="2" strokeDasharray="4 4" fill="none" />}
+            {fromNode && connPos && <path d={tempPath(fromNode, connRef.current.side || "right", connPos)} stroke="#f59e0b" strokeWidth="2" strokeDasharray="4 4" fill="none" />}
             {marquee && <rect x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} fill="#3b82f61a" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 3" />}
           </svg>
 
           {nodes.map((n) => {
-            const on = sel.includes(n.id); const done = nodeIsDone(n); const hasCl = !!(n.checklist && n.checklist.length);
+            const on = sel.includes(n.id); const cnt = n.hasCheck !== false; const done = nodeIsDone(n); const showDone = cnt && done; const hasCl = !!(n.checklist && n.checklist.length);
             const cdone = hasCl ? n.checklist.filter((c) => c.done).length : 0;
             const TI = STRAT_TYPES[n.type || "stage"].icon; const tc = TYPE_COLOR[n.type || "stage"];
+            const col = n.color || "#2563eb";
+            const portCls = "absolute cursor-crosshair rounded-full bg-white opacity-0 transition group-hover:opacity-100";
+            const portStyle = (extra) => ({ width: 12, height: 12, border: `2px solid ${col}`, zIndex: 8, ...extra });
             return (
               <div key={n.id} data-node={n.id} onPointerDown={(e) => onNodeDown(e, n)}
-                className="absolute select-none rounded-xl border bg-white shadow-sm"
-                style={{ left: n.x, top: n.y, width: W, cursor: "grab", borderLeft: `3px solid ${n.color || "#a3a3a3"}`, background: done ? "#f0fdf4" : "#fff", borderColor: on ? (n.color || "#2563eb") : done ? "#bbf7d0" : "#e5e5e5", boxShadow: on ? `0 0 0 2px ${(n.color || "#2563eb")}40` : undefined, zIndex: on ? 6 : 3 }}>
+                className="group absolute select-none rounded-xl bg-white shadow-sm"
+                style={{ left: n.x, top: n.y, width: W, cursor: "grab", border: `1.5px solid ${col}`, background: showDone ? "#f0fdf4" : "#fff", boxShadow: on ? `0 0 0 2px ${col}40` : undefined, zIndex: on ? 6 : 3 }}>
                 <div className="flex items-start gap-1.5 px-2.5 pt-2.5">
-                  {hasCl ? (
+                  {cnt && (hasCl ? (
                     <span title="Прогресс по подзадачам" className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: done ? "#16a34a" : "#fff", border: done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }}>{done ? <Check size={12} strokeWidth={3} /> : (cdone > 0 && <Minus size={12} strokeWidth={3} style={{ color: "#a3a3a3" }} />)}</span>
                   ) : (
                     <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
-                  )}
+                  ))}
                   <TI size={14} className="mt-1 shrink-0" style={{ color: tc }} title={STRAT_TYPES[n.type || "stage"].label} />
-                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={done ? { textDecoration: "line-through", color: "#737373" } : undefined} />
+                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
                 </div>
 
                 {hasCl && (
                   <div className="mt-1 flex items-center gap-1.5 px-2.5">
-                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.round((cdone / n.checklist.length) * 100)}%`, background: done ? "#16a34a" : (n.color || "#2563eb") }} /></div>
+                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.round((cdone / n.checklist.length) * 100)}%`, background: done ? "#16a34a" : col }} /></div>
                     <span className="text-[10px] font-semibold text-neutral-400">{cdone}/{n.checklist.length}</span>
                   </div>
                 )}
 
-                <textarea value={n.note || ""} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { note: e.target.value })} placeholder="заметка…" rows={1} className="mt-1 w-full resize-none bg-transparent px-2.5 pb-1.5 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
+                {!on && <div style={{ height: 10 }} />}
 
                 {on && (
                   <div className="border-t border-neutral-100">
+                    {/* заметка (только при выборе) */}
+                    <textarea value={n.note || ""} onPointerDown={stop} onFocus={pushHist} onChange={(e) => patchLive(n.id, { note: e.target.value })} placeholder="заметка…" rows={2} className="w-full resize-none bg-transparent px-2.5 pt-2 pb-1 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
                     {/* подзадачи */}
                     <div className="px-2.5 py-1.5">
                       {(n.checklist || []).map((c) => (
@@ -5083,6 +5116,13 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
                     <div className="flex flex-wrap items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
                       {SWATCHES.map((c) => (<button key={c} onPointerDown={stop} onClick={() => patchNode(n.id, { color: c })} className="h-4 w-4 rounded-full transition" style={{ background: c, boxShadow: n.color === c ? `0 0 0 2px #fff, 0 0 0 3.5px ${c}` : "none" }} />))}
                     </div>
+                    {/* чекбокс вкл/выкл */}
+                    <div className="flex items-center gap-2 border-t border-neutral-100 px-2.5 py-1.5">
+                      <span className="text-[11px] text-neutral-500">Чекбокс выполнения</span>
+                      <button onPointerDown={stop} onClick={() => patchNode(n.id, { hasCheck: !cnt })} title={cnt ? "Убрать чекбокс" : "Добавить чекбокс"} className="relative ml-auto h-4 w-7 shrink-0 rounded-full transition" style={{ background: cnt ? "#16a34a" : "#d4d4d4" }}>
+                        <span className="absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all" style={{ left: cnt ? 14 : 2 }} />
+                      </button>
+                    </div>
                     {/* действия */}
                     <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
                       <button onPointerDown={stop} onClick={() => setTaskFor(taskFor === n.id ? null : n.id)} className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-1 text-[11px] font-semibold text-neutral-600 hover:bg-neutral-200"><CalendarPlus size={12} /> В задачу</button>
@@ -5097,7 +5137,14 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
                     )}
                   </div>
                 )}
-                <span onPointerDown={(e) => onPortDown(e, n)} className="absolute cursor-crosshair rounded-full bg-white" style={{ right: -7, top: PORTY - 6, width: 13, height: 13, border: `2px solid ${n.color || "#f59e0b"}`, zIndex: 7 }} title="Потяните, чтобы соединить" />
+                {["top", "right", "bottom", "left"].map((sd) => (
+                  <span key={sd} onPointerDown={(e) => onPortDown(e, n, sd)} className={portCls + (on ? " opacity-100" : "")} style={portStyle(
+                    sd === "top" ? { left: "50%", top: -6, transform: "translateX(-50%)" } :
+                    sd === "bottom" ? { left: "50%", bottom: -6, transform: "translateX(-50%)" } :
+                    sd === "left" ? { left: -6, top: "50%", transform: "translateY(-50%)" } :
+                    { right: -6, top: "50%", transform: "translateY(-50%)" }
+                  )} title="Потяните к другому блоку, чтобы соединить" />
+                ))}
               </div>
             );
           })}
