@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, memo } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
-  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip,
+  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -483,7 +483,7 @@ export default function AssortmentTable() {
   const [dbOpen, setDbOpen] = useState(false);
   const [dbActive, setDbActive] = useState("blogger"); // blogger | razdach | <customId>
   const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
-  const [strategy, setStrategy] = useState({ nodes: [], edges: [] }); // блок «Стратегия» — холст
+  const [strategy, setStrategy] = useState(() => normStrategy(null)); // блок «Стратегия» — карты холстов
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
@@ -533,7 +533,7 @@ export default function AssortmentTable() {
         if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = JSON.stringify(settings.opDone); }
         if (Array.isArray(settings.subjects)) { setSubjects(settings.subjects); syncedRef.current.settings.subjects = JSON.stringify(settings.subjects); }
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
-        if (settings.strategy && typeof settings.strategy === "object") { setStrategy({ nodes: settings.strategy.nodes || [], edges: settings.strategy.edges || [] }); syncedRef.current.settings.strategy = JSON.stringify(settings.strategy); }
+        if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
         if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
@@ -656,7 +656,7 @@ export default function AssortmentTable() {
         else if (key === "opDone") setOpDone(value || {});
         else if (key === "subjects") setSubjects(value || []);
         else if (key === "customDBs") setCustomDBs(value || []);
-        else if (key === "strategy") { if (value && typeof value === "object") setStrategy({ nodes: value.nodes || [], edges: value.edges || [] }); }
+        else if (key === "strategy") { if (value && typeof value === "object") setStrategy(normStrategy(value)); }
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
@@ -1560,7 +1560,7 @@ export default function AssortmentTable() {
         )}
 
         {activeTab === "strategy" && (
-          <StrategyBoard strategy={strategy} onChange={setStrategy} />
+          <StrategySection strategy={strategy} onChange={setStrategy} />
         )}
       </div>
 
@@ -4617,6 +4617,79 @@ function JobEditor({ job, taskLabels, products, opTypes, onSave, onDelete, onClo
 /* ----------------------------------------------------------------------------
    Блок «Стратегия» — свободный холст: блоки + стрелки (вручную), ветвления
 ---------------------------------------------------------------------------- */
+// Приводит любое сохранённое значение стратегии к модели { maps:[{id,name,nodes,edges}], activeId }
+function normStrategy(v) {
+  const mk = (name) => ({ id: uid(), name: name || "Стратегия 1", nodes: [], edges: [] });
+  const normMap = (m, i) => ({
+    id: m && m.id ? m.id : uid(),
+    name: (m && m.name) || `Стратегия ${i + 1}`,
+    nodes: m && Array.isArray(m.nodes) ? m.nodes : [],
+    edges: m && Array.isArray(m.edges) ? m.edges : [],
+  });
+  if (!v || typeof v !== "object") return { maps: [mk()], activeId: null };
+  let maps;
+  if (Array.isArray(v.maps)) {
+    maps = v.maps.filter((m) => m && typeof m === "object").map(normMap);
+  } else {
+    // старый формат { nodes, edges } → одна карта
+    maps = [normMap({ name: "Стратегия 1", nodes: v.nodes, edges: v.edges }, 0)];
+  }
+  if (!maps.length) maps = [mk()];
+  const activeId = maps.some((m) => m.id === v.activeId) ? v.activeId : maps[0].id;
+  return { maps, activeId };
+}
+
+// Обёртка: список карт-стратегий + переключатель; каждая карта — отдельный холст.
+function StrategySection({ strategy, onChange }) {
+  const st = normStrategy(strategy);
+  const maps = st.maps;
+  const active = maps.find((m) => m.id === st.activeId) || maps[0];
+  const [editingId, setEditingId] = useState(null);
+
+  const updateActive = (next) => onChange({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges } : m)), activeId: active.id });
+  const selectMap = (id) => { setEditingId(null); onChange({ maps, activeId: id }); };
+  const addMap = () => { const id = uid(); onChange({ maps: [...maps, { id, name: `Стратегия ${maps.length + 1}`, nodes: [], edges: [] }], activeId: id }); };
+  const renameMap = (id, name) => onChange({ maps: maps.map((m) => (m.id === id ? { ...m, name: name.trim() || "Без названия" } : m)), activeId: st.activeId });
+  const removeMap = (id) => {
+    if (maps.length <= 1) { const nid = uid(); onChange({ maps: [{ id: nid, name: "Стратегия 1", nodes: [], edges: [] }], activeId: nid }); return; }
+    const rest = maps.filter((m) => m.id !== id);
+    onChange({ maps: rest, activeId: id === st.activeId ? rest[0].id : st.activeId });
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {maps.map((m) => {
+          const on = m.id === active.id;
+          if (editingId === m.id) {
+            return (
+              <input key={m.id} autoFocus defaultValue={m.name}
+                onBlur={(e) => { renameMap(m.id, e.target.value); setEditingId(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setEditingId(null); }}
+                className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-800 focus:outline-none" style={{ width: 170 }} />
+            );
+          }
+          return (
+            <button key={m.id} onClick={() => selectMap(m.id)} onDoubleClick={() => setEditingId(m.id)}
+              title="Клик — открыть · двойной клик — переименовать"
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${on ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
+              <span className="max-w-[220px] truncate">{m.name}</span>
+              {on && (
+                <>
+                  <Pencil size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingId(m.id); }} />
+                  <Trash2 size={12} className="opacity-70 hover:opacity-100 hover:text-red-300" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Удалить карту «${m.name}»?`)) removeMap(m.id); }} />
+                </>
+              )}
+            </button>
+          );
+        })}
+        <button onClick={addMap} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Карта</button>
+      </div>
+      <StrategyBoard key={active.id} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} />
+    </div>
+  );
+}
+
 function StrategyBoard({ strategy, onChange }) {
   const W = 210, PORTY = 22;
   const nodes = (strategy && strategy.nodes) || [];
@@ -4705,7 +4778,7 @@ function StrategyBoard({ strategy, onChange }) {
               >
                 <div className="flex items-start gap-2 px-2.5 pt-2.5">
                   <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
-                  <input value={n.title} onPointerDown={(e) => { e.stopPropagation(); setSelected(n.id); }} onChange={(e) => patchNode(n.id, { title: e.target.value })} placeholder="Этап…" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-neutral-800 focus:outline-none" style={n.done ? { textDecoration: "line-through", color: "#737373" } : undefined} />
+                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onPointerDown={(e) => { e.stopPropagation(); setSelected(n.id); }} onChange={(e) => patchNode(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={n.done ? { textDecoration: "line-through", color: "#737373" } : undefined} />
                   {sel && <button onPointerDown={stop} onClick={() => removeNode(n.id)} className="rounded shrink-0 p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить"><Trash2 size={13} /></button>}
                 </div>
                 <textarea value={n.note || ""} onPointerDown={(e) => { e.stopPropagation(); setSelected(n.id); }} onChange={(e) => patchNode(n.id, { note: e.target.value })} placeholder="заметка…" rows={2} className="mt-1 w-full resize-none bg-transparent px-2.5 pb-2 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
