@@ -4658,6 +4658,7 @@ function normStrategy(v) {
   const normMap = (m, i) => ({
     id: m && m.id ? m.id : uid(),
     name: (m && m.name) || `Стратегия ${i + 1}`,
+    mode: m && ["tree", "process", "duties"].includes(m.mode) ? m.mode : "tree",
     nodes: m && Array.isArray(m.nodes) ? m.nodes.map(normNode) : [],
     edges: m && Array.isArray(m.edges) ? m.edges.filter((e) => e && e.from && e.to).map((e) => ({ id: e.id || uid(), from: e.from, to: e.to })) : [],
     groups: m && Array.isArray(m.groups) ? m.groups.map(normGroup) : [],
@@ -4696,7 +4697,7 @@ function makeStrategyTemplate(kind) {
     const fin1 = N(1000, 460, "Учёт и аналитика", { color: "#10b981" });
     const nodes = [head, mkt, ops, fin, mkt1, mkt2, ops1, ops2, fin1];
     const edges = [E(head, mkt), E(head, ops), E(head, fin), E(mkt, mkt1), E(mkt, mkt2), E(ops, ops1), E(ops, ops2), E(fin, fin1)];
-    return { name: "Иерархия", nodes, edges, groups: [] };
+    return { name: "Иерархия", mode: "tree", nodes, edges, groups: [] };
   }
 
   if (kind === "process") {
@@ -4712,7 +4713,7 @@ function makeStrategyTemplate(kind) {
     const no = N(360, 640, "Доработать / вывести", { type: "risk", color: "#dc2626" });
     const nodes = [p1, p2, p3, p4, p5, p6, p7, p8, yes, no];
     const edges = [E(p1, p2), E(p2, p3), E(p3, p4), E(p4, p5), E(p5, p6), E(p6, p7), E(p7, p8), E(p8, yes), E(p8, no)];
-    return { name: "Процесс", nodes, edges, groups: [] };
+    return { name: "Процесс", mode: "process", nodes, edges, groups: [] };
   }
 
   // duties — функциональные обязанности
@@ -4721,7 +4722,7 @@ function makeStrategyTemplate(kind) {
   const r3 = N(680, 150, "Контент и дизайн", { color: "#ec4899", cl: ["Фотосессии", "Инфографика", "Видео и рилс", "Обновление карточек"] });
   const r4 = N(980, 150, "Логистика и закупки", { color: "#0ea5e9", cl: ["Поиск поставщиков", "Закупки", "Отгрузки FBW / FBS", "Приёмка и возвраты"] });
   const groups = [{ id: uid(), x: 40, y: 80, w: 1220, h: 200, name: "Команда", color: "#6366f1" }];
-  return { name: "Функциональные обязанности", nodes: [r1, r2, r3, r4], edges: [], groups };
+  return { name: "Функциональные обязанности", mode: "duties", nodes: [r1, r2, r3, r4], edges: [], groups };
 }
 
 // Обёртка: список карт-стратегий + переключатель; каждая карта — отдельный холст.
@@ -4733,9 +4734,10 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
   const [tplOpen, setTplOpen] = useState(false);
 
   const updateActive = (next) => onChange({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges, groups: next.groups } : m)), activeId: active.id });
+  const setActiveMode = (mode) => onChange({ maps: maps.map((m) => (m.id === active.id ? { ...m, mode } : m)), activeId: active.id });
   const selectMap = (id) => { setEditingId(null); onChange({ maps, activeId: id }); };
-  const addMap = () => { const id = uid(); onChange({ maps: [...maps, { id, name: `Стратегия ${maps.length + 1}`, nodes: [], edges: [], groups: [] }], activeId: id }); };
-  const addTemplate = (kind) => { const t = makeStrategyTemplate(kind); const id = uid(); setTplOpen(false); onChange({ maps: [...maps, { id, name: t.name, nodes: t.nodes, edges: t.edges, groups: t.groups }], activeId: id }); };
+  const addMap = () => { const id = uid(); onChange({ maps: [...maps, { id, name: `Стратегия ${maps.length + 1}`, mode: "tree", nodes: [], edges: [], groups: [] }], activeId: id }); };
+  const addTemplate = (kind) => { const t = makeStrategyTemplate(kind); const id = uid(); setTplOpen(false); onChange({ maps: [...maps, { id, name: t.name, mode: t.mode, nodes: t.nodes, edges: t.edges, groups: t.groups }], activeId: id }); };
   const dupMap = (id) => {
     const src = maps.find((m) => m.id === id); if (!src) return;
     const nid = uid();
@@ -4797,7 +4799,7 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
           )}
         </div>
       </div>
-      <StrategyBoard key={active.id} strategy={{ nodes: active.nodes, edges: active.edges, groups: active.groups }} onChange={updateActive} onCreateTask={onCreateTask} />
+      <StrategyBoard key={active.id} strategy={{ nodes: active.nodes, edges: active.edges, groups: active.groups }} onChange={updateActive} onCreateTask={onCreateTask} initialMode={active.mode} onModeChange={setActiveMode} />
     </div>
   );
 }
@@ -4805,7 +4807,7 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
 const GROUP_COLORS = ["#6366f1", "#0ea5e9", "#f59e0b", "#ec4899", "#10b981", "#8b5cf6"];
 const TYPE_COLOR = { stage: "#a3a3a3", goal: "#059669", risk: "#d97706", decision: "#7c3aed" };
 
-function StrategyBoard({ strategy, onChange, onCreateTask }) {
+function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeChange }) {
   const W = 220, PORTY = 26, GRID = 20, CW = 5200, CH = 3600;
   const nodes = (strategy && strategy.nodes) || [];
   const edges = (strategy && strategy.edges) || [];
@@ -4831,6 +4833,9 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
   const [selGroup, setSelGroup] = useState(null);
   const [editGroup, setEditGroup] = useState(null);
   const [settingsFor, setSettingsFor] = useState(null); // id блока с открытой панелью настроек (⚙)
+  const [childMode, setChildMode] = useState(initialMode || "tree"); // как добавляется дочерний блок: tree | process | duties
+  const [cmOpen, setCmOpen] = useState(false);
+  const focusRef = useRef(null); // id блока, которому нужно дать фокус после создания
   const [connPos, setConnPos] = useState(null);
   const [marquee, setMarquee] = useState(null);
   const [taskFor, setTaskFor] = useState(null);
@@ -4856,6 +4861,18 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
   const removeNode = (id) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.filter((n) => n.id !== id), edges: s.edges.filter((e) => e.from !== id && e.to !== id) }); setSel((x) => x.filter((i) => i !== id)); };
   const removeSelected = () => { const s = stateRef.current; const ids = new Set(selRef.current); if (!ids.size) return; commit({ ...s, nodes: s.nodes.filter((n) => !ids.has(n.id)), edges: s.edges.filter((e) => !ids.has(e.from) && !ids.has(e.to)) }); setSel([]); };
   const duplicateNode = (id) => { const s = stateRef.current; const src = s.nodes.find((n) => n.id === id); if (!src) return; const nid = uid(); const copy = { ...JSON.parse(JSON.stringify(src)), id: nid, x: snapG(src.x + 30), y: snapG(src.y + 30), checklist: (src.checklist || []).map((c) => ({ ...c, id: uid() })) }; commit({ ...s, nodes: [...s.nodes, copy] }); setSel([nid]); };
+  // xMind: добавить дочерний блок от исходного, вид зависит от режима (childMode)
+  const addChild = (parent) => {
+    const s = stateRef.current; const kids = s.edges.filter((e) => e.from === parent.id).length;
+    let x, y, extra;
+    if (childMode === "duties") { x = parent.x + kids * (W + 30); y = parent.y + 150; extra = { type: "stage", color: parent.color, checklist: [{ id: uid(), text: "", done: false }] }; }
+    else if (childMode === "process") { x = parent.x + W + 80; y = parent.y + kids * 150; extra = { type: "stage", color: "#2563eb" }; }
+    else { x = parent.x + W + 80; y = parent.y + kids * 140; extra = { type: "stage", color: parent.color }; }
+    const id = uid();
+    const node = { id, x: snapG(x), y: snapG(y), title: "", note: "", color: extra.color || "#2563eb", done: false, hasCheck: true, type: extra.type || "stage", checklist: extra.checklist || [] };
+    commit({ ...s, nodes: [...s.nodes, node], edges: [...s.edges, { id: uid(), from: parent.id, to: id }] });
+    setSel([id]); setSettingsFor(null); focusRef.current = id;
+  };
   const addEdge = (from, to) => { const s = stateRef.current; if (from === to || s.edges.some((e) => e.from === from && e.to === to)) return; commit({ ...s, edges: [...s.edges, { id: uid(), from, to }] }); };
   const removeEdge = (id) => { const s = stateRef.current; commit({ ...s, edges: s.edges.filter((e) => e.id !== id) }); };
   const addNode = () => {
@@ -4995,7 +5012,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
   };
 
   // ---- эффекты: wheel, клавиатура, размеры, fit на монтировании ----
-  const actRef = useRef({}); actRef.current = { undo, redo, removeSelected };
+  const actRef = useRef({}); actRef.current = { undo, redo, removeSelected, addChildSel: () => { const ids = selRef.current; if (ids.length === 1) { const p = stateRef.current.nodes.find((n) => n.id === ids[0]); if (p) addChild(p); } } };
   useEffect(() => {
     const el = vpRef.current; if (!el) return;
     const onWheel = (e) => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1); };
@@ -5009,6 +5026,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? actRef.current.redo() : actRef.current.undo(); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); actRef.current.redo(); }
       else if (e.key === "Delete") { e.preventDefault(); actRef.current.removeSelected(); }
+      else if (e.key === "Tab") { e.preventDefault(); actRef.current.addChildSel(); }
     };
     window.addEventListener("keydown", onKey);
     return () => { el.removeEventListener("wheel", onWheel); ro.disconnect(); clearTimeout(t); window.removeEventListener("keydown", onKey); };
@@ -5068,6 +5086,8 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
   };
 
   const tBtn = "flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-30";
+  const CM = { tree: { label: "Ветка", icon: GitBranch, hint: "вправо, вниз" }, process: { label: "Шаг", icon: ArrowRight, hint: "в линию" }, duties: { label: "Роль", icon: ListChecks, hint: "роль + чек-лист" } };
+  const CMIcon = CM[childMode].icon;
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
@@ -5075,6 +5095,22 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
         <button onClick={addNode} className="rounded-lg inline-flex items-center gap-1.5 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Блок</button>
         <button onClick={addGroup} className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" title="Рамка-фаза вокруг выбранных блоков"><Square size={14} /> Фаза</button>
         <button onClick={autoLayout} className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" title="Выровнять по стрелкам"><Wand2 size={14} /> Раскладка</button>
+        <div className="relative">
+          <button onClick={() => setCmOpen((o) => !o)} title="Что добавляет кнопка «+» на блоке" className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"><CMIcon size={14} /> {CM[childMode].label} <ChevronDown size={13} /></button>
+          {cmOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setCmOpen(false)} />
+              <div className="absolute left-0 z-20 mt-1 w-56 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Как добавлять ветку</div>
+                {Object.keys(CM).map((k) => { const Ic = CM[k].icon; return (
+                  <button key={k} onClick={() => { setChildMode(k); if (onModeChange) onModeChange(k); setCmOpen(false); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (childMode === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>
+                    <Ic size={14} /> <span>{CM[k].label}</span><span className="ml-auto text-[10px] text-neutral-400">{CM[k].hint}</span>
+                  </button>
+                ); })}
+              </div>
+            </>
+          )}
+        </div>
         <div className="mx-1 h-6 w-px bg-neutral-200" />
         <button onClick={() => actRef.current.undo()} disabled={!canUndo} className={tBtn} title="Отменить (Ctrl+Z)"><Undo2 size={15} /></button>
         <button onClick={() => actRef.current.redo()} disabled={!canRedo} className={tBtn} title="Повторить (Ctrl+Shift+Z)"><Redo2 size={15} /></button>
@@ -5144,7 +5180,8 @@ function StrategyBoard({ strategy, onChange, onCreateTask }) {
                     <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
                   ))}
                   <TI size={14} className="mt-1 shrink-0" style={{ color: tc }} title={STRAT_TYPES[n.type || "stage"].label} />
-                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
+                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; if (focusRef.current === n.id) { focusRef.current = null; setTimeout(() => el.focus(), 0); } } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
+                  <button onPointerDown={stop} onClick={() => addChild(n)} title="Добавить дочерний блок (Tab)" className={"mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-neutral-100 hover:text-neutral-700 " + (on ? "text-neutral-500 opacity-100" : "text-neutral-400 opacity-0 group-hover:opacity-100")}><Plus size={14} /></button>
                   <button onPointerDown={stop} onClick={() => { setSel([n.id]); setSettingsFor(settingsFor === n.id ? null : n.id); setTaskFor(null); }} title="Настройки блока" className={"mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-neutral-100 hover:text-neutral-700 " + (settingsFor === n.id ? "bg-neutral-100 text-neutral-700" : (on ? "text-neutral-400 opacity-100" : "text-neutral-400 opacity-0 group-hover:opacity-100"))}><Settings2 size={14} /></button>
                 </div>
 
