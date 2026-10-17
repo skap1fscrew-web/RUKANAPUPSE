@@ -41,6 +41,7 @@ const TABS = [
   { id: "assortment", label: "Товары" },
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
+  { id: "strategy", label: "Стратегия" },
 ];
 
 // Задачи диаграммы Ганта (общие для всех товаров). kind задаёт поведение строки.
@@ -482,6 +483,7 @@ export default function AssortmentTable() {
   const [dbOpen, setDbOpen] = useState(false);
   const [dbActive, setDbActive] = useState("blogger"); // blogger | razdach | <customId>
   const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
+  const [strategy, setStrategy] = useState({ nodes: [], edges: [] }); // блок «Стратегия» — холст
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
@@ -531,6 +533,7 @@ export default function AssortmentTable() {
         if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = JSON.stringify(settings.opDone); }
         if (Array.isArray(settings.subjects)) { setSubjects(settings.subjects); syncedRef.current.settings.subjects = JSON.stringify(settings.subjects); }
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
+        if (settings.strategy && typeof settings.strategy === "object") { setStrategy({ nodes: settings.strategy.nodes || [], edges: settings.strategy.edges || [] }); syncedRef.current.settings.strategy = JSON.stringify(settings.strategy); }
         if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
@@ -574,7 +577,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, strategy, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -613,7 +616,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, strategy, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -653,6 +656,7 @@ export default function AssortmentTable() {
         else if (key === "opDone") setOpDone(value || {});
         else if (key === "subjects") setSubjects(value || []);
         else if (key === "customDBs") setCustomDBs(value || []);
+        else if (key === "strategy") { if (value && typeof value === "object") setStrategy({ nodes: value.nodes || [], edges: value.edges || [] }); }
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
@@ -1553,6 +1557,10 @@ export default function AssortmentTable() {
             onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
+        )}
+
+        {activeTab === "strategy" && (
+          <StrategyBoard strategy={strategy} onChange={setStrategy} />
         )}
       </div>
 
@@ -4600,6 +4608,122 @@ function JobEditor({ job, taskLabels, products, opTypes, onSave, onDelete, onClo
         <div className="mt-5 flex items-center gap-2">
           <button onClick={() => onSave(j)} disabled={!j.title.trim()} className="rounded-lg flex-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Сохранить</button>
           {!job._new && <button onClick={() => onDelete(j.id)} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600">Удалить</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------------
+   Блок «Стратегия» — свободный холст: блоки + стрелки (вручную), ветвления
+---------------------------------------------------------------------------- */
+function StrategyBoard({ strategy, onChange }) {
+  const W = 210, PORTY = 22;
+  const nodes = (strategy && strategy.nodes) || [];
+  const edges = (strategy && strategy.edges) || [];
+  const stateRef = useRef({ nodes, edges });
+  stateRef.current = { nodes, edges };
+  const scrollRef = useRef(null);
+  const contentRef = useRef(null);
+  const dragRef = useRef(null);
+  const connRef = useRef(null);
+  const [selected, setSelected] = useState(null);
+  const [connPos, setConnPos] = useState(null);
+
+  const patchNode = (id, p) => { const s = stateRef.current; onChange({ nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)), edges: s.edges }); };
+  const removeNode = (id) => { const s = stateRef.current; onChange({ nodes: s.nodes.filter((n) => n.id !== id), edges: s.edges.filter((e) => e.from !== id && e.to !== id) }); setSelected(null); };
+  const addEdge = (from, to) => { const s = stateRef.current; if (from === to || s.edges.some((e) => e.from === from && e.to === to)) return; onChange({ nodes: s.nodes, edges: [...s.edges, { id: uid(), from, to }] }); };
+  const removeEdge = (id) => { const s = stateRef.current; onChange({ nodes: s.nodes, edges: s.edges.filter((e) => e.id !== id) }); };
+  const addNode = () => {
+    const s = stateRef.current; const k = s.nodes.length; const el = scrollRef.current;
+    const x = (el ? el.scrollLeft : 0) + 60 + (k % 4) * 26;
+    const y = (el ? el.scrollTop : 0) + 50 + (k % 4) * 26;
+    const id = uid();
+    onChange({ nodes: [...s.nodes, { id, x, y, title: "Новый этап", note: "", color: SWATCHES[k % SWATCHES.length], done: false }], edges: s.edges });
+    setSelected(id);
+  };
+
+  const onDragMove = (e) => { const d = dragRef.current; if (!d) return; patchNode(d.id, { x: Math.max(0, d.ox + (e.clientX - d.sx)), y: Math.max(0, d.oy + (e.clientY - d.sy)) }); };
+  const onDragUp = () => { dragRef.current = null; window.removeEventListener("pointermove", onDragMove); window.removeEventListener("pointerup", onDragUp); };
+  const onNodePointerDown = (e, n) => { if (e.button !== 0) return; setSelected(n.id); dragRef.current = { id: n.id, sx: e.clientX, sy: e.clientY, ox: n.x, oy: n.y }; window.addEventListener("pointermove", onDragMove); window.addEventListener("pointerup", onDragUp); };
+
+  const relPos = (e) => { const el = contentRef.current; const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const onConnMove = (e) => { if (!contentRef.current) return; setConnPos(relPos(e)); };
+  const onConnUp = (e) => {
+    const c = connRef.current; connRef.current = null; setConnPos(null);
+    window.removeEventListener("pointermove", onConnMove); window.removeEventListener("pointerup", onConnUp);
+    if (!c) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const host = el && el.closest ? el.closest("[data-node]") : null;
+    if (host) { const to = host.getAttribute("data-node"); if (to && to !== c.from) addEdge(c.from, to); }
+  };
+  const onPortPointerDown = (e, n) => { e.stopPropagation(); e.preventDefault(); connRef.current = { from: n.id }; setConnPos(relPos(e)); window.addEventListener("pointermove", onConnMove); window.addEventListener("pointerup", onConnUp); };
+
+  const stop = (e) => e.stopPropagation();
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  const maxX = nodes.reduce((m, n) => Math.max(m, n.x + W), 0);
+  const maxY = nodes.reduce((m, n) => Math.max(m, n.y + 140), 0);
+  const cw = Math.max(1700, maxX + 260);
+  const ch = Math.max(900, maxY + 220);
+  const curve = (sx, sy, tx, ty) => `M${sx},${sy} C${sx + 60},${sy} ${tx - 60},${ty} ${tx},${ty}`;
+  const fromNode = connRef.current ? byId[connRef.current.from] : null;
+  const doneCount = nodes.filter((n) => n.done).length;
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-2.5">
+        <button onClick={addNode} className="rounded-lg inline-flex items-center gap-1.5 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Блок</button>
+        <span className="text-xs text-neutral-400">Перетаскивайте блоки · тяните стрелку от кружка справа к другому блоку · клик по стрелке — удалить</span>
+        {nodes.length > 0 && <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-500">Готово {doneCount}/{nodes.length}</span>}
+      </div>
+      <div ref={scrollRef} className="relative overflow-auto" style={{ height: "68vh" }} onPointerDown={() => setSelected(null)}>
+        <div ref={contentRef} className="relative" style={{ width: cw, height: ch, backgroundImage: "radial-gradient(#e8e8ea 1px, transparent 1px)", backgroundSize: "18px 18px" }}>
+          <svg width={cw} height={ch} className="pointer-events-none absolute inset-0">
+            <defs><marker id="stratArrow" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#f59e0b" /></marker></defs>
+            {edges.map((ed) => {
+              const a = byId[ed.from], b = byId[ed.to]; if (!a || !b) return null;
+              const sx = a.x + W, sy = a.y + PORTY, tx = b.x, ty = b.y + PORTY;
+              return (
+                <g key={ed.id} className="pointer-events-auto" style={{ cursor: "pointer" }} onClick={() => removeEdge(ed.id)}>
+                  <path d={curve(sx, sy, tx, ty)} stroke="transparent" strokeWidth="12" fill="none" />
+                  <path d={curve(sx, sy, tx, ty)} stroke="#f59e0b" strokeWidth="2" fill="none" markerEnd="url(#stratArrow)" />
+                </g>
+              );
+            })}
+            {fromNode && connPos && <path d={curve(fromNode.x + W, fromNode.y + PORTY, connPos.x, connPos.y)} stroke="#f59e0b" strokeWidth="2" strokeDasharray="4 4" fill="none" />}
+          </svg>
+
+          {nodes.map((n) => {
+            const sel = selected === n.id;
+            return (
+              <div
+                key={n.id}
+                data-node={n.id}
+                onPointerDown={(e) => onNodePointerDown(e, n)}
+                className="rounded-xl absolute select-none border bg-white shadow-sm"
+                style={{ left: n.x, top: n.y, width: W, cursor: "grab", borderLeft: `3px solid ${n.color || "#a3a3a3"}`, background: n.done ? "#f0fdf4" : "#fff", borderColor: sel ? (n.color || "#a3a3a3") : n.done ? "#bbf7d0" : "#e5e5e5", boxShadow: sel ? `0 0 0 2px ${(n.color || "#a3a3a3")}33` : undefined, zIndex: sel ? 5 : 2 }}
+              >
+                <div className="flex items-start gap-2 px-2.5 pt-2.5">
+                  <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
+                  <input value={n.title} onPointerDown={(e) => { e.stopPropagation(); setSelected(n.id); }} onChange={(e) => patchNode(n.id, { title: e.target.value })} placeholder="Этап…" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-neutral-800 focus:outline-none" style={n.done ? { textDecoration: "line-through", color: "#737373" } : undefined} />
+                  {sel && <button onPointerDown={stop} onClick={() => removeNode(n.id)} className="rounded shrink-0 p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить"><Trash2 size={13} /></button>}
+                </div>
+                <textarea value={n.note || ""} onPointerDown={(e) => { e.stopPropagation(); setSelected(n.id); }} onChange={(e) => patchNode(n.id, { note: e.target.value })} placeholder="заметка…" rows={2} className="mt-1 w-full resize-none bg-transparent px-2.5 pb-2 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
+                {sel && (
+                  <div className="flex flex-wrap items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
+                    {SWATCHES.map((c) => (<button key={c} onPointerDown={stop} onClick={() => patchNode(n.id, { color: c })} className="h-4 w-4 rounded-full transition" style={{ background: c, boxShadow: (n.color === c) ? `0 0 0 2px #fff, 0 0 0 3.5px ${c}` : "none" }} />))}
+                  </div>
+                )}
+                <span onPointerDown={(e) => onPortPointerDown(e, n)} className="rounded-full absolute cursor-crosshair bg-white" style={{ right: -7, top: PORTY - 6, width: 13, height: 13, border: `2px solid ${n.color || "#f59e0b"}` }} title="Потяните, чтобы соединить" />
+              </div>
+            );
+          })}
+
+          {nodes.length === 0 && (
+            <div className="absolute left-1/2 top-24 -translate-x-1/2 text-center text-sm text-neutral-400">
+              Пусто. Нажмите «+ Блок», чтобы добавить первый этап стратегии.
+            </div>
+          )}
         </div>
       </div>
     </div>
