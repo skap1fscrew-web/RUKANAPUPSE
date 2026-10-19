@@ -5095,102 +5095,108 @@ const STRAT_TYPES = {
   decision: { label: "Решение", icon: GitBranch },
 };
 
-// Приводит любое сохранённое значение стратегии к модели { maps:[{id,name,nodes,edges,groups}], activeId }
+// Шаблоны карт (как в xMind). Раскладка у каждого своя (см. computeStratLayout).
+const STRAT_TPLS = {
+  mind:      { label: "Майндкарта",         root: "Главная тема",    hint: "ветви по обе стороны от центра" },
+  process:   { label: "Процесс",            root: "Старт",           hint: "поток шагов слева направо" },
+  hierarchy: { label: "Иерархия",           root: "Верхний уровень", hint: "сверху вниз, как оргструктура" },
+  logic:     { label: "Логическая цепочка", root: "Корень",          hint: "слева направо, ветвями" },
+};
+
+function makeStratNode(o = {}) {
+  return { id: uid(), title: o.title || "", note: o.note || "", color: o.color || "#2563eb", done: false, hasCheck: o.hasCheck === false ? false : true, type: STRAT_TYPES[o.type] ? o.type : "stage", collapsed: false, checklist: (o.cl || []).map((t) => ({ id: uid(), text: t, done: false })) };
+}
+// Новая карта выбранного шаблона — один корневой блок, дальше растим через «+».
+function makeTemplatedMap(template, name) {
+  const tpl = STRAT_TPLS[template] ? template : "mind";
+  const root = makeStratNode({ title: STRAT_TPLS[tpl].root, color: "#6366f1", hasCheck: false });
+  return { id: uid(), name, template: tpl, rootId: root.id, nodes: [root], edges: [] };
+}
+
+// Модель: { __v:2, maps:[{id,name,template,rootId,nodes,edges}], activeId }.
+// Старый формат (свободный холст, без __v:2) очищается — начинаем с пустой майндкарты.
 function normStrategy(v) {
-  const normNode = (n, k) => ({
+  const normNode = (n) => ({
     id: n && n.id ? n.id : uid(),
-    x: n && typeof n.x === "number" ? n.x : 60 + (k % 4) * 30,
-    y: n && typeof n.y === "number" ? n.y : 60 + (k % 4) * 30,
     title: (n && n.title) || "",
     note: (n && n.note) || "",
     color: (n && n.color) || "#2563eb",
     done: !!(n && n.done),
     hasCheck: n && n.hasCheck === false ? false : true,
     type: n && STRAT_TYPES[n.type] ? n.type : "stage",
+    collapsed: !!(n && n.collapsed),
     checklist: n && Array.isArray(n.checklist)
       ? n.checklist.filter((c) => c && typeof c === "object").map((c) => ({ id: c.id || uid(), text: c.text || "", done: !!c.done }))
       : [],
   });
-  const normGroup = (g) => ({
-    id: g && g.id ? g.id : uid(),
-    x: g && typeof g.x === "number" ? g.x : 40,
-    y: g && typeof g.y === "number" ? g.y : 40,
-    w: g && typeof g.w === "number" ? g.w : 360,
-    h: g && typeof g.h === "number" ? g.h : 260,
-    name: (g && g.name) || "Фаза",
-    color: (g && g.color) || "#6366f1",
-  });
-  const normMap = (m, i) => ({
-    id: m && m.id ? m.id : uid(),
-    name: (m && m.name) || `Стратегия ${i + 1}`,
-    mode: m && ["tree", "process", "duties"].includes(m.mode) ? m.mode : "tree",
-    nodes: m && Array.isArray(m.nodes) ? m.nodes.map(normNode) : [],
-    edges: m && Array.isArray(m.edges) ? m.edges.filter((e) => e && e.from && e.to).map((e) => ({ id: e.id || uid(), from: e.from, to: e.to })) : [],
-    groups: m && Array.isArray(m.groups) ? m.groups.map(normGroup) : [],
-  });
-  const mk = () => normMap({ name: "Стратегия 1" }, 0);
-  if (!v || typeof v !== "object") return { maps: [mk()], activeId: null };
-  let maps;
-  if (Array.isArray(v.maps)) {
-    maps = v.maps.filter((m) => m && typeof m === "object").map(normMap);
-  } else {
-    // старый формат { nodes, edges } → одна карта
-    maps = [normMap({ name: "Стратегия 1", nodes: v.nodes, edges: v.edges }, 0)];
+  const normMap = (m, i) => {
+    const template = m && STRAT_TPLS[m.template] ? m.template : "mind";
+    const nodes = m && Array.isArray(m.nodes) && m.nodes.length ? m.nodes.map(normNode) : [makeStratNode({ title: STRAT_TPLS[template].root, color: "#6366f1", hasCheck: false })];
+    const ids = new Set(nodes.map((n) => n.id));
+    const edges = m && Array.isArray(m.edges) ? m.edges.filter((e) => e && ids.has(e.from) && ids.has(e.to)).map((e) => ({ id: e.id || uid(), from: e.from, to: e.to })) : [];
+    const rootId = m && m.rootId && ids.has(m.rootId) ? m.rootId : nodes[0].id;
+    return { id: m && m.id ? m.id : uid(), name: (m && m.name) || `Стратегия ${i + 1}`, template, rootId, nodes, edges };
+  };
+  if (!v || typeof v !== "object" || v.__v !== 2 || !Array.isArray(v.maps)) {
+    const m = makeTemplatedMap("mind", "Стратегия 1");
+    return { __v: 2, maps: [m], activeId: m.id };
   }
-  if (!maps.length) maps = [mk()];
+  let maps = v.maps.filter((m) => m && typeof m === "object").map(normMap);
+  if (!maps.length) { const m = makeTemplatedMap("mind", "Стратегия 1"); maps = [m]; }
   const activeId = maps.some((m) => m.id === v.activeId) ? v.activeId : maps[0].id;
-  return { maps, activeId };
+  return { __v: 2, maps, activeId };
+}
+
+// ---- Авто-раскладка дерева под выбранный шаблон. Возвращает { id:{x,y} }. ----
+// hOf(id) — измеренная высота блока (для вертикальной упаковки). Ширина блоков фиксирована.
+function computeStratLayout(nodes, edges, rootId, template, hOf) {
+  const SW = 220, HGAP = 72, VGAP = 26, LVL_PAD = 40;
+  const byId = {}; nodes.forEach((n) => (byId[n.id] = n));
+  const kids = {}; nodes.forEach((n) => (kids[n.id] = []));
+  edges.forEach((e) => { if (byId[e.from] && byId[e.to]) kids[e.from].push(e.to); });
+  const vis = (id) => (byId[id] && byId[id].collapsed ? [] : (kids[id] || []));
+  const hh = (id) => Math.max(40, hOf(id) || 92);
+  const pos = {};
+  if (!rootId || !byId[rootId]) { nodes.forEach((n, i) => (pos[n.id] = { x: 40, y: 40 + i * 140 })); return pos; }
+
+  if (template === "hierarchy") {
+    const ext = {};
+    const meas = (id) => { const ch = vis(id); if (!ch.length) { ext[id] = SW; return SW; } let s = 0; ch.forEach((c) => (s += meas(c))); s += HGAP * (ch.length - 1); ext[id] = Math.max(SW, s); return ext[id]; };
+    meas(rootId);
+    const depth = {}; const setD = (id, d) => { depth[id] = d; vis(id).forEach((c) => setD(c, d + 1)); }; setD(rootId, 0);
+    const maxH = {}; Object.keys(depth).forEach((id) => { const d = depth[id]; maxH[d] = Math.max(maxH[d] || 0, hh(id)); });
+    const levelY = {}; let acc = 0; Object.keys(maxH).map(Number).sort((a, b) => a - b).forEach((d) => { levelY[d] = acc; acc += maxH[d] + VGAP + LVL_PAD; });
+    const place = (id, xStart) => { const ch = vis(id); const cx = xStart + ext[id] / 2; pos[id] = { x: cx - SW / 2, y: levelY[depth[id]] }; const tot = ch.reduce((a, b) => a + ext[b], 0) + HGAP * Math.max(0, ch.length - 1); let c = cx - tot / 2; ch.forEach((k) => { place(k, c); c += ext[k] + HGAP; }); };
+    place(rootId, 0);
+  } else if (template === "logic" || template === "process") {
+    const ext = {};
+    const meas = (id) => { const ch = vis(id); if (!ch.length) { ext[id] = hh(id); return ext[id]; } let s = 0; ch.forEach((c) => (s += meas(c))); s += VGAP * (ch.length - 1); ext[id] = Math.max(hh(id), s); return ext[id]; };
+    meas(rootId);
+    const depth = {}; const setD = (id, d) => { depth[id] = d; vis(id).forEach((c) => setD(c, d + 1)); }; setD(rootId, 0);
+    const place = (id, yStart) => { const ch = vis(id); const cy = yStart + ext[id] / 2; pos[id] = { x: depth[id] * (SW + HGAP), y: cy - hh(id) / 2 }; const tot = ch.reduce((a, b) => a + ext[b], 0) + VGAP * Math.max(0, ch.length - 1); let c = cy - tot / 2; ch.forEach((k) => { place(k, c); c += ext[k] + VGAP; }); };
+    place(rootId, 0);
+  } else { // mind — центр, ветви влево/вправо
+    const ext = {};
+    const meas = (id) => { const ch = vis(id); if (!ch.length) { ext[id] = hh(id); return ext[id]; } let s = 0; ch.forEach((c) => (s += meas(c))); s += VGAP * (ch.length - 1); ext[id] = Math.max(hh(id), s); return ext[id]; };
+    const rootKids = vis(rootId); const mid = Math.ceil(rootKids.length / 2);
+    const right = rootKids.slice(0, mid), left = rootKids.slice(mid);
+    rootKids.forEach(meas);
+    pos[rootId] = { x: 0, y: 0 };
+    const rootH = hh(rootId);
+    const placeSub = (id, xLeft, yStart, dir) => { const ch = vis(id); const cy = yStart + ext[id] / 2; pos[id] = { x: xLeft, y: cy - hh(id) / 2 }; const tot = ch.reduce((a, b) => a + ext[b], 0) + VGAP * Math.max(0, ch.length - 1); let c = cy - tot / 2; ch.forEach((k) => { placeSub(k, xLeft + dir * (SW + HGAP), c, dir); c += ext[k] + VGAP; }); };
+    const sideExt = (arr) => arr.reduce((a, b) => a + ext[b], 0) + VGAP * Math.max(0, arr.length - 1);
+    let cy = rootH / 2 - sideExt(right) / 2; right.forEach((k) => { placeSub(k, SW + HGAP, cy, +1); cy += ext[k] + VGAP; });
+    cy = rootH / 2 - sideExt(left) / 2; left.forEach((k) => { placeSub(k, -(SW + HGAP), cy, -1); cy += ext[k] + VGAP; });
+  }
+  const vals = Object.values(pos);
+  if (vals.length) { const minX = Math.min(...vals.map((p) => p.x)), minY = Math.min(...vals.map((p) => p.y)); vals.forEach((p) => { p.x += -minX + 60; p.y += -minY + 40; }); }
+  return pos;
 }
 
 // прогресс блока: по подзадачам, иначе по галочке
 function nodeIsDone(n) { return (n.checklist && n.checklist.length) ? n.checklist.every((c) => c.done) : !!n.done; }
 
-// Готовые шаблоны карт стратегии
-function makeStrategyTemplate(kind) {
-  const N = (x, y, title, o = {}) => ({ id: uid(), x, y, title, note: o.note || "", color: o.color || "#2563eb", done: false, hasCheck: o.hasCheck === false ? false : true, type: o.type || "stage", checklist: (o.cl || []).map((t) => ({ id: uid(), text: t, done: false })) });
-  const E = (a, b) => ({ id: uid(), from: a.id, to: b.id });
-
-  if (kind === "hierarchy") {
-    const head = N(560, 40, "Руководитель", { type: "goal", color: "#6366f1", note: "стратегия, цели, контроль" });
-    const mkt = N(120, 260, "Маркетинг", { color: "#2563eb" });
-    const ops = N(560, 260, "Операции", { color: "#0ea5e9" });
-    const fin = N(1000, 260, "Финансы", { color: "#10b981" });
-    const mkt1 = N(120, 460, "Трафик и реклама", { color: "#2563eb" });
-    const mkt2 = N(120, 620, "Контент и дизайн", { color: "#2563eb" });
-    const ops1 = N(560, 460, "Логистика и поставки", { color: "#0ea5e9" });
-    const ops2 = N(560, 620, "Закупки", { color: "#0ea5e9" });
-    const fin1 = N(1000, 460, "Учёт и аналитика", { color: "#10b981" });
-    const nodes = [head, mkt, ops, fin, mkt1, mkt2, ops1, ops2, fin1];
-    const edges = [E(head, mkt), E(head, ops), E(head, fin), E(mkt, mkt1), E(mkt, mkt2), E(ops, ops1), E(ops, ops2), E(fin, fin1)];
-    return { name: "Иерархия", mode: "tree", nodes, edges, groups: [] };
-  }
-
-  if (kind === "process") {
-    const p1 = N(60, 140, "Выбор ниши / товара", { color: "#2563eb" });
-    const p2 = N(360, 140, "Анализ спроса и конкурентов", { color: "#2563eb" });
-    const p3 = N(660, 140, "Поиск поставщика", { color: "#2563eb" });
-    const p4 = N(960, 140, "Закуп тестовой партии", { color: "#2563eb" });
-    const p5 = N(960, 400, "Фотоконтент и карточка", { color: "#0ea5e9" });
-    const p6 = N(660, 400, "Запуск и реклама", { color: "#0ea5e9" });
-    const p7 = N(360, 400, "Сбор аналитики", { color: "#0ea5e9" });
-    const p8 = N(60, 400, "Масштабировать?", { type: "decision", color: "#7c3aed", hasCheck: false });
-    const yes = N(60, 640, "Докупка и рост", { type: "goal", color: "#10b981" });
-    const no = N(360, 640, "Доработать / вывести", { type: "risk", color: "#dc2626" });
-    const nodes = [p1, p2, p3, p4, p5, p6, p7, p8, yes, no];
-    const edges = [E(p1, p2), E(p2, p3), E(p3, p4), E(p4, p5), E(p5, p6), E(p6, p7), E(p7, p8), E(p8, yes), E(p8, no)];
-    return { name: "Процесс", mode: "process", nodes, edges, groups: [] };
-  }
-
-  // duties — функциональные обязанности
-  const r1 = N(80, 150, "Руководитель", { type: "goal", color: "#6366f1", cl: ["Стратегия и цели", "Бюджет и P&L", "Найм и команда", "Контроль ключевых метрик"] });
-  const r2 = N(380, 150, "Менеджер WB", { color: "#2563eb", cl: ["Карточки и SEO", "Цены и акции", "Остатки и поставки", "Отзывы и вопросы"] });
-  const r3 = N(680, 150, "Контент и дизайн", { color: "#ec4899", cl: ["Фотосессии", "Инфографика", "Видео и рилс", "Обновление карточек"] });
-  const r4 = N(980, 150, "Логистика и закупки", { color: "#0ea5e9", cl: ["Поиск поставщиков", "Закупки", "Отгрузки FBW / FBS", "Приёмка и возвраты"] });
-  const groups = [{ id: uid(), x: 40, y: 80, w: 1220, h: 200, name: "Команда", color: "#6366f1" }];
-  return { name: "Функциональные обязанности", mode: "duties", nodes: [r1, r2, r3, r4], edges: [], groups };
-}
-
-// Обёртка: список карт-стратегий + переключатель; каждая карта — отдельный холст.
+// Обёртка: список карт-стратегий + переключатель. Новая карта создаётся по выбранному шаблону.
 function StrategySection({ strategy, onChange, onCreateTask }) {
   const st = normStrategy(strategy);
   const maps = st.maps;
@@ -5198,24 +5204,24 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
   const [editingId, setEditingId] = useState(null);
   const [tplOpen, setTplOpen] = useState(false);
 
-  const updateActive = (next) => onChange({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges, groups: next.groups } : m)), activeId: active.id });
-  const setActiveMode = (mode) => onChange({ maps: maps.map((m) => (m.id === active.id ? { ...m, mode } : m)), activeId: active.id });
-  const selectMap = (id) => { setEditingId(null); onChange({ maps, activeId: id }); };
-  const addMap = () => { const id = uid(); onChange({ maps: [...maps, { id, name: `Стратегия ${maps.length + 1}`, mode: "tree", nodes: [], edges: [], groups: [] }], activeId: id }); };
-  const addTemplate = (kind) => { const t = makeStrategyTemplate(kind); const id = uid(); setTplOpen(false); onChange({ maps: [...maps, { id, name: t.name, mode: t.mode, nodes: t.nodes, edges: t.edges, groups: t.groups }], activeId: id }); };
+  const save = (next) => onChange({ __v: 2, ...next });
+  const updateActive = (next) => save({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges } : m)), activeId: active.id });
+  const selectMap = (id) => { setEditingId(null); save({ maps, activeId: id }); };
+  const addMap = (template) => { const m = makeTemplatedMap(template, `Стратегия ${maps.length + 1}`); setTplOpen(false); save({ maps: [...maps, m], activeId: m.id }); };
   const dupMap = (id) => {
     const src = maps.find((m) => m.id === id); if (!src) return;
-    const nid = uid();
-    const copy = JSON.parse(JSON.stringify({ ...src, id: nid, name: `${src.name} (копия)` }));
-    const at = maps.findIndex((m) => m.id === id);
-    const next = maps.slice(); next.splice(at + 1, 0, copy);
-    onChange({ maps: next, activeId: nid });
+    const copy = JSON.parse(JSON.stringify(src)); copy.id = uid(); copy.name = `${src.name} (копия)`;
+    const idmap = {}; copy.nodes.forEach((n) => { const nid = uid(); idmap[n.id] = nid; n.id = nid; });
+    copy.edges.forEach((e) => { e.id = uid(); e.from = idmap[e.from] || e.from; e.to = idmap[e.to] || e.to; });
+    copy.rootId = idmap[src.rootId] || copy.nodes[0]?.id;
+    const at = maps.findIndex((m) => m.id === id); const next = maps.slice(); next.splice(at + 1, 0, copy);
+    save({ maps: next, activeId: copy.id });
   };
-  const renameMap = (id, name) => onChange({ maps: maps.map((m) => (m.id === id ? { ...m, name: name.trim() || "Без названия" } : m)), activeId: st.activeId });
+  const renameMap = (id, name) => save({ maps: maps.map((m) => (m.id === id ? { ...m, name: name.trim() || "Без названия" } : m)), activeId: st.activeId });
   const removeMap = (id) => {
-    if (maps.length <= 1) { const nid = uid(); onChange({ maps: [{ id: nid, name: "Стратегия 1", nodes: [], edges: [], groups: [] }], activeId: nid }); return; }
+    if (maps.length <= 1) { const m = makeTemplatedMap("mind", "Стратегия 1"); save({ maps: [m], activeId: m.id }); return; }
     const rest = maps.filter((m) => m.id !== id);
-    onChange({ maps: rest, activeId: id === st.activeId ? rest[0].id : st.activeId });
+    save({ maps: rest, activeId: id === st.activeId ? rest[0].id : st.activeId });
   };
 
   return (
@@ -5233,9 +5239,10 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
           }
           return (
             <button key={m.id} onClick={() => selectMap(m.id)} onDoubleClick={() => setEditingId(m.id)}
-              title="Клик — открыть · двойной клик — переименовать"
+              title={`Шаблон: ${STRAT_TPLS[m.template]?.label || "—"} · клик — открыть · двойной клик — переименовать`}
               className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${on ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
               <span className="max-w-[220px] truncate">{m.name}</span>
+              <span className={`rounded px-1 py-px text-[9px] font-bold uppercase ${on ? "bg-white/20 text-white/80" : "bg-neutral-200 text-neutral-500"}`}>{(STRAT_TPLS[m.template]?.label || "").slice(0, 4)}</span>
               {on && (
                 <>
                   <Pencil size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingId(m.id); }} title="Переименовать" />
@@ -5246,17 +5253,17 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
             </button>
           );
         })}
-        <button onClick={addMap} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Карта</button>
         <div className="relative">
-          <button onClick={() => setTplOpen((o) => !o)} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><LayoutTemplate size={14} /> Шаблоны <ChevronDown size={13} /></button>
+          <button onClick={() => setTplOpen((o) => !o)} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Карта <ChevronDown size={13} /></button>
           {tplOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setTplOpen(false)} />
-              <div className="absolute left-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
-                {[["hierarchy", "Иерархия", "оргструктура: кто кому подчиняется"], ["process", "Процесс", "этапы вывода товара по шагам"], ["duties", "Функциональные обязанности", "роли и их задачи (чек-листы)"]].map(([k, t, d]) => (
-                  <button key={k} onClick={() => addTemplate(k)} className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-neutral-50">
-                    <div className="text-sm font-semibold text-neutral-800">{t}</div>
-                    <div className="text-[11px] text-neutral-400">{d}</div>
+              <div className="absolute left-0 z-20 mt-1 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Новая карта — выберите шаблон</div>
+                {Object.keys(STRAT_TPLS).map((k) => (
+                  <button key={k} onClick={() => addMap(k)} className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-neutral-50">
+                    <div className="text-sm font-semibold text-neutral-800">{STRAT_TPLS[k].label}</div>
+                    <div className="text-[11px] text-neutral-400">{STRAT_TPLS[k].hint}</div>
                   </button>
                 ))}
               </div>
@@ -5264,7 +5271,7 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
           )}
         </div>
       </div>
-      <StrategyBoard key={active.id} strategy={{ nodes: active.nodes, edges: active.edges, groups: active.groups }} onChange={updateActive} onCreateTask={onCreateTask} initialMode={active.mode} onModeChange={setActiveMode} />
+      <StrategyBoard key={active.id} template={active.template} rootId={active.rootId} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} onCreateTask={onCreateTask} />
     </div>
   );
 }
@@ -5272,42 +5279,32 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
 const GROUP_COLORS = ["#6366f1", "#0ea5e9", "#f59e0b", "#ec4899", "#10b981", "#8b5cf6"];
 const TYPE_COLOR = { stage: "#a3a3a3", goal: "#059669", risk: "#d97706", decision: "#7c3aed" };
 
-function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeChange }) {
-  const W = 220, PORTY = 26, GRID = 20, CW = 5200, CH = 3600;
+function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
+  const W = 220, GRID = 20, CW = 6000, CH = 4200;
+  const tpl = STRAT_TPLS[template] ? template : "mind";
   const nodes = (strategy && strategy.nodes) || [];
   const edges = (strategy && strategy.edges) || [];
-  const groups = (strategy && strategy.groups) || [];
-  const stateRef = useRef({ nodes, edges, groups });
-  stateRef.current = { nodes, edges, groups };
+  const stateRef = useRef({ nodes, edges });
+  stateRef.current = { nodes, edges };
 
   const vpRef = useRef(null);
   const dragRef = useRef(null);
-  const connRef = useRef(null);
   const panRef = useRef(null);
-  const marqueeRef = useRef(null);
-  const gDragRef = useRef(null);
-  const gResRef = useRef(null);
   const histRef = useRef({ past: [], future: [] });
-  const sizeRef = useRef({});       // id → измеренная высота блока (для якорей стрелок)
+  const sizeRef = useRef({});       // id → измеренная высота блока
   const contentElRef = useRef(null);
+  const focusRef = useRef(null);
 
   const [view, setView] = useState({ s: 1, tx: 40, ty: 20 });
   const viewRef = useRef(view); viewRef.current = view;
   const [sel, setSel] = useState([]);
   const selRef = useRef(sel); selRef.current = sel;
-  const [selGroup, setSelGroup] = useState(null);
-  const [editGroup, setEditGroup] = useState(null);
-  const [settingsFor, setSettingsFor] = useState(null); // id блока с открытой панелью настроек (⚙)
-  const [childMode, setChildMode] = useState(initialMode || "tree"); // как добавляется дочерний блок: tree | process | duties
-  const [cmOpen, setCmOpen] = useState(false);
-  const focusRef = useRef(null); // id блока, которому нужно дать фокус после создания
-  const [connPos, setConnPos] = useState(null);
-  const [marquee, setMarquee] = useState(null);
+  const [settingsFor, setSettingsFor] = useState(null);
   const [taskFor, setTaskFor] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
   const [vpSize, setVpSize] = useState({ w: 1000, h: 600 });
   const [toast, setToast] = useState("");
   const [, force] = useState(0);
-  const snapG = (v) => Math.round(v / GRID) * GRID;
 
   // ---- история ----
   const snap = () => JSON.parse(JSON.stringify(stateRef.current));
@@ -5317,187 +5314,137 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
   const undo = () => { const h = histRef.current; if (!h.past.length) return; h.future.push(snap()); apply(h.past.pop()); force((n) => n + 1); };
   const redo = () => { const h = histRef.current; if (!h.future.length) return; h.past.push(snap()); apply(h.future.pop()); force((n) => n + 1); };
 
-  // ---- координаты ----
-  const toWorld = (cx, cy) => { const r = vpRef.current.getBoundingClientRect(); const v = viewRef.current; return { x: (cx - r.left - v.tx) / v.s, y: (cy - r.top - v.ty) / v.s }; };
+  // ---- авто-раскладка ----
+  const pos = computeStratLayout(nodes, edges, rootId, tpl, (id) => sizeRef.current[id]);
+  const P = (id) => pos[id] || { x: 40, y: 40 };
+  const pnodes = nodes.map((n) => ({ ...n, x: P(n.id).x, y: P(n.id).y }));
+  const byId = Object.fromEntries(pnodes.map((n) => [n.id, n]));
 
-  // ---- мутаторы блоков ----
+  const kidsMap = {}; nodes.forEach((n) => (kidsMap[n.id] = [])); edges.forEach((e) => { if (kidsMap[e.from]) kidsMap[e.from].push(e.to); });
+  const childCount = (id) => (kidsMap[id] || []).length;
+  const parentEdge = (id) => stateRef.current.edges.find((e) => e.to === id);
+  const descendantsOf = (id) => { const km = {}; stateRef.current.nodes.forEach((n) => (km[n.id] = [])); stateRef.current.edges.forEach((e) => { if (km[e.from]) km[e.from].push(e.to); }); const set = new Set(); const stack = [id]; while (stack.length) { const u = stack.pop(); (km[u] || []).forEach((c) => { if (!set.has(c)) { set.add(c); stack.push(c); } }); } return set; };
+
+  // ---- мутаторы ----
   const patchLive = (id, p) => { const s = stateRef.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) }); };
-  const patchNode = (id, p) => { commit({ ...stateRef.current, nodes: stateRef.current.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) }); };
-  const removeNode = (id) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.filter((n) => n.id !== id), edges: s.edges.filter((e) => e.from !== id && e.to !== id) }); setSel((x) => x.filter((i) => i !== id)); };
-  const removeSelected = () => { const s = stateRef.current; const ids = new Set(selRef.current); if (!ids.size) return; commit({ ...s, nodes: s.nodes.filter((n) => !ids.has(n.id)), edges: s.edges.filter((e) => !ids.has(e.from) && !ids.has(e.to)) }); setSel([]); };
-  const duplicateNode = (id) => { const s = stateRef.current; const src = s.nodes.find((n) => n.id === id); if (!src) return; const nid = uid(); const copy = { ...JSON.parse(JSON.stringify(src)), id: nid, x: snapG(src.x + 30), y: snapG(src.y + 30), checklist: (src.checklist || []).map((c) => ({ ...c, id: uid() })) }; commit({ ...s, nodes: [...s.nodes, copy] }); setSel([nid]); };
-  // xMind: добавить дочерний блок от исходного, вид зависит от режима (childMode)
-  const addChild = (parent) => {
-    const s = stateRef.current; const kids = s.edges.filter((e) => e.from === parent.id).length;
-    let x, y, extra;
-    if (childMode === "duties") { x = parent.x + kids * (W + 30); y = parent.y + 150; extra = { type: "stage", color: parent.color, checklist: [{ id: uid(), text: "", done: false }] }; }
-    else if (childMode === "process") { x = parent.x + W + 80; y = parent.y + kids * 150; extra = { type: "stage", color: "#2563eb" }; }
-    else { x = parent.x + W + 80; y = parent.y + kids * 140; extra = { type: "stage", color: parent.color }; }
+  const patchNode = (id, p) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) }); };
+  const toggleCollapse = (id) => patchNode(id, { collapsed: !byId[id]?.collapsed });
+  const addChild = (parentId) => {
+    const s = stateRef.current; const parent = s.nodes.find((n) => n.id === parentId); if (!parent) return;
     const id = uid();
-    const node = { id, x: snapG(x), y: snapG(y), title: "", note: "", color: extra.color || "#2563eb", done: false, hasCheck: true, type: extra.type || "stage", checklist: extra.checklist || [] };
-    commit({ ...s, nodes: [...s.nodes, node], edges: [...s.edges, { id: uid(), from: parent.id, to: id }] });
+    const node = { id, title: "", note: "", color: parent.color || "#2563eb", done: false, hasCheck: true, type: "stage", collapsed: false, checklist: [] };
+    commit({ ...s, nodes: s.nodes.map((n) => (n.id === parentId ? { ...n, collapsed: false } : n)).concat(node), edges: [...s.edges, { id: uid(), from: parentId, to: id }] });
     setSel([id]); setSettingsFor(null); focusRef.current = id;
   };
-  const addEdge = (from, to) => { const s = stateRef.current; if (from === to || s.edges.some((e) => e.from === from && e.to === to)) return; commit({ ...s, edges: [...s.edges, { id: uid(), from, to }] }); };
-  const removeEdge = (id) => { const s = stateRef.current; commit({ ...s, edges: s.edges.filter((e) => e.id !== id) }); };
-  const addNode = () => {
-    const s = stateRef.current; const r = vpRef.current.getBoundingClientRect(); const v = viewRef.current; const k = s.nodes.length;
-    const cx = (r.width / 2 - v.tx) / v.s, cy = (r.height / 2 - v.ty) / v.s;
-    const id = uid();
-    commit({ ...s, nodes: [...s.nodes, { id, x: snapG(cx - W / 2 + (k % 3) * 20), y: snapG(cy - 40 + (k % 3) * 20), title: "Новый этап", note: "", color: SWATCHES[k % SWATCHES.length], done: false, hasCheck: true, type: "stage", checklist: [] }] });
-    setSel([id]);
+  const addSibling = (nodeId) => { if (nodeId === rootId) { addChild(rootId); return; } const pe = parentEdge(nodeId); addChild(pe ? pe.from : rootId); };
+  const removeSubtree = (id) => {
+    if (id === rootId) { setToast("Корневой блок удалить нельзя"); return; }
+    const s = stateRef.current; const kill = descendantsOf(id); kill.add(id);
+    commit({ ...s, nodes: s.nodes.filter((n) => !kill.has(n.id)), edges: s.edges.filter((e) => !kill.has(e.from) && !kill.has(e.to)) });
+    setSel([]); setSettingsFor(null);
+  };
+  const duplicateNode = (id) => {
+    const s = stateRef.current; const src = s.nodes.find((n) => n.id === id); if (!src || id === rootId) return;
+    const pe = parentEdge(id); if (!pe) return;
+    const nid = uid(); const copy = { ...JSON.parse(JSON.stringify(src)), id: nid, collapsed: false, checklist: (src.checklist || []).map((c) => ({ ...c, id: uid() })) };
+    commit({ ...s, nodes: [...s.nodes, copy], edges: [...s.edges, { id: uid(), from: pe.from, to: nid }] });
+    setSel([nid]);
+  };
+  const reparent = (dragId, targetId) => {
+    if (!dragId || !targetId || dragId === rootId || dragId === targetId) return;
+    const desc = descendantsOf(dragId); if (desc.has(targetId)) return;
+    const s = stateRef.current; const pe = s.edges.find((e) => e.to === dragId); if (!pe || pe.from === targetId) return;
+    commit({ ...s, nodes: s.nodes.map((n) => (n.id === targetId ? { ...n, collapsed: false } : n)), edges: s.edges.map((e) => (e === pe ? { ...e, from: targetId } : e)) });
+    setToast("Блок перемещён");
   };
   // чек-лист
   const addCheck = (id) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: [...(n.checklist || []), { id: uid(), text: "", done: false }] } : n)) }); };
   const toggleCheck = (id, cid) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: n.checklist.map((c) => (c.id === cid ? { ...c, done: !c.done } : c)) } : n)) }); };
   const setCheckText = (id, cid, text) => { const s = stateRef.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: n.checklist.map((c) => (c.id === cid ? { ...c, text } : c)) } : n)) }); };
   const removeCheck = (id, cid) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: n.checklist.filter((c) => c.id !== cid) } : n)) }); };
-  // группы
-  const addGroup = () => {
-    const s = stateRef.current; let gx, gy, gw, gh;
-    const sn = s.nodes.filter((n) => selRef.current.includes(n.id));
-    if (sn.length) {
-      const minX = Math.min(...sn.map((n) => n.x)), minY = Math.min(...sn.map((n) => n.y));
-      const maxX = Math.max(...sn.map((n) => n.x + W)), maxY = Math.max(...sn.map((n) => n.y + 110));
-      gx = snapG(minX - 24); gy = snapG(minY - 44); gw = snapG(maxX - minX + 48); gh = snapG(maxY - minY + 68);
-    } else {
-      const r = vpRef.current.getBoundingClientRect(); const v = viewRef.current;
-      gx = snapG((40 - v.tx) / v.s + 10); gy = snapG((40 - v.ty) / v.s + 10); gw = 380; gh = 280;
-    }
-    const id = uid();
-    commit({ ...s, groups: [...s.groups, { id, x: gx, y: gy, w: gw, h: gh, name: `Фаза ${s.groups.length + 1}`, color: GROUP_COLORS[s.groups.length % GROUP_COLORS.length] }] });
-    setSelGroup(id); setSel([]);
-  };
-  const patchGroup = (id, p) => { const s = stateRef.current; commit({ ...s, groups: s.groups.map((g) => (g.id === id ? { ...g, ...p } : g)) }); };
-  const removeGroup = (id) => { const s = stateRef.current; commit({ ...s, groups: s.groups.filter((g) => g.id !== id) }); setSelGroup(null); };
 
-  // ---- перетаскивание блоков (с мультивыбором) ----
+  // ---- координаты ----
+  const toWorld = (cx, cy) => { const r = vpRef.current.getBoundingClientRect(); const v = viewRef.current; return { x: (cx - r.left - v.tx) / v.s, y: (cy - r.top - v.ty) / v.s }; };
+
+  // ---- drag = переупорядочивание (смена родителя) ----
   const onNodeMove = (e) => {
-    const d = dragRef.current; if (!d) return; const v = viewRef.current;
-    if (!d.moved) { if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) < 3) return; pushHist(); d.moved = true; }
-    const dx = (e.clientX - d.sx) / v.s, dy = (e.clientY - d.sy) / v.s; const s = stateRef.current;
-    apply({ ...s, nodes: s.nodes.map((n) => (d.starts[n.id] ? { ...n, x: Math.max(0, snapG(d.starts[n.id].x + dx)), y: Math.max(0, snapG(d.starts[n.id].y + dy)) } : n)) });
+    const d = dragRef.current; if (!d) return;
+    if (!d.moved) { if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) < 4) return; d.moved = true; }
+    d.cx = e.clientX; d.cy = e.clientY;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const host = el && el.closest ? el.closest("[data-node]") : null;
+    const to = host ? host.getAttribute("data-node") : null;
+    const desc = d.desc;
+    setDropTarget(to && to !== d.id && !desc.has(to) ? to : null);
   };
-  const onNodeUp = () => { dragRef.current = null; window.removeEventListener("pointermove", onNodeMove); window.removeEventListener("pointerup", onNodeUp); };
+  const onNodeUp = () => {
+    const d = dragRef.current; dragRef.current = null;
+    window.removeEventListener("pointermove", onNodeMove); window.removeEventListener("pointerup", onNodeUp);
+    const t = dropTargetRef.current;
+    if (d && d.moved && t) reparent(d.id, t);
+    setDropTarget(null);
+  };
+  const dropTargetRef = useRef(null); dropTargetRef.current = dropTarget;
   const onNodeDown = (e, n) => {
-    if (e.button !== 0) return; e.stopPropagation(); setSelGroup(null); setTaskFor(null);
-    let cur = selRef.current;
-    if (e.shiftKey) cur = cur.includes(n.id) ? cur.filter((i) => i !== n.id) : [...cur, n.id];
-    else if (!cur.includes(n.id)) cur = [n.id];
-    setSel(cur);
-    setSettingsFor((p) => (p === n.id ? p : null)); // не открывать настройки при перетаскивании/выборе
-    const ids = cur.includes(n.id) ? cur : [n.id];
-    const starts = {}; stateRef.current.nodes.forEach((nd) => { if (ids.includes(nd.id)) starts[nd.id] = { x: nd.x, y: nd.y }; });
-    dragRef.current = { ids, starts, sx: e.clientX, sy: e.clientY, moved: false };
+    if (e.button !== 0) return; e.stopPropagation(); setTaskFor(null);
+    setSel([n.id]);
+    setSettingsFor((p) => (p === n.id ? p : null));
+    if (n.id === rootId) return; // корень не перетаскиваем
+    dragRef.current = { id: n.id, sx: e.clientX, sy: e.clientY, moved: false, desc: descendantsOf(n.id) };
     window.addEventListener("pointermove", onNodeMove); window.addEventListener("pointerup", onNodeUp);
   };
 
-  // ---- соединения ----
-  const onConnMove = (e) => setConnPos(toWorld(e.clientX, e.clientY));
-  const onConnUp = (e) => {
-    const c = connRef.current; connRef.current = null; setConnPos(null);
-    window.removeEventListener("pointermove", onConnMove); window.removeEventListener("pointerup", onConnUp);
-    if (!c) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const host = el && el.closest ? el.closest("[data-node]") : null;
-    if (host) { const to = host.getAttribute("data-node"); if (to && to !== c.from) addEdge(c.from, to); }
-  };
-  const onPortDown = (e, n, side) => { e.stopPropagation(); e.preventDefault(); connRef.current = { from: n.id, side }; setConnPos(toWorld(e.clientX, e.clientY)); window.addEventListener("pointermove", onConnMove); window.addEventListener("pointerup", onConnUp); };
-
-  // ---- панорамирование / рамка выбора ----
+  // ---- панорамирование фона ----
   const onPanMove = (e) => { const p = panRef.current; if (!p) return; setView((v) => ({ ...v, tx: p.tx + (e.clientX - p.sx), ty: p.ty + (e.clientY - p.sy) })); };
   const onPanUp = () => { panRef.current = null; window.removeEventListener("pointermove", onPanMove); window.removeEventListener("pointerup", onPanUp); };
-  const onMarqueeMove = (e) => { const m = marqueeRef.current; if (!m) return; const p = toWorld(e.clientX, e.clientY); setMarquee({ x: Math.min(m.x0, p.x), y: Math.min(m.y0, p.y), w: Math.abs(p.x - m.x0), h: Math.abs(p.y - m.y0) }); };
-  const onMarqueeUp = (e) => {
-    const m = marqueeRef.current; marqueeRef.current = null;
-    window.removeEventListener("pointermove", onMarqueeMove); window.removeEventListener("pointerup", onMarqueeUp);
-    const p = toWorld(e.clientX, e.clientY); const r = { x: Math.min(m.x0, p.x), y: Math.min(m.y0, p.y), w: Math.abs(p.x - m.x0), h: Math.abs(p.y - m.y0) };
-    setMarquee(null); if (r.w < 5 && r.h < 5) return;
-    const hit = stateRef.current.nodes.filter((n) => n.x < r.x + r.w && n.x + W > r.x && n.y < r.y + r.h && n.y + 80 > r.y).map((n) => n.id);
-    setSel(hit);
-  };
   const onBgDown = (e) => {
-    if (e.button !== 0) return;
-    setSel([]); setSelGroup(null); setTaskFor(null); setSettingsFor(null);
-    if (e.shiftKey) {
-      const p = toWorld(e.clientX, e.clientY); marqueeRef.current = { x0: p.x, y0: p.y }; setMarquee({ x: p.x, y: p.y, w: 0, h: 0 });
-      window.addEventListener("pointermove", onMarqueeMove); window.addEventListener("pointerup", onMarqueeUp);
-    } else {
-      const v = viewRef.current; panRef.current = { sx: e.clientX, sy: e.clientY, tx: v.tx, ty: v.ty };
-      window.addEventListener("pointermove", onPanMove); window.addEventListener("pointerup", onPanUp);
-    }
+    if (e.button !== 0) return; setSel([]); setTaskFor(null); setSettingsFor(null);
+    const v = viewRef.current; panRef.current = { sx: e.clientX, sy: e.clientY, tx: v.tx, ty: v.ty };
+    window.addEventListener("pointermove", onPanMove); window.addEventListener("pointerup", onPanUp);
   };
 
-  // ---- перетаскивание/ресайз групп ----
-  const onGroupMove = (e) => {
-    const d = gDragRef.current; if (!d) return; const v = viewRef.current;
-    if (!d.moved) { if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) < 3) return; pushHist(); d.moved = true; }
-    const dx = (e.clientX - d.sx) / v.s, dy = (e.clientY - d.sy) / v.s; const s = stateRef.current;
-    apply({ ...s, groups: s.groups.map((g) => (g.id === d.id ? { ...g, x: snapG(d.gx + dx), y: snapG(d.gy + dy) } : g)), nodes: s.nodes.map((n) => (d.starts[n.id] ? { ...n, x: snapG(d.starts[n.id].x + dx), y: snapG(d.starts[n.id].y + dy) } : n)) });
-  };
-  const onGroupUp = () => { gDragRef.current = null; window.removeEventListener("pointermove", onGroupMove); window.removeEventListener("pointerup", onGroupUp); };
-  const onGroupDown = (e, g) => {
-    if (e.button !== 0) return; e.stopPropagation(); setSelGroup(g.id); setSel([]); setTaskFor(null);
-    const s = stateRef.current;
-    const members = s.nodes.filter((n) => n.x + W / 2 >= g.x && n.x + W / 2 <= g.x + g.w && n.y + 30 >= g.y && n.y + 30 <= g.y + g.h);
-    const starts = {}; members.forEach((n) => { starts[n.id] = { x: n.x, y: n.y }; });
-    gDragRef.current = { id: g.id, gx: g.x, gy: g.y, starts, sx: e.clientX, sy: e.clientY, moved: false };
-    window.addEventListener("pointermove", onGroupMove); window.addEventListener("pointerup", onGroupUp);
-  };
-  const onGResMove = (e) => { const d = gResRef.current; if (!d) return; const v = viewRef.current; if (!d.moved) { pushHist(); d.moved = true; } const dw = (e.clientX - d.sx) / v.s, dh = (e.clientY - d.sy) / v.s; const s = stateRef.current; apply({ ...s, groups: s.groups.map((g) => (g.id === d.id ? { ...g, w: Math.max(160, snapG(d.w + dw)), h: Math.max(120, snapG(d.h + dh)) } : g)) }); };
-  const onGResUp = () => { gResRef.current = null; window.removeEventListener("pointermove", onGResMove); window.removeEventListener("pointerup", onGResUp); };
-  const onGResDown = (e, g) => { e.stopPropagation(); e.preventDefault(); gResRef.current = { id: g.id, w: g.w, h: g.h, sx: e.clientX, sy: e.clientY, moved: false }; window.addEventListener("pointermove", onGResMove); window.addEventListener("pointerup", onGResUp); };
-
-  // ---- зум ----
+  // ---- зум / вписать ----
   const zoomAt = (cx, cy, factor) => setView((v) => { const ns = Math.min(2, Math.max(0.3, v.s * factor)); const k = ns / v.s; return { s: ns, tx: cx - (cx - v.tx) * k, ty: cy - (cy - v.ty) * k }; });
   const zoomBtn = (factor) => { const r = vpRef.current.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, factor); };
   const fitView = () => {
-    const s = stateRef.current; const its = [...s.nodes.map((n) => ({ x: n.x, y: n.y, w: W, h: 100 })), ...s.groups.map((g) => ({ x: g.x, y: g.y, w: g.w, h: g.h }))];
-    const r = vpRef.current.getBoundingClientRect(); const pad = 48;
-    if (!its.length) { setView({ s: 1, tx: 40, ty: 20 }); return; }
-    const minX = Math.min(...its.map((i) => i.x)), minY = Math.min(...its.map((i) => i.y));
-    const maxX = Math.max(...its.map((i) => i.x + i.w)), maxY = Math.max(...its.map((i) => i.y + i.h));
+    const ps = Object.values(pos); const r = vpRef.current.getBoundingClientRect(); const pad = 56;
+    if (!ps.length) { setView({ s: 1, tx: 40, ty: 20 }); return; }
+    const minX = Math.min(...ps.map((p) => p.x)), minY = Math.min(...ps.map((p) => p.y));
+    const maxX = Math.max(...ps.map((p) => p.x + W)), maxY = Math.max(...ps.map((p) => p.y + (sizeRef.current[Object.keys(pos).find((k) => pos[k] === p)] || 100)));
     const sc = Math.min((r.width - pad * 2) / (maxX - minX || 1), (r.height - pad * 2) / (maxY - minY || 1), 1.2);
     const ns = Math.max(0.3, Math.min(2, sc));
     setView({ s: ns, tx: (r.width - (maxX - minX) * ns) / 2 - minX * ns, ty: (r.height - (maxY - minY) * ns) / 2 - minY * ns });
   };
-  // ---- авто-раскладка по стрелкам ----
-  const autoLayout = () => {
-    const s = stateRef.current; const ns = s.nodes; if (!ns.length) return;
-    const idset = new Set(ns.map((n) => n.id)); const out = {}, indeg = {};
-    ns.forEach((n) => { out[n.id] = []; indeg[n.id] = 0; });
-    s.edges.forEach((e) => { if (idset.has(e.from) && idset.has(e.to)) { out[e.from].push(e.to); indeg[e.to] += 1; } });
-    const layer = {}; ns.forEach((n) => (layer[n.id] = 0));
-    const indc = { ...indeg }; const q = ns.filter((n) => indc[n.id] === 0).map((n) => n.id); let guard = 0;
-    while (q.length && guard++ < 20000) { const u = q.shift(); out[u].forEach((v) => { layer[v] = Math.max(layer[v], layer[u] + 1); if (--indc[v] === 0) q.push(v); }); }
-    const cols = {}; ns.forEach((n) => { (cols[layer[n.id]] = cols[layer[n.id]] || []).push(n.id); });
-    const pos = {}; Object.keys(cols).sort((a, b) => a - b).forEach((L) => { cols[L].forEach((id, i) => { pos[id] = { x: 80 + Number(L) * 300, y: 60 + i * 160 }; }); });
-    commit({ ...s, nodes: ns.map((n) => (pos[n.id] ? { ...n, x: pos[n.id].x, y: pos[n.id].y } : n)) });
-    setTimeout(fitView, 20);
-  };
 
-  // ---- эффекты: wheel, клавиатура, размеры, fit на монтировании ----
-  const actRef = useRef({}); actRef.current = { undo, redo, removeSelected, addChildSel: () => { const ids = selRef.current; if (ids.length === 1) { const p = stateRef.current.nodes.find((n) => n.id === ids[0]); if (p) addChild(p); } } };
+  // ---- эффекты ----
+  const actRef = useRef({});
+  actRef.current = {
+    undo, redo,
+    del: () => { const ids = selRef.current; if (ids.length === 1) removeSubtree(ids[0]); },
+    child: () => { const ids = selRef.current; if (ids.length === 1) addChild(ids[0]); },
+    sib: () => { const ids = selRef.current; if (ids.length === 1) addSibling(ids[0]); },
+  };
   useEffect(() => {
     const el = vpRef.current; if (!el) return;
     const onWheel = (e) => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1); };
     el.addEventListener("wheel", onWheel, { passive: false });
     const ro = new ResizeObserver(() => { const r = el.getBoundingClientRect(); setVpSize({ w: r.width, h: r.height }); });
     ro.observe(el);
-    const t = setTimeout(() => { fitView(); const r = el.getBoundingClientRect(); setVpSize({ w: r.width, h: r.height }); }, 0);
+    const t = setTimeout(() => { fitView(); const r = el.getBoundingClientRect(); setVpSize({ w: r.width, h: r.height }); }, 30);
     const onKey = (e) => {
       const tag = (e.target && e.target.tagName) || "";
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? actRef.current.redo() : actRef.current.undo(); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); actRef.current.redo(); }
-      else if (e.key === "Delete") { e.preventDefault(); actRef.current.removeSelected(); }
-      else if (e.key === "Tab") { e.preventDefault(); actRef.current.addChildSel(); }
+      else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); actRef.current.del(); }
+      else if (e.key === "Tab") { e.preventDefault(); actRef.current.child(); }
+      else if (e.key === "Enter") { e.preventDefault(); actRef.current.sib(); }
     };
     window.addEventListener("keydown", onKey);
     return () => { el.removeEventListener("wheel", onWheel); ro.disconnect(); clearTimeout(t); window.removeEventListener("keydown", onKey); };
   }, []);
-  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 1800); return () => clearTimeout(t); }, [toast]);
-  // измеряем реальные высоты блоков, чтобы стрелки цеплялись за правильные стороны
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 1600); return () => clearTimeout(t); }, [toast]);
+  // измеряем высоты блоков → пересчитываем раскладку
   useLayoutEffect(() => {
     if (!contentElRef.current) return; let changed = false;
     contentElRef.current.querySelectorAll("[data-node]").forEach((el) => { const id = el.getAttribute("data-node"); const h = el.offsetHeight; if (sizeRef.current[id] !== h) { sizeRef.current[id] = h; changed = true; } });
@@ -5505,28 +5452,18 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
   });
 
   const createTask = (n, date) => { if (onCreateTask) onCreateTask(n.title || "Задача", date); setTaskFor(null); setToast("Задача создана во вкладке «Задачи»"); };
-
   const stop = (e) => e.stopPropagation();
-  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  // якоря сторон блока (с учётом измеренной высоты) и построение кривой с любой стороны
-  const nh = (n) => sizeRef.current[n.id] || 92;
-  const sideAnchor = (n, side) => {
-    const h = nh(n);
-    if (side === "top") return { x: n.x + W / 2, y: n.y };
-    if (side === "bottom") return { x: n.x + W / 2, y: n.y + h };
-    if (side === "left") return { x: n.x, y: n.y + h / 2 };
-    return { x: n.x + W, y: n.y + h / 2 };
-  };
+
+  // ---- стрелки/связи ----
+  const nh = (id) => sizeRef.current[id] || 92;
+  const sideAnchor = (n, side) => { const h = nh(n.id); if (side === "top") return { x: n.x + W / 2, y: n.y }; if (side === "bottom") return { x: n.x + W / 2, y: n.y + h }; if (side === "left") return { x: n.x, y: n.y + h / 2 }; return { x: n.x + W, y: n.y + h / 2 }; };
   const ctrlOff = (p, side, k) => ({ x: p.x + (side === "left" ? -k : side === "right" ? k : 0), y: p.y + (side === "top" ? -k : side === "bottom" ? k : 0) });
   const pickSides = (a, b) => {
-    const ax = a.x + W / 2, ay = a.y + nh(a) / 2, bx = b.x + W / 2, by = b.y + nh(b) / 2;
-    const dx = bx - ax, dy = by - ay;
-    if (Math.abs(dx) >= Math.abs(dy)) return [dx >= 0 ? "right" : "left", dx >= 0 ? "left" : "right"];
-    return [dy >= 0 ? "bottom" : "top", dy >= 0 ? "top" : "bottom"];
+    if (tpl === "hierarchy") return ["bottom", "top"];
+    const ax = a.x + W / 2, bx = b.x + W / 2; return bx >= ax ? ["right", "left"] : ["left", "right"];
   };
-  const edgePath = (a, b) => { const [sa, sb] = pickSides(a, b); const p1 = sideAnchor(a, sa), p2 = sideAnchor(b, sb); const c1 = ctrlOff(p1, sa, 55), c2 = ctrlOff(p2, sb, 55); return `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`; };
-  const tempPath = (a, side, p2) => { const p1 = sideAnchor(a, side); const c1 = ctrlOff(p1, side, 55); return `M${p1.x},${p1.y} C${c1.x},${c1.y} ${p2.x},${p2.y} ${p2.x},${p2.y}`; };
-  const fromNode = connRef.current ? byId[connRef.current.from] : null;
+  const edgePath = (a, b) => { const [sa, sb] = pickSides(a, b); const p1 = sideAnchor(a, sa), p2 = sideAnchor(b, sb); const k = tpl === "hierarchy" ? 40 : 46; const c1 = ctrlOff(p1, sa, k), c2 = ctrlOff(p2, sb, k); return `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`; };
+
   const counted = (n) => n.hasCheck !== false;
   const countTotal = nodes.filter(counted).length;
   const doneCount = nodes.filter((n) => counted(n) && nodeIsDone(n)).length;
@@ -5535,7 +5472,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
 
   // мини-карта
   const mmW = 168, mmH = 116;
-  const its = [...nodes.map((n) => ({ x: n.x, y: n.y, w: W, h: 100 })), ...groups.map((g) => ({ x: g.x, y: g.y, w: g.w, h: g.h }))];
+  const its = pnodes.map((n) => ({ x: n.x, y: n.y, w: W, h: nh(n.id) }));
   const bMinX = its.length ? Math.min(0, ...its.map((i) => i.x)) : 0;
   const bMinY = its.length ? Math.min(0, ...its.map((i) => i.y)) : 0;
   const bMaxX = its.length ? Math.max(800, ...its.map((i) => i.x + i.w)) : 800;
@@ -5543,39 +5480,15 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
   const mm = Math.min(mmW / (bMaxX - bMinX || 1), mmH / (bMaxY - bMinY || 1));
   const mmx = (x) => (x - bMinX) * mm, mmy = (y) => (y - bMinY) * mm;
   const vx = -view.tx / view.s, vy = -view.ty / view.s, vw = vpSize.w / view.s, vh = vpSize.h / view.s;
-  const onMiniDown = (e) => {
-    e.stopPropagation();
-    const r = e.currentTarget.getBoundingClientRect();
-    const wx = bMinX + (e.clientX - r.left) / mm, wy = bMinY + (e.clientY - r.top) / mm;
-    setView((v) => ({ ...v, tx: vpSize.w / 2 - wx * v.s, ty: vpSize.h / 2 - wy * v.s }));
-  };
+  const onMiniDown = (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); const wx = bMinX + (e.clientX - r.left) / mm, wy = bMinY + (e.clientY - r.top) / mm; setView((v) => ({ ...v, tx: vpSize.w / 2 - wx * v.s, ty: vpSize.h / 2 - wy * v.s })); };
 
   const tBtn = "flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-30";
-  const CM = { tree: { label: "Ветка", icon: GitBranch, hint: "вправо, вниз" }, process: { label: "Шаг", icon: ArrowRight, hint: "в линию" }, duties: { label: "Роль", icon: ListChecks, hint: "роль + чек-лист" } };
-  const CMIcon = CM[childMode].icon;
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-100 px-3 py-2.5">
-        <button onClick={addNode} className="rounded-lg inline-flex items-center gap-1.5 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Блок</button>
-        <button onClick={addGroup} className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" title="Рамка-фаза вокруг выбранных блоков"><Square size={14} /> Фаза</button>
-        <button onClick={autoLayout} className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50" title="Выровнять по стрелкам"><Wand2 size={14} /> Раскладка</button>
-        <div className="relative">
-          <button onClick={() => setCmOpen((o) => !o)} title="Что добавляет кнопка «+» на блоке" className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"><CMIcon size={14} /> {CM[childMode].label} <ChevronDown size={13} /></button>
-          {cmOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setCmOpen(false)} />
-              <div className="absolute left-0 z-20 mt-1 w-56 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
-                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Как добавлять ветку</div>
-                {Object.keys(CM).map((k) => { const Ic = CM[k].icon; return (
-                  <button key={k} onClick={() => { setChildMode(k); if (onModeChange) onModeChange(k); setCmOpen(false); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (childMode === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>
-                    <Ic size={14} /> <span>{CM[k].label}</span><span className="ml-auto text-[10px] text-neutral-400">{CM[k].hint}</span>
-                  </button>
-                ); })}
-              </div>
-            </>
-          )}
-        </div>
+        <button onClick={() => { const ids = selRef.current; addChild(ids.length === 1 ? ids[0] : rootId); }} className="rounded-lg inline-flex items-center gap-1.5 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800" title="Добавить дочерний блок к выбранному (или к корню). Tab"><Plus size={14} /> Подтема</button>
+        <span className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-500"><LayoutTemplate size={14} /> {STRAT_TPLS[tpl].label}</span>
         <div className="mx-1 h-6 w-px bg-neutral-200" />
         <button onClick={() => actRef.current.undo()} disabled={!canUndo} className={tBtn} title="Отменить (Ctrl+Z)"><Undo2 size={15} /></button>
         <button onClick={() => actRef.current.redo()} disabled={!canRedo} className={tBtn} title="Повторить (Ctrl+Shift+Z)"><Redo2 size={15} /></button>
@@ -5589,55 +5502,26 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
 
       <div ref={vpRef} onPointerDown={onBgDown} className="relative overflow-hidden" style={{ height: "68vh", touchAction: "none", cursor: "default", background: "#fafafa" }}>
         <div ref={contentElRef} style={{ position: "absolute", left: 0, top: 0, width: CW, height: CH, transformOrigin: "0 0", transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`, backgroundImage: "radial-gradient(#e2e2e5 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
-          {/* группы (под блоками) */}
-          {groups.map((g) => {
-            const gs = selGroup === g.id;
-            return (
-              <div key={g.id} className="absolute rounded-xl" style={{ left: g.x, top: g.y, width: g.w, height: g.h, border: `2px ${gs ? "solid" : "dashed"} ${g.color}`, background: `${g.color}0d`, zIndex: 1 }}>
-                <div className="absolute -top-0.5 left-0 flex max-w-full items-center gap-1 rounded-tl-xl rounded-br-lg px-2 py-0.5" style={{ background: g.color, transform: "translateY(-1px)" }}>
-                  {editGroup === g.id ? (
-                    <input autoFocus defaultValue={g.name} onPointerDown={stop}
-                      onBlur={(e) => { patchGroup(g.id, { name: e.target.value.trim() || "Фаза" }); setEditGroup(null); }}
-                      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setEditGroup(null); }}
-                      className="w-32 rounded bg-white/90 px-1 text-xs font-bold text-neutral-800 focus:outline-none" />
-                  ) : (
-                    <span onPointerDown={(e) => onGroupDown(e, g)} onDoubleClick={() => setEditGroup(g.id)} className="cursor-grab select-none text-xs font-bold text-white" title="Тяните — переместить фазу (вместе с блоками) · двойной клик — переименовать">{g.name}</span>
-                  )}
-                  {gs && <Pencil size={11} className="shrink-0 cursor-pointer text-white/80 hover:text-white" onPointerDown={stop} onClick={() => setEditGroup(g.id)} title="Переименовать" />}
-                  {gs && <Trash2 size={12} className="shrink-0 cursor-pointer text-white/80 hover:text-white" onPointerDown={stop} onClick={() => removeGroup(g.id)} title="Удалить фазу" />}
-                </div>
-                <div onPointerDown={(e) => onGResDown(e, g)} className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize" style={{ borderRight: `3px solid ${g.color}`, borderBottom: `3px solid ${g.color}`, borderBottomRightRadius: 10 }} />
-              </div>
-            );
-          })}
-
           <svg width={CW} height={CH} className="pointer-events-none absolute inset-0" style={{ zIndex: 2 }}>
-            <defs><marker id="stratArrow" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#f59e0b" /></marker></defs>
+            <defs><marker id="stratArr" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#94a3b8" /></marker></defs>
             {edges.map((ed) => {
               const a = byId[ed.from], b = byId[ed.to]; if (!a || !b) return null;
-              const d = edgePath(a, b);
-              return (
-                <g key={ed.id} className="pointer-events-auto" style={{ cursor: "pointer" }} onClick={() => removeEdge(ed.id)}>
-                  <path d={d} stroke="transparent" strokeWidth="14" fill="none" />
-                  <path d={d} stroke="#f59e0b" strokeWidth="2" fill="none" markerEnd="url(#stratArrow)" />
-                </g>
-              );
+              if (byId[ed.from]?.collapsed) return null;
+              return <path key={ed.id} d={edgePath(a, b)} stroke="#cbd5e1" strokeWidth="1.8" fill="none" markerEnd={tpl === "process" ? "url(#stratArr)" : undefined} />;
             })}
-            {fromNode && connPos && <path d={tempPath(fromNode, connRef.current.side || "right", connPos)} stroke="#f59e0b" strokeWidth="2" strokeDasharray="4 4" fill="none" />}
-            {marquee && <rect x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} fill="#3b82f61a" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 3" />}
           </svg>
 
-          {nodes.map((n) => {
-            const on = sel.includes(n.id); const cnt = n.hasCheck !== false; const done = nodeIsDone(n); const showDone = cnt && done; const hasCl = !!(n.checklist && n.checklist.length);
+          {pnodes.map((n) => {
+            const hidden = (() => { let pe = parentEdge(n.id); let guard = 0; while (pe && guard++ < 999) { if (byId[pe.from]?.collapsed) return true; pe = parentEdge(pe.from); } return false; })();
+            if (hidden) return null;
+            const on = sel.includes(n.id); const isDrop = dropTarget === n.id; const cnt = n.hasCheck !== false; const done = nodeIsDone(n); const showDone = cnt && done; const hasCl = !!(n.checklist && n.checklist.length);
             const cdone = hasCl ? n.checklist.filter((c) => c.done).length : 0;
             const TI = STRAT_TYPES[n.type || "stage"].icon; const tc = TYPE_COLOR[n.type || "stage"];
-            const col = n.color || "#2563eb";
-            const portCls = "absolute cursor-crosshair rounded-full bg-white opacity-0 transition group-hover:opacity-100";
-            const portStyle = (extra) => ({ width: 12, height: 12, border: `2px solid ${col}`, zIndex: 8, ...extra });
+            const col = n.color || "#2563eb"; const kids = childCount(n.id); const isRoot = n.id === rootId;
             return (
               <div key={n.id} data-node={n.id} onPointerDown={(e) => onNodeDown(e, n)}
                 className="group absolute select-none rounded-xl bg-white shadow-sm"
-                style={{ left: n.x, top: n.y, width: W, cursor: "grab", border: `1.5px solid ${col}`, background: showDone ? "#f0fdf4" : "#fff", boxShadow: on ? `0 0 0 2px ${col}40` : undefined, zIndex: on ? 6 : 3 }}>
+                style={{ left: n.x, top: n.y, width: W, cursor: isRoot ? "default" : "grab", border: `1.5px solid ${isDrop ? "#16a34a" : col}`, background: showDone ? "#f0fdf4" : "#fff", boxShadow: isDrop ? "0 0 0 3px #16a34a55" : (on ? `0 0 0 2px ${col}40` : undefined), zIndex: on ? 6 : 3 }}>
                 <div className="flex items-start gap-1.5 px-2.5 pt-2.5">
                   {cnt && (hasCl ? (
                     <span title="Прогресс по подзадачам" className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: done ? "#16a34a" : "#fff", border: done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }}>{done ? <Check size={12} strokeWidth={3} /> : (cdone > 0 && <Minus size={12} strokeWidth={3} style={{ color: "#a3a3a3" }} />)}</span>
@@ -5645,8 +5529,11 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
                     <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
                   ))}
                   <TI size={14} className="mt-1 shrink-0" style={{ color: tc }} title={STRAT_TYPES[n.type || "stage"].label} />
-                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; if (focusRef.current === n.id) { focusRef.current = null; setTimeout(() => el.focus(), 0); } } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder="Этап…" className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
-                  <button onPointerDown={stop} onClick={() => addChild(n)} title="Добавить дочерний блок (Tab)" className={"mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-neutral-100 hover:text-neutral-700 " + (on ? "text-neutral-500 opacity-100" : "text-neutral-400 opacity-0 group-hover:opacity-100")}><Plus size={14} /></button>
+                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; if (focusRef.current === n.id) { focusRef.current = null; setTimeout(() => el.focus(), 0); } } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder={isRoot ? "Тема…" : "Блок…"} className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
+                  {kids > 0 && (
+                    <button onPointerDown={stop} onClick={() => toggleCollapse(n.id)} title={n.collapsed ? "Развернуть ветку" : "Свернуть ветку"} className="mt-0.5 flex h-5 shrink-0 items-center gap-0.5 rounded px-1 text-[10px] font-bold text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600">{n.collapsed ? <><ChevronRight size={13} />{kids}</> : <ChevronDown size={13} />}</button>
+                  )}
+                  <button onPointerDown={stop} onClick={() => addChild(n.id)} title="Добавить дочерний блок (Tab)" className={"mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-neutral-100 hover:text-neutral-700 " + (on ? "text-neutral-500 opacity-100" : "text-neutral-400 opacity-0 group-hover:opacity-100")}><Plus size={14} /></button>
                   <button onPointerDown={stop} onClick={() => { setSel([n.id]); setSettingsFor(settingsFor === n.id ? null : n.id); setTaskFor(null); }} title="Настройки блока" className={"mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-neutral-100 hover:text-neutral-700 " + (settingsFor === n.id ? "bg-neutral-100 text-neutral-700" : (on ? "text-neutral-400 opacity-100" : "text-neutral-400 opacity-0 group-hover:opacity-100"))}><Settings2 size={14} /></button>
                 </div>
 
@@ -5661,9 +5548,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
 
                 {settingsFor === n.id && (
                   <div className="border-t border-neutral-100">
-                    {/* заметка */}
                     <textarea value={n.note || ""} onPointerDown={stop} onFocus={pushHist} onChange={(e) => patchLive(n.id, { note: e.target.value })} placeholder="заметка…" rows={2} className="w-full resize-none bg-transparent px-2.5 pt-2 pb-1 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
-                    {/* подзадачи */}
                     <div className="px-2.5 py-1.5">
                       {(n.checklist || []).map((c) => (
                         <div key={c.id} className="flex items-center gap-1.5 py-0.5">
@@ -5674,28 +5559,24 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
                       ))}
                       <button onPointerDown={stop} onClick={() => addCheck(n.id)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={11} /> подзадача</button>
                     </div>
-                    {/* тип */}
                     <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
                       {Object.keys(STRAT_TYPES).map((tk) => { const Ic = STRAT_TYPES[tk].icon; const act = (n.type || "stage") === tk; return (
                         <button key={tk} onPointerDown={stop} onClick={() => patchNode(n.id, { type: tk })} title={STRAT_TYPES[tk].label} className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold" style={{ background: act ? `${TYPE_COLOR[tk]}1a` : "transparent", color: act ? TYPE_COLOR[tk] : "#a3a3a3" }}><Ic size={12} />{act && STRAT_TYPES[tk].label}</button>
                       ); })}
                     </div>
-                    {/* цвет */}
                     <div className="flex flex-wrap items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
                       {SWATCHES.map((c) => (<button key={c} onPointerDown={stop} onClick={() => patchNode(n.id, { color: c })} className="h-4 w-4 rounded-full transition" style={{ background: c, boxShadow: n.color === c ? `0 0 0 2px #fff, 0 0 0 3.5px ${c}` : "none" }} />))}
                     </div>
-                    {/* чекбокс вкл/выкл */}
                     <div className="flex items-center gap-2 border-t border-neutral-100 px-2.5 py-1.5">
                       <span className="text-[11px] text-neutral-500">Чекбокс выполнения</span>
                       <button onPointerDown={stop} onClick={() => patchNode(n.id, { hasCheck: !cnt })} title={cnt ? "Убрать чекбокс" : "Добавить чекбокс"} className="relative ml-auto h-4 w-7 shrink-0 rounded-full transition" style={{ background: cnt ? "#16a34a" : "#d4d4d4" }}>
                         <span className="absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all" style={{ left: cnt ? 14 : 2 }} />
                       </button>
                     </div>
-                    {/* действия */}
                     <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
                       <button onPointerDown={stop} onClick={() => setTaskFor(taskFor === n.id ? null : n.id)} className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-1 text-[11px] font-semibold text-neutral-600 hover:bg-neutral-200"><CalendarPlus size={12} /> В задачу</button>
-                      <button onPointerDown={stop} onClick={() => duplicateNode(n.id)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Дублировать блок"><Copy size={13} /></button>
-                      <button onPointerDown={stop} onClick={() => removeNode(n.id)} className="rounded-md p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500" title="Удалить блок"><Trash2 size={13} /></button>
+                      {!isRoot && <button onPointerDown={stop} onClick={() => duplicateNode(n.id)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Дублировать блок"><Copy size={13} /></button>}
+                      {!isRoot && <button onPointerDown={stop} onClick={() => removeSubtree(n.id)} className="rounded-md p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500" title="Удалить блок и ветку"><Trash2 size={13} /></button>}
                     </div>
                     {taskFor === n.id && (
                       <div className="flex items-center gap-1.5 border-t border-neutral-100 bg-neutral-50 px-2.5 py-2">
@@ -5705,35 +5586,22 @@ function StrategyBoard({ strategy, onChange, onCreateTask, initialMode, onModeCh
                     )}
                   </div>
                 )}
-                {["top", "right", "bottom", "left"].map((sd) => (
-                  <span key={sd} onPointerDown={(e) => onPortDown(e, n, sd)} className={portCls + (on ? " opacity-100" : "")} style={portStyle(
-                    sd === "top" ? { left: "50%", top: -6, transform: "translateX(-50%)" } :
-                    sd === "bottom" ? { left: "50%", bottom: -6, transform: "translateX(-50%)" } :
-                    sd === "left" ? { left: -6, top: "50%", transform: "translateY(-50%)" } :
-                    { right: -6, top: "50%", transform: "translateY(-50%)" }
-                  )} title="Потяните к другому блоку, чтобы соединить" />
-                ))}
               </div>
             );
           })}
         </div>
 
-        {/* мини-карта */}
-        {(nodes.length > 0 || groups.length > 0) && (
+        {pnodes.length > 0 && (
           <div onPointerDown={onMiniDown} className="absolute bottom-3 right-3 cursor-pointer overflow-hidden rounded-lg border border-neutral-200 bg-white/90 shadow-sm" style={{ width: mmW, height: mmH }} title="Клик — перейти">
             <svg width={mmW} height={mmH}>
-              {groups.map((g) => <rect key={g.id} x={mmx(g.x)} y={mmy(g.y)} width={g.w * mm} height={g.h * mm} fill={`${g.color}14`} stroke={g.color} strokeWidth="0.5" rx="2" />)}
-              {nodes.map((n) => <rect key={n.id} x={mmx(n.x)} y={mmy(n.y)} width={W * mm} height={Math.max(3, 70 * mm)} rx="1.5" fill={nodeIsDone(n) ? "#16a34a" : (n.color || "#94a3b8")} opacity="0.85" />)}
+              {pnodes.map((n) => <rect key={n.id} x={mmx(n.x)} y={mmy(n.y)} width={W * mm} height={Math.max(3, nh(n.id) * mm)} rx="1.5" fill={nodeIsDone(n) ? "#16a34a" : (n.color || "#94a3b8")} opacity="0.85" />)}
               <rect x={mmx(vx)} y={mmy(vy)} width={vw * mm} height={vh * mm} fill="none" stroke="#111827" strokeWidth="1" />
             </svg>
           </div>
         )}
 
-        {nodes.length === 0 && groups.length === 0 && (
-          <div className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 text-center text-sm text-neutral-400">Пусто. «+ Блок» — добавить этап, «+ Фаза» — рамку.</div>
-        )}
         {toast && <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">{toast}</div>}
-        <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/80 px-2 py-1 text-[10px] text-neutral-400">Перетаскивание фона — панорама · Shift+рамка — выбор · колесо — зум</div>
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/80 px-2 py-1 text-[10px] text-neutral-400">«＋» на блоке или Tab — дочерний · Enter — соседний · блоки тяни на другой, чтобы переподчинить · фон — панорама</div>
       </div>
     </div>
   );
