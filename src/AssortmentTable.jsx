@@ -1599,7 +1599,17 @@ export default function AssortmentTable() {
         )}
 
         {activeTab === "duties" && (
-          <DutiesBoard duties={duties} onChange={setDuties} />
+          <DutiesBoard
+            duties={duties}
+            onChange={setDuties}
+            onAddOp={(name, recur) => {
+              const t = (name || "").trim();
+              if (!t) return "empty";
+              if ((opTypes || []).some((o) => o.name === t)) return "exists";
+              setOpTypes((list) => [...(list || []), { id: uid(), name: t, recur: normRecur(recur) }]);
+              return "added";
+            }}
+          />
         )}
       </div>
 
@@ -1821,9 +1831,10 @@ function normDuties(v) {
   return { areas, people, functions };
 }
 
-function DutiesBoard({ duties, onChange }) {
+function DutiesBoard({ duties, onChange, onAddOp }) {
   const d = duties && duties.areas ? duties : normDuties(duties);
   const [expanded, setExpanded] = useState(() => new Set());
+  const [toast, setToast] = useState("");
   const [filterArea, setFilterArea] = useState(null);
   const [filterPerson, setFilterPerson] = useState(null);
   const [fpOpen, setFpOpen] = useState(false);
@@ -1831,6 +1842,11 @@ function DutiesBoard({ duties, onChange }) {
   const [recKey, setRecKey] = useState(null);
   const [manageOpen, setManageOpen] = useState(false);
   const personById = Object.fromEntries(d.people.map((p) => [p.id, p]));
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 1800); return () => clearTimeout(t); }, [toast]);
+  const addToTasks = (sub) => {
+    const r = onAddOp ? onAddOp(sub.name, sub.recur) : "empty";
+    setToast(r === "added" ? "Добавлено в Задачи" : r === "exists" ? "Уже в Задачах" : "Введите название подзадачи");
+  };
 
   // Все мутации читают АКТУАЛЬНОЕ состояние из рефа, а не из устаревшего замыкания —
   // иначе быстрый ввод и перерисовки от облачного эха могли бы затирать правки.
@@ -1945,6 +1961,7 @@ function DutiesBoard({ duties, onChange }) {
                             <input value={s.name} onChange={(e) => patchSub(f.id, s.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-600 focus:outline-none" />
                             <RecBadge recur={s.recur} k={`s:${f.id}:${s.id}`} onChange={(r) => patchSub(f.id, s.id, { recur: r })} />
                             <Pill who={s.assignee} k={`s:${f.id}:${s.id}`} onPick={(pid) => patchSub(f.id, s.id, { assignee: pid })} />
+                            <button onClick={() => addToTasks(s)} className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-700" title="Добавить в Задачи (операционная задача)"><CalendarPlus size={14} /></button>
                             <button onClick={() => removeSub(f.id, s.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={13} /></button>
                           </div>
                         ))}
@@ -2008,6 +2025,8 @@ function DutiesBoard({ duties, onChange }) {
           </div>
         </div>
       )}
+
+      {toast && <div className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">{toast}</div>}
     </div>
   );
 }
@@ -4656,7 +4675,7 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
 function TasksView({ jobs, taskLabels, products, opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
-  const [view, setView] = useState("cal"); // cal | gantt
+  const [view, setView] = useState("gantt"); // cal | gantt
   const todayStr = isoYMD(now);
 
   const labelColor = (id) => (taskLabels || []).find((l) => l.id === id)?.color || "#cbd5e1";
@@ -5772,7 +5791,6 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
         <div className="flex flex-wrap gap-1.5 border-b border-neutral-100 px-5 py-2.5">
           <TabBtn id="statuses">Статусы</TabBtn>
           <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
-          <TabBtn id="ops">Операционные</TabBtn>
           <TabBtn id="labels">Метки</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
