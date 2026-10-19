@@ -43,7 +43,7 @@ const TABS = [
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
   { id: "strategy", label: "Стратегия" },
-  { id: "duties", label: "Обязанности" },
+  { id: "duties", label: "Функционал" },
 ];
 
 // Задачи диаграммы Ганта (общие для всех товаров). kind задаёт поведение строки.
@@ -503,6 +503,7 @@ export default function AssortmentTable() {
 
   const syncedRef = useRef({ products: new Map(), settings: {} });
   const dirtyRef = useRef({ products: new Set(), settings: new Set() });
+  const desiredRef = useRef({ settings: {} }); // последнее желаемое значение каждого ключа (для защиты от гонки эха)
   const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], purchaseBatches: [], jobs: [], opTypes: [], subjects: [], customDBs: [] });
   listSettingsRef.current = { bloggerDB, razdachDB, purchases, purchaseBatches, jobs, opTypes, subjects, customDBs };
 
@@ -589,7 +590,9 @@ export default function AssortmentTable() {
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
     for (const [key, value] of Object.entries(items)) {
       try {
-        if (syncedRef.current.settings[key] !== JSON.stringify(value)) {
+        const js = JSON.stringify(value);
+        desiredRef.current.settings[key] = js; // фиксируем последнее желаемое значение
+        if (syncedRef.current.settings[key] !== js) {
           dirtyRef.current.settings.add(key);
         }
       } catch {}
@@ -611,7 +614,9 @@ export default function AssortmentTable() {
             }
             dirtyRef.current.settings.add(key);
             const { error } = await upsertSetting(key, value);
-            if (!error) { syncedRef.current.settings[key] = js; dirtyRef.current.settings.delete(key); }
+            // Снимаем «грязное» только если за время сохранения значение не изменилось,
+            // иначе эхо старого значения могло бы затереть свежую правку.
+            if (!error) { syncedRef.current.settings[key] = js; if (desiredRef.current.settings[key] === js) dirtyRef.current.settings.delete(key); }
             else console.error(`[Настройки] не сохранилось «${key}»:`, error.message || error, `(размер ${js.length} симв.)`);
           } else {
             dirtyRef.current.settings.delete(key);
@@ -1827,20 +1832,23 @@ function DutiesBoard({ duties, onChange }) {
   const [manageOpen, setManageOpen] = useState(false);
   const personById = Object.fromEntries(d.people.map((p) => [p.id, p]));
 
-  const save = (next) => onChange(next);
-  const patchFn = (fid, p) => save({ ...d, functions: d.functions.map((f) => (f.id === fid ? { ...f, ...p } : f)) });
-  const patchSub = (fid, sid, p) => save({ ...d, functions: d.functions.map((f) => (f.id === fid ? { ...f, subs: f.subs.map((s) => (s.id === sid ? { ...s, ...p } : s)) } : f)) });
-  const addFunction = () => { const areaId = filterArea || d.areas[0]?.id || null; const id = uid(); save({ ...d, functions: [...d.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
-  const addFunctionTo = (areaId) => { const id = uid(); save({ ...d, functions: [...d.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
-  const removeFunction = (fid) => save({ ...d, functions: d.functions.filter((f) => f.id !== fid) });
-  const addSub = (fid) => { save({ ...d, functions: d.functions.map((f) => (f.id === fid ? { ...f, subs: [...f.subs, { id: uid(), name: "", assignee: f.assignee, recur: normRecur(f.recur) }] } : f)) }); setExpanded((s) => new Set(s).add(fid)); };
-  const removeSub = (fid, sid) => patchFn(fid, { subs: d.functions.find((f) => f.id === fid).subs.filter((s) => s.id !== sid) });
-  const addArea = () => save({ ...d, areas: [...d.areas, { id: uid(), name: "Новая область", color: SWATCHES[d.areas.length % SWATCHES.length] }] });
-  const patchArea = (aid, p) => save({ ...d, areas: d.areas.map((a) => (a.id === aid ? { ...a, ...p } : a)) });
-  const removeArea = (aid) => save({ ...d, areas: d.areas.filter((a) => a.id !== aid), functions: d.functions.map((f) => (f.areaId === aid ? { ...f, areaId: null } : f)) });
-  const addPerson = () => save({ ...d, people: [...d.people, { id: uid(), name: "Новый", color: SWATCHES[d.people.length % SWATCHES.length] }] });
-  const patchPerson = (pid, p) => save({ ...d, people: d.people.map((x) => (x.id === pid ? { ...x, ...p } : x)) });
-  const removePerson = (pid) => save({ ...d, people: d.people.filter((x) => x.id !== pid), functions: d.functions.map((f) => ({ ...f, assignee: f.assignee === pid ? null : f.assignee, subs: f.subs.map((s) => ({ ...s, assignee: s.assignee === pid ? null : s.assignee })) })) });
+  // Все мутации читают АКТУАЛЬНОЕ состояние из рефа, а не из устаревшего замыкания —
+  // иначе быстрый ввод и перерисовки от облачного эха могли бы затирать правки.
+  const stateRef = useRef(d); stateRef.current = d;
+  const save = (next) => { stateRef.current = next; onChange(next); };
+  const patchFn = (fid, p) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, ...p } : f)) }); };
+  const patchSub = (fid, sid, p) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: f.subs.map((s) => (s.id === sid ? { ...s, ...p } : s)) } : f)) }); };
+  const addFunction = () => { const c = stateRef.current; const areaId = filterArea || c.areas[0]?.id || null; const id = uid(); save({ ...c, functions: [...c.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
+  const addFunctionTo = (areaId) => { const c = stateRef.current; const id = uid(); save({ ...c, functions: [...c.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
+  const removeFunction = (fid) => { const c = stateRef.current; save({ ...c, functions: c.functions.filter((f) => f.id !== fid) }); };
+  const addSub = (fid) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: [...f.subs, { id: uid(), name: "", assignee: f.assignee, recur: normRecur(f.recur) }] } : f)) }); setExpanded((s) => new Set(s).add(fid)); };
+  const removeSub = (fid, sid) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: f.subs.filter((s) => s.id !== sid) } : f)) }); };
+  const addArea = () => { const c = stateRef.current; save({ ...c, areas: [...c.areas, { id: uid(), name: "Новая область", color: SWATCHES[c.areas.length % SWATCHES.length] }] }); };
+  const patchArea = (aid, p) => { const c = stateRef.current; save({ ...c, areas: c.areas.map((a) => (a.id === aid ? { ...a, ...p } : a)) }); };
+  const removeArea = (aid) => { const c = stateRef.current; save({ ...c, areas: c.areas.filter((a) => a.id !== aid), functions: c.functions.map((f) => (f.areaId === aid ? { ...f, areaId: null } : f)) }); };
+  const addPerson = () => { const c = stateRef.current; save({ ...c, people: [...c.people, { id: uid(), name: "Новый", color: SWATCHES[c.people.length % SWATCHES.length] }] }); };
+  const patchPerson = (pid, p) => { const c = stateRef.current; save({ ...c, people: c.people.map((x) => (x.id === pid ? { ...x, ...p } : x)) }); };
+  const removePerson = (pid) => { const c = stateRef.current; save({ ...c, people: c.people.filter((x) => x.id !== pid), functions: c.functions.map((f) => ({ ...f, assignee: f.assignee === pid ? null : f.assignee, subs: f.subs.map((s) => ({ ...s, assignee: s.assignee === pid ? null : s.assignee })) })) }); };
 
   // нагрузка
   const load = {}; d.people.forEach((p) => (load[p.id] = 0)); let unassigned = 0;
@@ -2122,28 +2130,24 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
                   <td className="px-3 py-2 text-right"><button onClick={() => removeItem(it.id)} className="text-neutral-300 hover:text-red-500" title="Убрать из партии"><X size={14} /></button></td>
                 </tr>
               ))}
-              <tr className="border-t border-neutral-100">
-                <td colSpan={9} className="px-3 py-3">
-                  <div className="relative inline-block">
-                    <button onClick={() => setPicker((o) => !o)} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Товар в партию</button>
-                    {picker && <><div className="fixed inset-0 z-10" onClick={() => { setPicker(false); setPq(""); }} />
-                      <div className="absolute bottom-full left-0 z-20 mb-1 w-80 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg">
-                        <input autoFocus value={pq} onChange={(e) => setPq(e.target.value)} placeholder="Поиск по коду или названию…" className="mb-2 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                        <div className="max-h-64 overflow-auto">
-                          {pcands.length === 0 && <div className="px-2 py-3 text-center text-xs text-neutral-400">Нет подходящих товаров</div>}
-                          {pcands.slice(0, 50).map((p) => (
-                            <button key={p.id} onClick={() => addItem(p.id)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50">
-                              <div className="flex h-9 w-7 shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={12} />}</div>
-                              <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><div className="truncate text-sm text-neutral-700">{p.name || "Без названия"}</div></div>
-                            </button>
-                          ))}
-                        </div>
-                      </div></>}
-                  </div>
-                </td>
-              </tr>
             </tbody>
           </table>
+        </div>
+        <div className="relative border-t border-neutral-100 px-3 py-3">
+          <button onClick={() => setPicker((o) => !o)} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Товар в партию</button>
+          {picker && <><div className="fixed inset-0 z-30" onClick={() => { setPicker(false); setPq(""); }} />
+            <div className="absolute left-3 top-full z-40 mt-1 w-80 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl">
+              <input autoFocus value={pq} onChange={(e) => setPq(e.target.value)} placeholder="Поиск по коду или названию…" className="mb-2 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
+              <div className="max-h-72 overflow-auto">
+                {pcands.length === 0 && <div className="px-2 py-3 text-center text-xs text-neutral-400">Нет подходящих товаров</div>}
+                {pcands.slice(0, 50).map((p) => (
+                  <button key={p.id} onClick={() => addItem(p.id)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50">
+                    <div className="flex h-9 w-7 shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={12} />}</div>
+                    <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><div className="truncate text-sm text-neutral-700">{p.name || "Без названия"}</div></div>
+                  </button>
+                ))}
+              </div>
+            </div></>}
         </div>
       </div>
     </div>
