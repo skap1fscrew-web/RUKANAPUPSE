@@ -160,12 +160,13 @@ const makeDefaultCalendar = () => ({
   entry: "",   // точка входа (дедлайн, старт продаж)
   start: "",   // дата старта процесса «Логистика»
   name: "Логистика",
+  buffer: 0,   // запас до входа, дней (быть на полке за N дней до сезона)
   components: DEFAULT_CAL_COMPONENTS.map((c, i) => ({ id: uid(), name: c.name, days: c.days, color: CAL_STAGE_COLORS[i % CAL_STAGE_COLORS.length] })),
 });
 // Привести календарь к новой схеме (процесс с компонентами)
 const normalizeCalendar = (c) => {
   if (c && Array.isArray(c.components)) {
-    return { entry: c.entry || "", start: c.start || "", name: c.name || "Логистика", components: c.components };
+    return { entry: c.entry || "", start: c.start || "", name: c.name || "Логистика", buffer: Math.max(0, parseInt(c.buffer) || 0), components: c.components };
   }
   return makeDefaultCalendar();
 };
@@ -811,6 +812,7 @@ export default function AssortmentTable() {
   const setCalEntry = (pid, val) => editCal(pid, (c) => ({ ...c, entry: val }));
   const setCalStart = (pid, val) => editCal(pid, (c) => ({ ...c, start: val }));
   const setCalName = (pid, val) => editCal(pid, (c) => ({ ...c, name: val }));
+  const setCalBuffer = (pid, val) => editCal(pid, (c) => ({ ...c, buffer: val }));
   const setCalComponents = (pid, components) => editCal(pid, (c) => ({ ...c, components }));
   // копировать календарь из товара-источника в целевой (одинаковые модели разных цветов)
   const copyCalendarFrom = (targetPid, sourcePid) => {
@@ -821,6 +823,7 @@ export default function AssortmentTable() {
       entry: c.entry || "",
       start: c.start || "",
       name: c.name || "Логистика",
+      buffer: c.buffer || 0,
       components: (c.components || []).map((s) => ({ ...s, id: uid() })),
     }));
   };
@@ -1675,6 +1678,7 @@ export default function AssortmentTable() {
             onCalStart={(v) => setCalStart(cp.id, v)}
             onCalName={(v) => setCalName(cp.id, v)}
             onCalComponents={(c) => setCalComponents(cp.id, c)}
+            onCalBuffer={(v) => setCalBuffer(cp.id, v)}
             onCalCopyFrom={(sid) => copyCalendarFrom(cp.id, sid)}
             hiddenTasks={hiddenTasks}
             rnpStartDate={rnpStartDate}
@@ -3770,13 +3774,41 @@ async function parseSeasonalityXlsx(arrayBuffer) {
 
 const MON_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 
-function SeasonalityPanel({ data, onChange }) {
+function SeasonalityPanel({ data, onChange, cal, onSetComponents, onSetBuffer }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [anchor, setAnchor] = useState("entry"); // "entry" = от входа, "today" = от сегодня
   const fileRef = useRef(null);
   const points = (data && Array.isArray(data.points)) ? data.points : [];
   const entry = data?.entry || null;
   const exit = data?.exit || null;
+
+  // ---- производственный цикл (из календаря) ----
+  const comps = (cal && Array.isArray(cal.components)) ? cal.components : [];
+  const buffer = Math.max(0, parseInt(cal?.buffer) || 0);
+  const totalDays = comps.reduce((s, c) => s + Math.max(0, parseInt(c.days) || 0), 0);
+  const canEditCal = typeof onSetComponents === "function";
+  const setCompDays = (id, v) => { if (canEditCal) onSetComponents(comps.map((c) => (c.id === id ? { ...c, days: Math.max(0, parseInt(v) || 0) } : c))); };
+
+  // ---- реальные даты для вердикта «успеем ли» ----
+  const pad2 = (x) => String(x).padStart(2, "0");
+  const fmtRu = (d) => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
+  const addDays = (d, k) => { const x = new Date(d); x.setDate(x.getDate() + k); return x; };
+  const diffDays = (a, b) => Math.round((b - a) / 86400000);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const entryMD = entry ? { m: +entry.slice(5, 7) - 1, d: +entry.slice(8, 10) } : null;
+  const nextOccur = (md) => { let c = new Date(today.getFullYear(), md.m, md.d); c.setHours(0, 0, 0, 0); if (c < today) c = new Date(today.getFullYear() + 1, md.m, md.d); return c; };
+  const targetOnShelf = entryMD ? nextOccur(entryMD) : null;           // ближайший «вход» в будущем
+  const crucialStart = targetOnShelf ? addDays(targetOnShelf, -(totalDays + buffer)) : null; // крайний старт цикла
+  const slack = crucialStart ? diffDays(today, crucialStart) : null;   // запас в днях (>0 есть, <0 опоздание)
+  let verdict = null;
+  if (crucialStart != null) {
+    if (slack < 0) verdict = { kind: "late", text: `⛔ Опоздание · старт был нужен ${fmtRu(crucialStart)} (−${-slack} дн)` };
+    else if (slack <= 14) verdict = { kind: "warn", text: `⚠️ Впритык · крайний старт ${fmtRu(crucialStart)} · запас ${slack} дн` };
+    else verdict = { kind: "ok", text: `✅ Успеваем · крайний старт ${fmtRu(crucialStart)} · запас ${slack} дн` };
+  }
+  // проекция «если стартуем сегодня» → когда на полке
+  const projOnShelf = addDays(today, totalDays + buffer);
 
   const onFile = async (file) => {
     if (!file) return;
@@ -3829,6 +3861,21 @@ function SeasonalityPanel({ data, onChange }) {
     windowAvg = seg.reduce((s, p) => s + p.s, 0) / seg.length;
   }
 
+  // ---- наложение производственного цикла на график ----
+  const spanDays = n > 1 ? Math.max(1, diffDays(new Date(points[0].d + "T00:00:00"), new Date(points[n - 1].d + "T00:00:00"))) : 364;
+  const ppd = (VBW - 2 * padX) / spanDays; // пикселей на день
+  const bandH = 12, bandY = VBH - padB - bandH - 1;
+  const mdToIdx = (mo, da) => { const t = mo * 100 + da; let bi = 0, bd = 1e9; points.forEach((p, i) => { const v = (+p.d.slice(5, 7)) * 100 + (+p.d.slice(8, 10)); const dd = Math.abs(v - t); if (dd < bd) { bd = dd; bi = i; } }); return bi; };
+  const todayX = n ? xAt(mdToIdx(today.getMonth() + 1, today.getDate())) : 0;
+  let bandStartX = null, bandEndX = null; const stageRects = [];
+  if (totalDays > 0 && (anchor === "entry" ? ei >= 0 : n > 0)) {
+    if (anchor === "entry") { bandEndX = xAt(ei) - buffer * ppd; bandStartX = bandEndX - totalDays * ppd; }
+    else { bandStartX = todayX; bandEndX = todayX + totalDays * ppd; }
+    let cx = bandStartX;
+    comps.forEach((c, i) => { const w = Math.max(0, parseInt(c.days) || 0) * ppd; stageRects.push({ x: cx, w, color: c.color || CAL_STAGE_COLORS[i % CAL_STAGE_COLORS.length], name: c.name }); cx += w; });
+  }
+  const vColor = verdict ? (verdict.kind === "ok" ? { bg: "#ecfdf5", fg: "#059669", bd: "#a7f3d0" } : verdict.kind === "warn" ? { bg: "#fffbeb", fg: "#b45309", bd: "#fde68a" } : { bg: "#fef2f2", fg: "#dc2626", bd: "#fecaca" }) : null;
+
   return (
     <div>
       <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
@@ -3847,7 +3894,13 @@ function SeasonalityPanel({ data, onChange }) {
             <span>Дней: <b className="text-neutral-700">{n}</b></span>
             {peak && <span>Пик: <b className="text-neutral-700">{fmtD(peak.d)}</b> ({peak.s.toFixed(2)})</span>}
             {low && <span>Спад: <b className="text-neutral-700">{fmtD(low.d)}</b> ({low.s.toFixed(2)})</span>}
-            <button onClick={() => fileRef.current?.click()} className="ml-auto inline-flex items-center gap-1 text-sky-600 hover:underline">Загрузить заново</button>
+            {totalDays > 0 && (
+              <span className="ml-auto inline-flex items-center rounded-lg bg-neutral-100 p-0.5" title="Куда откладывать цикл">
+                <button onClick={() => setAnchor("entry")} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${anchor === "entry" ? "bg-white text-neutral-800 shadow-sm" : "text-neutral-500"}`}>Цикл от входа</button>
+                <button onClick={() => setAnchor("today")} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${anchor === "today" ? "bg-white text-neutral-800 shadow-sm" : "text-neutral-500"}`}>от сегодня</button>
+              </span>
+            )}
+            <button onClick={() => fileRef.current?.click()} className={`${totalDays > 0 ? "" : "ml-auto"} inline-flex items-center gap-1 text-sky-600 hover:underline`}>Загрузить заново</button>
           </div>
 
           <svg viewBox={`0 0 ${VBW} ${VBH}`} className="w-full cursor-crosshair select-none" style={{ height: 210 }} onClick={onChartClick}>
@@ -3882,6 +3935,33 @@ function SeasonalityPanel({ data, onChange }) {
                 <circle cx={xAt(xi)} cy={yAt(points[xi].s)} r="3.5" fill="#dc2626" />
               </g>
             )}
+            {/* линия «сегодня» */}
+            {n > 0 && (
+              <g>
+                <line x1={todayX} x2={todayX} y1={padT} y2={VBH - padB} stroke="#f59e0b" strokeWidth="1.3" strokeDasharray="5 4" />
+                <text x={todayX + (todayX > VBW - 60 ? -4 : 4)} y={padT + 9} fontSize="9" fontWeight="700" fill="#d97706" textAnchor={todayX > VBW - 60 ? "end" : "start"}>сегодня</text>
+              </g>
+            )}
+            {/* полоса производственного цикла */}
+            {stageRects.length > 0 && (
+              <g>
+                {/* запас до входа (пунктирный зазор), только в режиме «от входа» */}
+                {anchor === "entry" && buffer > 0 && (
+                  <rect x={bandEndX} y={bandY} width={buffer * ppd} height={bandH} fill="#f3f4f6" stroke="#d4d4d8" strokeWidth="0.8" strokeDasharray="3 2" />
+                )}
+                {stageRects.map((s, i) => (
+                  <rect key={i} x={s.x} y={bandY} width={Math.max(0, s.w)} height={bandH} fill={s.color} opacity="0.92">
+                    <title>{s.name}</title>
+                  </rect>
+                ))}
+                {/* рамка всего цикла */}
+                <rect x={bandStartX} y={bandY} width={Math.max(0, bandEndX - bandStartX)} height={bandH} fill="none" stroke="#ffffff" strokeWidth="1" />
+                <text x={bandStartX} y={bandY - 3} fontSize="9" fontWeight="700" fill="#525252">◀ старт цикла</text>
+                {anchor === "entry"
+                  ? <text x={xAt(ei) - 3} y={bandY - 3} fontSize="9" fontWeight="700" fill="#16a34a" textAnchor="end">на полке</text>
+                  : <text x={Math.min(bandEndX + 3, VBW - padX)} y={bandY - 3} fontSize="9" fontWeight="700" fill="#2563eb">выйдем на полку</text>}
+              </g>
+            )}
           </svg>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -3891,6 +3971,60 @@ function SeasonalityPanel({ data, onChange }) {
             {(entry || exit) && <button onClick={() => onChange({ ...data, points, entry: null, exit: null })} className="ml-auto text-neutral-400 hover:text-red-500">Сбросить точки</button>}
           </div>
           <p className="mt-1 text-[11px] text-neutral-400">Кликните по графику, чтобы отметить точку входа, затем ещё раз — точку выхода.</p>
+
+          {/* ---- производственный цикл ---- */}
+          <div className="mt-4 border-t border-neutral-100 pt-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <h5 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Производственный цикл</h5>
+              {verdict ? (
+                <span className="ml-auto inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold" style={{ background: vColor.bg, color: vColor.fg, borderColor: vColor.bd }}>{verdict.text}</span>
+              ) : (
+                <span className="ml-auto text-[11px] text-neutral-400">{entry ? "добавьте этапы цикла ниже" : "отметьте точку входа на графике"}</span>
+              )}
+            </div>
+
+            {comps.length > 0 && (
+              <div className="flex flex-wrap items-end gap-2">
+                {comps.map((c, i) => (
+                  <label key={c.id} className="flex flex-col gap-1">
+                    <span className="text-[10px] text-neutral-500">{c.name || `Этап ${i + 1}`}</span>
+                    <span className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2 py-1">
+                      <span className="h-2 w-2 rounded-sm" style={{ background: c.color || CAL_STAGE_COLORS[i % CAL_STAGE_COLORS.length] }} />
+                      <input type="number" min="0" value={c.days} onChange={(e) => setCompDays(c.id, e.target.value)} disabled={!canEditCal} className="w-11 border-none p-0 text-right text-sm font-bold text-neutral-800 outline-none disabled:bg-transparent" />
+                      <span className="text-[10px] text-neutral-400">дн</span>
+                    </span>
+                  </label>
+                ))}
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] text-neutral-500">Запас до входа</span>
+                  <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 bg-white px-2 py-1">
+                    <input type="number" min="0" value={buffer} onChange={(e) => typeof onSetBuffer === "function" && onSetBuffer(Math.max(0, parseInt(e.target.value) || 0))} disabled={typeof onSetBuffer !== "function"} className="w-11 border-none p-0 text-right text-sm font-bold text-neutral-800 outline-none disabled:bg-transparent" />
+                    <span className="text-[10px] text-neutral-400">дн</span>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {totalDays > 0 && (
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-neutral-100 pt-2 text-xs">
+                <span className="text-neutral-500">Цикл всего: <b className="text-neutral-800">{totalDays} дн</b>{buffer > 0 && <span className="text-neutral-400"> + запас {buffer}</span>}</span>
+                {anchor === "entry" ? (
+                  <>
+                    {targetOnShelf && <span className="text-neutral-500">Цель «на полке»: <b className="text-neutral-800">{fmtRu(targetOnShelf)}</b></span>}
+                    {crucialStart && <span className="text-neutral-500">Крайний старт: <b className="text-neutral-800">{fmtRu(crucialStart)}</b></span>}
+                    <span className="text-neutral-500">Сегодня: <b className="text-neutral-800">{fmtRu(today)}</b></span>
+                    {slack != null && <span className="text-neutral-500">Запас: <b style={{ color: vColor?.fg }}>{slack < 0 ? `опоздание ${-slack} дн` : `${slack} дн`}</b></span>}
+                  </>
+                ) : (
+                  <>
+                    <span className="text-neutral-500">Старт сегодня: <b className="text-neutral-800">{fmtRu(today)}</b></span>
+                    <span className="text-neutral-500">Выйдем на полку: <b className="text-neutral-800">{fmtRu(projOnShelf)}</b></span>
+                    {targetOnShelf && <span className="text-neutral-500">Цель входа: <b className="text-neutral-800">{fmtRu(targetOnShelf)}</b> <span style={{ color: diffDays(projOnShelf, targetOnShelf) >= 0 ? "#059669" : "#dc2626" }}>({diffDays(projOnShelf, targetOnShelf) >= 0 ? `успеваем на ${diffDays(projOnShelf, targetOnShelf)} дн раньше` : `позже на ${-diffDays(projOnShelf, targetOnShelf)} дн`})</span></span>}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </>
       )}
       {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{err}</p>}
@@ -3993,7 +4127,7 @@ function PromoDayEditor({ product, dkey, wbOrders = {}, onSetCell, onSetFlag, on
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onSetField, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onSetField, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -4450,11 +4584,11 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                           <div className="mt-3 flex items-center gap-2"><input value={compUrl} onChange={(e) => setCompUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addComp()} placeholder="Ссылка на карточку ВБ…" className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" /><button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex shrink-0 items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"><Plus size={14} /> Добавить</button></div>
                         </div>
                         <div className="border-t border-neutral-100 pt-4">
-                          <button onClick={() => setSeasonOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">{seasonOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Сезонность</h4>{product.seasonality?.points?.length > 0 && <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}</button>
-                          {seasonOpen && <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} />}
+                          <button onClick={() => setSeasonOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">{seasonOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Сезонность и производство</h4>{product.seasonality?.points?.length > 0 && <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}</button>
+                          {seasonOpen && <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} cal={normalizeCalendar(product.calendar)} onSetComponents={onCalComponents} onSetBuffer={onCalBuffer} />}
                         </div>
                         <div className="border-t border-neutral-100 pt-4">
-                          <button onClick={() => setCalBlockOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">{calBlockOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Календарь</h4></button>
+                          <button onClick={() => setCalBlockOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">{calBlockOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Подробный календарь по датам</h4></button>
                           {calBlockOpen && (<CalendarBlock product={product} productList={productList || []} onSetEntry={onCalEntry} onSetStart={onCalStart} onSetName={onCalName} onSetComponents={onCalComponents} onCopyFrom={onCalCopyFrom} />)}
                         </div>
                       </div>
