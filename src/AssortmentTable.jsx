@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -43,6 +43,7 @@ const TABS = [
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
   { id: "strategy", label: "Стратегия" },
+  { id: "duties", label: "Обязанности" },
 ];
 
 // Задачи диаграммы Ганта (общие для всех товаров). kind задаёт поведение строки.
@@ -452,6 +453,7 @@ export default function AssortmentTable() {
   const [metricsByGroup, setMetricsByGroup] = useState(DEFAULT_METRICS_BY_GROUP);
   const [warehouses, setWarehouses] = useState(DEFAULT_WAREHOUSES);
   const [purchases, setPurchases] = useState([]);
+  const [purchaseBatches, setPurchaseBatches] = useState([]); // блок «Закупки» — партии [{id,name,status,cny,usd,cargo,items:[{id,productId,priceCny,qty}]}]
   const [jobs, setJobs] = useState([]); // блок «Задачи» — задачи с датой [{id,title,date,done,labelId,productId}]
   const [jobEditor, setJobEditor] = useState(null); // {id?...} открытое окно задачи
   const [rnpStartDate, setRnpStartDate] = useState(() => {
@@ -485,6 +487,7 @@ export default function AssortmentTable() {
   const [dbActive, setDbActive] = useState("blogger"); // blogger | razdach | <customId>
   const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
   const [strategy, setStrategy] = useState(() => normStrategy(null)); // блок «Стратегия» — карты холстов
+  const [duties, setDuties] = useState(() => normDuties(null)); // блок «Обязанности» — области/функции/подфункции/исполнители
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
@@ -500,8 +503,8 @@ export default function AssortmentTable() {
 
   const syncedRef = useRef({ products: new Map(), settings: {} });
   const dirtyRef = useRef({ products: new Set(), settings: new Set() });
-  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], jobs: [], opTypes: [], subjects: [], customDBs: [] });
-  listSettingsRef.current = { bloggerDB, razdachDB, purchases, jobs, opTypes, subjects, customDBs };
+  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], purchaseBatches: [], jobs: [], opTypes: [], subjects: [], customDBs: [] });
+  listSettingsRef.current = { bloggerDB, razdachDB, purchases, purchaseBatches, jobs, opTypes, subjects, customDBs };
 
   // UI-настройки (личные) — localStorage
   useEffect(() => {
@@ -525,6 +528,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.statuses) && settings.statuses.length) { setStatuses(settings.statuses); syncedRef.current.settings.statuses = JSON.stringify(settings.statuses); }
         if (Array.isArray(settings.warehouses) && settings.warehouses.length) { setWarehouses(settings.warehouses); syncedRef.current.settings.warehouses = JSON.stringify(settings.warehouses); }
         if (Array.isArray(settings.purchases)) { setPurchases(settings.purchases); syncedRef.current.settings.purchases = JSON.stringify(settings.purchases); }
+        if (Array.isArray(settings.purchaseBatches)) { setPurchaseBatches(settings.purchaseBatches); syncedRef.current.settings.purchaseBatches = JSON.stringify(settings.purchaseBatches); }
         if (Array.isArray(settings.jobs)) { setJobs(settings.jobs); syncedRef.current.settings.jobs = JSON.stringify(settings.jobs); }
         if (Array.isArray(settings.bloggerDB)) { setBloggerDB(settings.bloggerDB); syncedRef.current.settings.bloggerDB = JSON.stringify(settings.bloggerDB); }
         if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = JSON.stringify(settings.razdachDB); }
@@ -535,6 +539,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.subjects)) { setSubjects(settings.subjects); syncedRef.current.settings.subjects = JSON.stringify(settings.subjects); }
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
+        if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
         if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
@@ -578,7 +583,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, strategy, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, strategy, duties, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -617,7 +622,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, strategy, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, opTypes, opDone, subjects, customDBs, strategy, duties, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -648,6 +653,7 @@ export default function AssortmentTable() {
         if (key === "statuses") setStatuses(value);
         else if (key === "warehouses") setWarehouses(value);
         else if (key === "purchases") setPurchases(value);
+        else if (key === "purchaseBatches") setPurchaseBatches(value || []);
         else if (key === "jobs") setJobs(value || []);
         else if (key === "bloggerDB") setBloggerDB(value);
         else if (key === "razdachDB") setRazdachDB(value);
@@ -658,6 +664,7 @@ export default function AssortmentTable() {
         else if (key === "subjects") setSubjects(value || []);
         else if (key === "customDBs") setCustomDBs(value || []);
         else if (key === "strategy") { if (value && typeof value === "object") setStrategy(normStrategy(value)); }
+        else if (key === "duties") { if (value && typeof value === "object") setDuties(normDuties(value)); }
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
@@ -1022,9 +1029,28 @@ export default function AssortmentTable() {
   const exportCsv = () => {
     let head, rows, fname;
     if (activeTab === "purchases") {
-      head = ["Предмет", "Наименование"];
-      rows = purchases.map((p) => [p.subject, p.name]);
-      fname = "purchases";
+      head = ["Партия", "Статус", "Код", "Товар", "Цена ¥/ед", "Вес, г", "Цена ₽/ед", "Кол-во", "Сумма ¥", "Сумма ₽"];
+      const ST = { draft: "Черновик", paid: "Оплачено", transit: "В пути", received: "Получено" };
+      rows = (purchaseBatches || []).flatMap((b) => {
+        const cny = toNum(b.cny), usd = toNum(b.usd), cargo = toNum(b.cargo);
+        return (b.items || []).map((it) => {
+          const pr = products.find((p) => p.id === it.productId) || {};
+          const w = toNum(pr?.purchase?.weightG), pc = toNum(it.priceCny), q = toNum(it.qty);
+          const rub = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
+          return [b.name, ST[b.status] || "", pr.code || "", pr.name || "", it.priceCny || "", pr?.purchase?.weightG || "", Math.round(rub), it.qty || "", (isNaN(pc) || isNaN(q) ? "" : pc * q), (isNaN(q) ? "" : Math.round(rub * q))];
+        });
+      });
+      fname = "zakupki";
+    } else if (activeTab === "duties") {
+      head = ["Область", "Функция", "Подфункция", "Исполнитель", "Периодичность"];
+      const areaName = (id) => (duties.areas.find((a) => a.id === id) || {}).name || "";
+      const personName = (id) => (duties.people.find((p) => p.id === id) || {}).name || "Не назначен";
+      rows = (duties.functions || []).flatMap((f) => {
+        const base = [[areaName(f.areaId), f.name, "", personName(f.assignee), describeRecur(f.recur)]];
+        const subs = (f.subs || []).map((s) => [areaName(f.areaId), f.name, s.name, personName(s.assignee), describeRecur(s.recur)]);
+        return [...base, ...subs];
+      });
+      fname = "obyazannosti";
     } else if (planGroup) {
       // План отгрузок: строка на каждый размер, столбцы складов = штуки
       head = ["Код", "Наименование", "Размер", "Общее кол-во", "Кол-во к поставке", ...warehouses.map((w) => w.name), "Сумма"];
@@ -1126,7 +1152,7 @@ export default function AssortmentTable() {
                 );
               })}
             </div>
-            <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchases.length} в плане закупок` : activeTab === "tasks" ? `${jobs.length} задач` : `${filteredProducts.length} товаров`}</span>
+            <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchaseBatches.length} ${(() => { const n = purchaseBatches.length % 100, d = n % 10; return n > 10 && n < 20 ? "партий" : d === 1 ? "партия" : d >= 2 && d <= 4 ? "партии" : "партий"; })()}` : activeTab === "tasks" ? `${jobs.length} задач` : activeTab === "duties" ? `${(duties.functions || []).length} функций` : `${filteredProducts.length} товаров`}</span>
             {activeTab !== "purchases" && activeTab !== "tasks" && (
               <input value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Фильтр по коду" className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-sm text-neutral-700 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ width: 140 }} />
             )}
@@ -1537,12 +1563,11 @@ export default function AssortmentTable() {
         )}
 
         {activeTab === "purchases" && (
-          <PurchasesTable
-            purchases={purchases}
-            onAdd={addPurchase}
-            onSetField={updatePurchase}
-            onRemove={removePurchase}
-            onTransfer={transferPurchase}
+          <PurchasesBoard
+            batches={purchaseBatches}
+            onChange={setPurchaseBatches}
+            products={products}
+            defaultRates={{ cny: unitConst.cny, usd: unitConst.usd, cargo: unitConst.cargo }}
           />
         )}
 
@@ -1566,6 +1591,10 @@ export default function AssortmentTable() {
             onChange={setStrategy}
             onCreateTask={(title, date) => upsertJob({ id: uid(), title: (title || "Задача").slice(0, 200), date: date || null, start: null, done: false, labelId: null, productId: null })}
           />
+        )}
+
+        {activeTab === "duties" && (
+          <DutiesBoard duties={duties} onChange={setDuties} />
         )}
       </div>
 
@@ -1761,6 +1790,365 @@ function FragmentRow({ children }) {
 /* ----------------------------------------------------------------------------
    Вкладка «Закупки» — отдельный список планируемых к закупке товаров
 ---------------------------------------------------------------------------- */
+
+/* ============================ Блок «Обязанности» ============================ */
+function seedDuties() {
+  const a1 = uid(), a2 = uid(), p1 = uid(), p2 = uid(), p3 = uid();
+  const mkFn = (areaId, name, assignee, wds, subs) => ({ id: uid(), areaId, name, assignee, recur: normRecur({ mode: "weekly", weekdays: wds }), subs: subs || [] });
+  const mkSub = (name, assignee, wds) => ({ id: uid(), name, assignee, recur: normRecur({ mode: "weekly", weekdays: wds }) });
+  return {
+    areas: [{ id: a1, name: "Закупки", color: "#2563eb" }, { id: a2, name: "Продажи", color: "#10b981" }],
+    people: [{ id: p1, name: "Аня", color: "#ef4444" }, { id: p2, name: "Игорь", color: "#f59e0b" }, { id: p3, name: "Марина", color: "#8b5cf6" }],
+    functions: [
+      mkFn(a1, "Работа с поставщиками", p1, [1, 4], [mkSub("Поиск новых поставщиков", p1, [1]), mkSub("Запрос цен и образцов", p1, [1, 4])]),
+      mkFn(a1, "Логистика и приёмка", p2, [1, 2, 3, 4, 5, 6, 0], []),
+      mkFn(a2, "Контент и карточки", p3, [2, 5], []),
+      mkFn(a2, "Реклама и аналитика", null, [1, 2, 3, 4, 5, 6, 0], []),
+    ],
+  };
+}
+function normDuties(v) {
+  if (!v || typeof v !== "object") return seedDuties();
+  const areas = Array.isArray(v.areas) ? v.areas.filter((a) => a && typeof a === "object").map((a) => ({ id: a.id || uid(), name: a.name || "Область", color: a.color || "#6366f1" })) : [];
+  const people = Array.isArray(v.people) ? v.people.filter((p) => p && typeof p === "object").map((p) => ({ id: p.id || uid(), name: p.name || "Исполнитель", color: p.color || "#64748b" })) : [];
+  const normSub = (s) => ({ id: s.id || uid(), name: s.name || "", assignee: s.assignee || null, recur: normRecur(s.recur) });
+  const functions = Array.isArray(v.functions) ? v.functions.filter((f) => f && typeof f === "object").map((f) => ({ id: f.id || uid(), areaId: f.areaId || null, name: f.name || "", assignee: f.assignee || null, recur: normRecur(f.recur), subs: Array.isArray(f.subs) ? f.subs.map(normSub) : [] })) : [];
+  return { areas, people, functions };
+}
+
+function DutiesBoard({ duties, onChange }) {
+  const d = duties && duties.areas ? duties : normDuties(duties);
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [filterArea, setFilterArea] = useState(null);
+  const [filterPerson, setFilterPerson] = useState(null);
+  const [fpOpen, setFpOpen] = useState(false);
+  const [asgKey, setAsgKey] = useState(null);
+  const [recKey, setRecKey] = useState(null);
+  const [manageOpen, setManageOpen] = useState(false);
+  const personById = Object.fromEntries(d.people.map((p) => [p.id, p]));
+
+  const save = (next) => onChange(next);
+  const patchFn = (fid, p) => save({ ...d, functions: d.functions.map((f) => (f.id === fid ? { ...f, ...p } : f)) });
+  const patchSub = (fid, sid, p) => save({ ...d, functions: d.functions.map((f) => (f.id === fid ? { ...f, subs: f.subs.map((s) => (s.id === sid ? { ...s, ...p } : s)) } : f)) });
+  const addFunction = () => { const areaId = filterArea || d.areas[0]?.id || null; const id = uid(); save({ ...d, functions: [...d.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
+  const addFunctionTo = (areaId) => { const id = uid(); save({ ...d, functions: [...d.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
+  const removeFunction = (fid) => save({ ...d, functions: d.functions.filter((f) => f.id !== fid) });
+  const addSub = (fid) => { save({ ...d, functions: d.functions.map((f) => (f.id === fid ? { ...f, subs: [...f.subs, { id: uid(), name: "", assignee: f.assignee, recur: normRecur(f.recur) }] } : f)) }); setExpanded((s) => new Set(s).add(fid)); };
+  const removeSub = (fid, sid) => patchFn(fid, { subs: d.functions.find((f) => f.id === fid).subs.filter((s) => s.id !== sid) });
+  const addArea = () => save({ ...d, areas: [...d.areas, { id: uid(), name: "Новая область", color: SWATCHES[d.areas.length % SWATCHES.length] }] });
+  const patchArea = (aid, p) => save({ ...d, areas: d.areas.map((a) => (a.id === aid ? { ...a, ...p } : a)) });
+  const removeArea = (aid) => save({ ...d, areas: d.areas.filter((a) => a.id !== aid), functions: d.functions.map((f) => (f.areaId === aid ? { ...f, areaId: null } : f)) });
+  const addPerson = () => save({ ...d, people: [...d.people, { id: uid(), name: "Новый", color: SWATCHES[d.people.length % SWATCHES.length] }] });
+  const patchPerson = (pid, p) => save({ ...d, people: d.people.map((x) => (x.id === pid ? { ...x, ...p } : x)) });
+  const removePerson = (pid) => save({ ...d, people: d.people.filter((x) => x.id !== pid), functions: d.functions.map((f) => ({ ...f, assignee: f.assignee === pid ? null : f.assignee, subs: f.subs.map((s) => ({ ...s, assignee: s.assignee === pid ? null : s.assignee })) })) });
+
+  // нагрузка
+  const load = {}; d.people.forEach((p) => (load[p.id] = 0)); let unassigned = 0;
+  d.functions.forEach((f) => {
+    if (f.assignee && load[f.assignee] != null) load[f.assignee]++; else unassigned++;
+    f.subs.forEach((s) => { if (s.assignee && load[s.assignee] != null) load[s.assignee]++; else unassigned++; });
+  });
+  const maxLoad = Math.max(1, ...d.people.map((p) => load[p.id]), unassigned);
+
+  // группировка по областям
+  const orphan = d.functions.filter((f) => !d.areas.some((a) => a.id === f.areaId));
+  let groups = [...d.areas.map((a) => ({ area: a, fns: d.functions.filter((f) => f.areaId === a.id) })), ...(orphan.length ? [{ area: null, fns: orphan }] : [])];
+  if (filterArea) groups = groups.filter((g) => g.area && g.area.id === filterArea);
+  const fpMatch = (f) => !filterPerson || f.assignee === filterPerson || f.subs.some((s) => s.assignee === filterPerson);
+
+  const Avatar = ({ p, sm }) => <span className={"flex items-center justify-center rounded-full font-bold text-white " + (sm ? "h-5 w-5 text-[10px]" : "h-6 w-6 text-[11px]")} style={{ background: p ? p.color : "#cfcfd6" }}>{p ? (p.name[0] || "?").toUpperCase() : "?"}</span>;
+
+  const Pill = ({ who, k, onPick }) => {
+    const p = who ? personById[who] : null; const open = asgKey === k;
+    return (
+      <span className="relative shrink-0">
+        <button onClick={(e) => { e.stopPropagation(); setAsgKey(open ? null : k); setRecKey(null); }} className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 py-0.5 pl-0.5 pr-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">
+          <Avatar p={p} sm /><span className={p ? "" : "text-neutral-400"}>{p ? p.name : "Не назначен"}</span><ChevronDown size={11} className="text-neutral-300" />
+        </button>
+        {open && <><div className="fixed inset-0 z-10" onClick={() => setAsgKey(null)} /><div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+          <button onClick={() => { onPick(null); setAsgKey(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-neutral-400 hover:bg-neutral-50"><Avatar p={null} sm />Не назначен</button>
+          {d.people.map((pp) => <button key={pp.id} onClick={() => { onPick(pp.id); setAsgKey(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50"><Avatar p={pp} sm />{pp.name}</button>)}
+          <div className="mt-1 border-t border-neutral-100 pt-1"><button onClick={() => { setManageOpen(true); setAsgKey(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-neutral-400 hover:bg-neutral-50"><Users size={12} /> Управление</button></div>
+        </div></>}
+      </span>
+    );
+  };
+  const RecBadge = ({ recur, k, onChange: onRec }) => {
+    const open = recKey === k;
+    return (
+      <span className="relative shrink-0">
+        <button onClick={(e) => { e.stopPropagation(); setRecKey(open ? null : k); setAsgKey(null); }} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1 text-xs font-semibold text-neutral-600 hover:bg-neutral-200"><Repeat size={11} className="text-neutral-400" /><span className="max-w-[160px] truncate">{describeRecur(recur)}</span></button>
+        {open && <><div className="fixed inset-0 z-10" onClick={() => setRecKey(null)} /><div className="absolute right-0 z-20 mt-1 w-[320px] rounded-xl border border-neutral-200 bg-white p-4 shadow-lg">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Периодичность</div>
+          <RecurEditor recur={recur} onChange={onRec} />
+        </div></>}
+      </span>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      {/* основная таблица */}
+      <div className="min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-3">
+          <span className="text-sm font-bold text-neutral-800">Функциональные обязанности</span>
+          <button onClick={addFunction} className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Функция</button>
+          <button onClick={() => setManageOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"><Users size={14} /> Управление</button>
+        </div>
+        {/* фильтры */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-100 px-4 py-2.5">
+          <button onClick={() => setFilterArea(null)} className={"rounded-full px-3 py-1 text-xs font-semibold " + (!filterArea ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200")}>Все области</button>
+          {d.areas.map((a) => <button key={a.id} onClick={() => setFilterArea(filterArea === a.id ? null : a.id)} className={"inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold " + (filterArea === a.id ? "text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200")} style={filterArea === a.id ? { background: a.color } : undefined}><span className="h-2 w-2 rounded-full" style={{ background: a.color }} />{a.name}</button>)}
+          <div className="relative ml-2">
+            <button onClick={() => setFpOpen((o) => !o)} className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">{filterPerson ? (personById[filterPerson]?.name || "Исполнитель") : "Все исполнители"} <ChevronDown size={11} /></button>
+            {fpOpen && <><div className="fixed inset-0 z-10" onClick={() => setFpOpen(false)} /><div className="absolute left-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+              <button onClick={() => { setFilterPerson(null); setFpOpen(false); }} className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-neutral-600 hover:bg-neutral-50">Все исполнители</button>
+              {d.people.map((pp) => <button key={pp.id} onClick={() => { setFilterPerson(pp.id); setFpOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50"><Avatar p={pp} sm />{pp.name}</button>)}
+            </div></>}
+          </div>
+        </div>
+
+        {/* группы по областям */}
+        {groups.map((g) => {
+          const fns = g.fns.filter(fpMatch);
+          const subCount = g.fns.reduce((a, f) => a + f.subs.length, 0);
+          return (
+            <div key={g.area ? g.area.id : "none"}>
+              <div className="flex items-center gap-2 px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: g.area ? g.area.color : "#a3a3a3" }}>
+                <span className="h-2.5 w-2.5 rounded" style={{ background: g.area ? g.area.color : "#cfcfd6" }} />{g.area ? g.area.name : "Без области"}
+                <span className="font-semibold text-neutral-300">· {g.fns.length} функ. · {subCount} подф.</span>
+              </div>
+              {fns.map((f) => {
+                const isOpen = expanded.has(f.id);
+                return (
+                  <div key={f.id} className="border-t border-neutral-100">
+                    <div className="flex items-center gap-2 px-4 py-2">
+                      <button onClick={() => setExpanded((s) => { const n = new Set(s); n.has(f.id) ? n.delete(f.id) : n.add(f.id); return n; })} className="shrink-0 text-neutral-300 hover:text-neutral-600" title={isOpen ? "Свернуть" : "Подфункции"}>{isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button>
+                      <input value={f.name} onChange={(e) => patchFn(f.id, { name: e.target.value })} placeholder="Название функции…" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-neutral-800 focus:outline-none" />
+                      {f.subs.length > 0 && <span className="shrink-0 rounded-full bg-neutral-100 px-1.5 text-[10px] font-semibold text-neutral-400">{f.subs.length}</span>}
+                      <RecBadge recur={f.recur} k={`f:${f.id}`} onChange={(r) => patchFn(f.id, { recur: r })} />
+                      <Pill who={f.assignee} k={`f:${f.id}`} onPick={(pid) => patchFn(f.id, { assignee: pid })} />
+                      <button onClick={() => removeFunction(f.id)} className="shrink-0 text-neutral-300 hover:text-red-500" title="Удалить функцию"><X size={14} /></button>
+                    </div>
+                    {isOpen && (
+                      <div className="flex flex-col gap-1 pb-2 pl-11 pr-4">
+                        {f.subs.map((s) => (
+                          <div key={s.id} className="flex items-center gap-2 border-t border-dashed border-neutral-100 py-1.5">
+                            <input value={s.name} onChange={(e) => patchSub(f.id, s.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-600 focus:outline-none" />
+                            <RecBadge recur={s.recur} k={`s:${f.id}:${s.id}`} onChange={(r) => patchSub(f.id, s.id, { recur: r })} />
+                            <Pill who={s.assignee} k={`s:${f.id}:${s.id}`} onPick={(pid) => patchSub(f.id, s.id, { assignee: pid })} />
+                            <button onClick={() => removeSub(f.id, s.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={13} /></button>
+                          </div>
+                        ))}
+                        <button onClick={() => addSub(f.id)} className="mt-0.5 inline-flex w-fit items-center gap-1 text-[12px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={12} /> Подфункция</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {g.area && !filterPerson && <button onClick={() => addFunctionTo(g.area.id)} className="m-3 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-400 hover:border-neutral-300 hover:text-neutral-600"><Plus size={13} /> Функция в «{g.area.name}»</button>}
+            </div>
+          );
+        })}
+        {d.areas.length === 0 && d.functions.length === 0 && <div className="px-4 py-12 text-center text-sm text-neutral-400">Нет областей. Откройте «Управление», чтобы добавить области и исполнителей.</div>}
+      </div>
+
+      {/* сводка нагрузки */}
+      <div className="rounded-xl border border-neutral-200 bg-white shadow-sm lg:w-[300px] lg:shrink-0">
+        <div className="px-4 pb-0.5 pt-4 text-sm font-bold text-neutral-800">Нагрузка по исполнителям</div>
+        <div className="px-4 pb-3 text-[11px] text-neutral-400">по числу функций и подфункций</div>
+        <div className="flex flex-col gap-3 px-4 pb-4">
+          {d.people.map((p) => (
+            <div key={p.id}>
+              <div className="flex items-center gap-2"><Avatar p={p} /><span className="text-[13px] font-semibold text-neutral-700">{p.name}</span><span className="ml-auto text-xs font-bold text-neutral-800">{load[p.id]}</span></div>
+              <div className="mt-1.5 ml-8 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.round((load[p.id] / maxLoad) * 100)}%`, background: p.color }} /></div>
+            </div>
+          ))}
+          <div>
+            <div className="flex items-center gap-2"><Avatar p={null} /><span className="text-[13px] font-semibold text-neutral-400">Не назначено</span><span className="ml-auto text-xs font-bold text-neutral-500">{unassigned}</span></div>
+            <div className="mt-1.5 ml-8 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full bg-neutral-300" style={{ width: `${Math.round((unassigned / maxLoad) * 100)}%` }} /></div>
+          </div>
+        </div>
+        <div className="border-t border-neutral-100 px-4 py-2.5"><button onClick={() => setManageOpen(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-400 hover:text-neutral-700"><Users size={13} /> Исполнители и области</button></div>
+      </div>
+
+      {/* модалка управления */}
+      {manageOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-neutral-900/40 p-4 pt-16" onClick={() => setManageOpen(false)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between"><h2 className="text-base font-semibold text-neutral-900">Исполнители и области</h2><button onClick={() => setManageOpen(false)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button></div>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {[{ title: "Исполнители", items: d.people, add: addPerson, patch: patchPerson, remove: removePerson }, { title: "Области", items: d.areas, add: addArea, patch: patchArea, remove: removeArea }].map((col) => (
+                <div key={col.title}>
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">{col.title}</div>
+                  <div className="flex flex-col gap-2">
+                    {col.items.map((it) => (
+                      <div key={it.id} className="rounded-lg border border-neutral-100 p-2">
+                        <div className="flex items-center gap-2">
+                          <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: it.color }} />
+                          <input value={it.name} onChange={(e) => col.patch(it.id, { name: e.target.value })} className="min-w-0 flex-1 bg-transparent text-sm font-medium text-neutral-800 focus:outline-none" />
+                          <button onClick={() => col.remove(it.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><Trash2 size={13} /></button>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-1 pl-6">{SWATCHES.map((c) => <button key={c} onClick={() => col.patch(it.id, { color: c })} className="h-4 w-4 rounded-full" style={{ background: c, boxShadow: it.color === c ? `0 0 0 2px #fff, 0 0 0 3px ${c}` : "none" }} />)}</div>
+                      </div>
+                    ))}
+                    <button onClick={col.add} className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Добавить</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Статусы партии закупки
+const PU_STATUS = { draft: { label: "Черновик", cls: "bg-neutral-100 text-neutral-500" }, paid: { label: "Оплачено", cls: "bg-emerald-50 text-emerald-600" }, transit: { label: "В пути", cls: "bg-amber-50 text-amber-600" }, received: { label: "Получено", cls: "bg-blue-50 text-blue-600" } };
+
+// Блок «Закупки» — партии (как карты в «Стратегии»); внутри партии товары из каталога.
+function PurchasesBoard({ batches, onChange, products, defaultRates }) {
+  const list = Array.isArray(batches) ? batches : [];
+  const [activeId, setActiveId] = useState(list[0]?.id || null);
+  const [editingId, setEditingId] = useState(null);
+  const [picker, setPicker] = useState(false);
+  const [pq, setPq] = useState("");
+  const [stOpen, setStOpen] = useState(false);
+  const active = list.find((b) => b.id === activeId) || list[0] || null;
+
+  const addBatch = () => { const id = uid(); const b = { id, name: `Партия #${list.length + 1}`, status: "draft", cny: defaultRates.cny || "", usd: defaultRates.usd || "", cargo: defaultRates.cargo || "", items: [] }; onChange([...list, b]); setActiveId(id); };
+  const dupBatch = (id) => { const src = list.find((b) => b.id === id); if (!src) return; const nid = uid(); const copy = JSON.parse(JSON.stringify({ ...src, id: nid, name: `${src.name} (копия)`, items: (src.items || []).map((it) => ({ ...it, id: uid() })) })); const at = list.findIndex((b) => b.id === id); const next = list.slice(); next.splice(at + 1, 0, copy); onChange(next); setActiveId(nid); };
+  const renameBatch = (id, name) => onChange(list.map((b) => (b.id === id ? { ...b, name: name.trim() || "Партия" } : b)));
+  const removeBatch = (id) => { const rest = list.filter((b) => b.id !== id); onChange(rest); if (id === activeId) setActiveId(rest[0]?.id || null); };
+  const patchBatch = (p) => onChange(list.map((b) => (b.id === active.id ? { ...b, ...p } : b)));
+  const addItem = (productId) => { patchBatch({ items: [...(active.items || []), { id: uid(), productId, priceCny: "", qty: "" }] }); setPicker(false); setPq(""); };
+  const setItem = (iid, k, v) => patchBatch({ items: active.items.map((it) => (it.id === iid ? { ...it, [k]: v } : it)) });
+  const removeItem = (iid) => patchBatch({ items: active.items.filter((it) => it.id !== iid) });
+
+  const fmtRub = (n) => (isNaN(n) ? "—" : Math.round(n).toLocaleString("ru-RU") + " ₽");
+  const fmtCny = (n) => (isNaN(n) ? "—" : (Math.round(n * 100) / 100).toLocaleString("ru-RU") + " ¥");
+
+  if (!active) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-neutral-200 bg-white py-16 text-center">
+        <div className="text-sm text-neutral-400">Пока нет ни одной партии закупки.</div>
+        <button onClick={addBatch} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Партия</button>
+      </div>
+    );
+  }
+
+  const cny = toNum(active.cny), usd = toNum(active.usd), cargo = toNum(active.cargo);
+  const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
+  const rows = (active.items || []).map((it) => {
+    const p = prodById[it.productId] || {};
+    const w = toNum(p?.purchase?.weightG), pc = toNum(it.priceCny), q = toNum(it.qty);
+    const hasUnit = !isNaN(pc);
+    const rubUnit = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
+    return { it, p, w, rubUnit: hasUnit ? rubUnit : NaN, sumCny: (!isNaN(pc) && !isNaN(q)) ? pc * q : NaN, sumRub: (hasUnit && !isNaN(q)) ? rubUnit * q : NaN, wkg: (isNaN(w) ? 0 : w) / 1000 * (isNaN(q) ? 0 : q) };
+  });
+  const tot = rows.reduce((a, r) => ({ qty: a.qty + (isNaN(toNum(r.it.qty)) ? 0 : toNum(r.it.qty)), cnySum: a.cnySum + (isNaN(r.sumCny) ? 0 : r.sumCny), rubSum: a.rubSum + (isNaN(r.sumRub) ? 0 : r.sumRub), wkg: a.wkg + r.wkg }), { qty: 0, cnySum: 0, rubSum: 0, wkg: 0 });
+
+  const inBatch = new Set((active.items || []).map((it) => it.productId));
+  const q = pq.trim().toLowerCase();
+  const pcands = (products || []).filter((p) => !inBatch.has(p.id)).filter((p) => !q || (p.code || "").toLowerCase().includes(q) || (p.name || "").toLowerCase().includes(q));
+  const stCur = PU_STATUS[active.status] || PU_STATUS.draft;
+  const rate = (label, k, suffix) => (
+    <label className="flex items-center gap-1.5 text-xs text-neutral-500">{label}
+      <input value={active[k] ?? ""} onChange={(e) => patchBatch({ [k]: e.target.value })} inputMode="decimal" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+      <span className="text-neutral-400">{suffix}</span>
+    </label>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {list.map((b) => {
+          const on = b.id === active.id;
+          if (editingId === b.id) return <input key={b.id} autoFocus defaultValue={b.name} onBlur={(e) => { renameBatch(b.id, e.target.value); setEditingId(null); }} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setEditingId(null); }} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-800 focus:outline-none" style={{ width: 160 }} />;
+          return (
+            <button key={b.id} onClick={() => setActiveId(b.id)} onDoubleClick={() => setEditingId(b.id)} title="Клик — открыть · двойной клик — переименовать" className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition " + (on ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200")}>
+              <span className="max-w-[200px] truncate">{b.name}</span>
+              {on && (<><Pencil size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingId(b.id); }} /><Copy size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); dupBatch(b.id); }} /><Trash2 size={12} className="opacity-70 hover:opacity-100 hover:text-red-300" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Удалить партию «${b.name}»?`)) removeBatch(b.id); }} /></>)}
+            </button>
+          );
+        })}
+        <button onClick={addBatch} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Партия</button>
+      </div>
+
+      <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center gap-3 border-b border-neutral-100 px-4 py-3">
+          <div className="relative">
+            <button onClick={() => setStOpen((o) => !o)} className={"inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold " + stCur.cls}>{stCur.label} <ChevronDown size={12} /></button>
+            {stOpen && <><div className="fixed inset-0 z-10" onClick={() => setStOpen(false)} /><div className="absolute left-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">{Object.keys(PU_STATUS).map((k) => <button key={k} onClick={() => { patchBatch({ status: k }); setStOpen(false); }} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50"><span className={"rounded-full px-2 py-0.5 text-[11px] font-bold " + PU_STATUS[k].cls}>{PU_STATUS[k].label}</span></button>)}</div></>}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 border-l border-neutral-200 pl-3">{rate("Курс ¥", "cny", "₽")}{rate("Курс $", "usd", "₽")}{rate("Карго", "cargo", "$/кг")}</div>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {[["Позиций", rows.length], ["Кол-во", tot.qty.toLocaleString("ru-RU")], ["Вес", (Math.round(tot.wkg * 10) / 10).toLocaleString("ru-RU") + " кг"], ["Сумма ¥", fmtCny(tot.cnySum)], ["Сумма ₽", fmtRub(tot.rubSum)]].map(([k, v]) => (
+              <div key={k} className="rounded-lg bg-neutral-50 px-3 py-1.5"><div className="text-[10px] uppercase tracking-wide text-neutral-400">{k}</div><div className="text-sm font-bold text-neutral-800">{v}</div></div>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead><tr className="text-[10px] uppercase tracking-wide text-neutral-400">
+              <th className="px-3 py-2 text-left font-semibold">Товар</th>
+              <th className="px-3 py-2 text-right font-semibold">Цена ¥/ед</th>
+              <th className="px-3 py-2 text-right font-semibold">Вес, г</th>
+              <th className="px-3 py-2 text-right font-semibold">Цена ₽/ед</th>
+              <th className="px-3 py-2 text-right font-semibold">Кол-во</th>
+              <th className="px-3 py-2 text-right font-semibold">Сумма ¥</th>
+              <th className="px-3 py-2 text-right font-semibold">Сумма ₽</th>
+              <th className="px-3 py-2 text-left font-semibold">Ссылка</th>
+              <th className="px-3 py-2" />
+            </tr></thead>
+            <tbody>
+              {rows.map(({ it, p, w, rubUnit, sumCny, sumRub }) => (
+                <tr key={it.id} className="border-t border-neutral-100 text-sm text-neutral-700">
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-11 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-neutral-100 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={14} />}</div>
+                      <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><div className="truncate font-medium text-neutral-800" style={{ maxWidth: 230 }}>{p.name || "Без названия"}</div></div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right"><input value={it.priceCny} onChange={(e) => setItem(it.id, "priceCny", e.target.value)} inputMode="decimal" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                  <td className="px-3 py-2 text-right text-neutral-500">{isNaN(w) ? "—" : w}</td>
+                  <td className="px-3 py-2 text-right text-neutral-500">{fmtRub(rubUnit)}</td>
+                  <td className="px-3 py-2 text-right"><input value={it.qty} onChange={(e) => setItem(it.id, "qty", e.target.value)} inputMode="numeric" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                  <td className="px-3 py-2 text-right">{fmtCny(sumCny)}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-neutral-900">{fmtRub(sumRub)}</td>
+                  <td className="px-3 py-2 text-left">{p?.purchase?.link ? <a href={p.purchase.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">ссылка <ExternalLink size={11} /></a> : <span className="text-xs text-neutral-300">—</span>}</td>
+                  <td className="px-3 py-2 text-right"><button onClick={() => removeItem(it.id)} className="text-neutral-300 hover:text-red-500" title="Убрать из партии"><X size={14} /></button></td>
+                </tr>
+              ))}
+              <tr className="border-t border-neutral-100">
+                <td colSpan={9} className="px-3 py-3">
+                  <div className="relative inline-block">
+                    <button onClick={() => setPicker((o) => !o)} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Товар в партию</button>
+                    {picker && <><div className="fixed inset-0 z-10" onClick={() => { setPicker(false); setPq(""); }} />
+                      <div className="absolute bottom-full left-0 z-20 mb-1 w-80 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg">
+                        <input autoFocus value={pq} onChange={(e) => setPq(e.target.value)} placeholder="Поиск по коду или названию…" className="mb-2 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                        <div className="max-h-64 overflow-auto">
+                          {pcands.length === 0 && <div className="px-2 py-3 text-center text-xs text-neutral-400">Нет подходящих товаров</div>}
+                          {pcands.slice(0, 50).map((p) => (
+                            <button key={p.id} onClick={() => addItem(p.id)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50">
+                              <div className="flex h-9 w-7 shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={12} />}</div>
+                              <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><div className="truncate text-sm text-neutral-700">{p.name || "Без названия"}</div></div>
+                            </button>
+                          ))}
+                        </div>
+                      </div></>}
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function PurchasesTable({ purchases, onAdd, onSetField, onRemove, onTransfer }) {
   const fileRef = useRef(null);
