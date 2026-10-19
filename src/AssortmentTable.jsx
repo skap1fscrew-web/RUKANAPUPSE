@@ -1602,6 +1602,7 @@ export default function AssortmentTable() {
           <DutiesBoard
             duties={duties}
             onChange={setDuties}
+            opNames={(opTypes || []).map((o) => o.name)}
             onAddOp={(name, recur) => {
               const t = (name || "").trim();
               if (!t) return "empty";
@@ -1831,8 +1832,9 @@ function normDuties(v) {
   return { areas, people, functions };
 }
 
-function DutiesBoard({ duties, onChange, onAddOp }) {
+function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
   const d = duties && duties.areas ? duties : normDuties(duties);
+  const inTasks = new Set((opNames || []).map((n) => (n || "").trim()).filter(Boolean));
   const [expanded, setExpanded] = useState(() => new Set());
   const [toast, setToast] = useState("");
   const [filterArea, setFilterArea] = useState(null);
@@ -1961,7 +1963,9 @@ function DutiesBoard({ duties, onChange, onAddOp }) {
                             <input value={s.name} onChange={(e) => patchSub(f.id, s.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-600 focus:outline-none" />
                             <RecBadge recur={s.recur} k={`s:${f.id}:${s.id}`} onChange={(r) => patchSub(f.id, s.id, { recur: r })} />
                             <Pill who={s.assignee} k={`s:${f.id}:${s.id}`} onPick={(pid) => patchSub(f.id, s.id, { assignee: pid })} />
-                            <button onClick={() => addToTasks(s)} className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-700" title="Добавить в Задачи (операционная задача)"><CalendarPlus size={14} /></button>
+                            {(() => { const inT = inTasks.has((s.name || "").trim()); return (
+                              <button onClick={() => addToTasks(s)} className={"shrink-0 rounded-md p-1 " + (inT ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "text-neutral-300 hover:bg-neutral-100 hover:text-neutral-700")} title={inT ? "Уже в Задачах" : "Добавить в Задачи (операционная задача)"}><CalendarPlus size={14} /></button>
+                            ); })()}
                             <button onClick={() => removeSub(f.id, s.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={13} /></button>
                           </div>
                         ))}
@@ -3999,6 +4003,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [showDone, setShowDone] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [fullBlock, setFullBlock] = useState(null); // "promo" | "purchase" | "analytics" — раскрытый на весь экран блок
   const [calBlockOpen, setCalBlockOpen] = useState(false);
   const [unitOpen, setUnitOpen] = useState(false);
   const [promoOpen, setPromoOpen] = useState(false);
@@ -4360,190 +4365,105 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               )}
             </section>
 
-            {/* Продвижение — превью (Фонд/Затраты/Остаток) + раскрытие Гант/Календарь */}
-            <section className="rounded-2xl border border-neutral-200 bg-white p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <button onClick={() => setPromoOpen((v) => !v)} className="flex items-center gap-1.5 text-left">
-                  {promoOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  <h3 className="text-sm font-semibold text-neutral-800">Продвижение</h3>
-                </button>
-                {promoOpen && (
-                  <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
-                    <button onClick={() => setPromoView("gantt")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "gantt" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Гант</button>
-                    <button onClick={() => setPromoView("cal")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "cal" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Календарь</button>
-                  </div>
-                )}
-                <div className="ml-auto flex flex-wrap items-center gap-2">
-                  <div className="rounded-xl border border-neutral-200 px-3 py-1">
-                    <div className="text-[10px] text-neutral-500">Фонд маркетинга</div>
-                    <div className="flex items-baseline gap-0.5">
-                      <input value={product.rnp?.budget?.allocated ?? ""} onChange={(e) => onSetRnpBudget(e.target.value)} inputMode="decimal" placeholder="0" className="w-20 bg-transparent text-sm font-bold tabular-nums text-neutral-900 focus:outline-none" />
-                      <span className="text-xs text-neutral-400">₽</span>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-neutral-200 px-3 py-1">
-                    <div className="text-[10px] text-neutral-500">Затраты</div>
-                    <div className="text-sm font-bold tabular-nums text-neutral-800">{money(promoBudget.spent)}</div>
-                  </div>
-                  <div className="rounded-xl border px-3 py-1" style={{ background: promoBudget.ostatok < 0 ? "#fef2f2" : "#f0fdf4", borderColor: promoBudget.ostatok < 0 ? "#fecaca" : "#dcfce7" }}>
-                    <div className="text-[10px] text-neutral-500">Остаток</div>
-                    <div className="text-sm font-bold tabular-nums" style={{ color: promoBudget.ostatok < 0 ? "#b91c1c" : "#15803d" }}>{money(promoBudget.ostatok)}</div>
-                  </div>
-                </div>
-              </div>
-
-              {promoOpen && (
-                <div className="mt-3 border-t border-neutral-100 pt-3">
-                  {promoView === "gantt" ? (
-                    <GanttBlock
-                      product={product}
-                      hiddenTasks={hiddenTasks}
-                      startDate={rnpStartDate}
-                      days={rnpDays}
-                      onSetStartDate={onSetRnpStartDate}
-                      onSetDays={onSetRnpDays}
-                      onSetCell={onSetRnpCell}
-                      onSetEntries={onSetRnpEntries}
-                      onSetFill={onSetRnpFill}
-                      onSetFlag={onSetRnpFlag}
-                      onSetBudget={onSetRnpBudget}
-                      onOpenPopup={onOpenPopup}
-                      onOpenDB={onOpenDB}
-                      wbOrders={wbOrders}
-                      wbLoading={wbLoading}
-                      wbProgress={wbProgress}
-                      onFetchWb={onFetchWb}
-                      hideBudget
-                    />
-                  ) : (
-                    <PromoCalendar product={product} wbOrders={wbOrders} onOpenDay={(ds) => setPromoDay(ds)} />
-                  )}
-                </div>
-              )}
-            </section>
-
-            {/* Закупка — расчёт себестоимости из Китая */}
-            <section className="rounded-2xl border border-neutral-200 bg-white p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <button onClick={() => setPurchaseOpen((v) => !v)} className="flex items-center gap-1.5 text-left">
-                  {purchaseOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  <h3 className="text-sm font-semibold text-neutral-800">Закупка</h3>
-                </button>
-                <div className="ml-auto flex flex-wrap items-center gap-2">
-                  <div className="rounded-xl border border-neutral-200 px-3 py-1">
-                    <div className="text-[10px] text-neutral-500">Цена за ед.</div>
-                    <div className="text-sm font-bold tabular-nums text-neutral-800">{money(puRubPerUnit)}</div>
-                  </div>
-                  <div className="rounded-xl border border-neutral-200 px-3 py-1">
-                    <div className="text-[10px] text-neutral-500">Партия, ₽</div>
-                    <div className="text-sm font-bold tabular-nums text-neutral-800">{money(puLotRub)}</div>
-                  </div>
-                </div>
-              </div>
-
-              {purchaseOpen && (
-                <div className="mt-3 border-t border-neutral-100 pt-3">
-                  {(isNaN(puCny) || isNaN(puUsd) || isNaN(puCargo)) && (
-                    <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Укажите курс юаня, курс доллара и ставку карго в «Настройки → Единые данные» — иначе расчёт неполный.</p>
-                  )}
-                  <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <span className="shrink-0 text-xs text-neutral-600">Ссылка</span>
-                    <div className="relative min-w-[180px] flex-[2]">
-                      <input value={pu.link ?? ""} onChange={(e) => setPu("link", e.target.value)} placeholder="https://…" className="w-full rounded-lg border border-neutral-200 px-3 py-1.5 pr-8 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                      {String(pu.link || "").trim() && <a href={pu.link} target="_blank" rel="noreferrer" className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-sky-600" title="Открыть"><ExternalLink size={14} /></a>}
-                    </div>
-                    <span className="shrink-0 text-xs text-neutral-600">Параметр</span>
-                    <input value={pu.param ?? ""} onChange={(e) => setPu("param", e.target.value)} placeholder="цвет / размер" className="min-w-[120px] flex-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      {puField("Цена в юанях за ед.", pu.priceCny, (v) => setPu("priceCny", v), "¥")}
-                      {puField("Вес, г", pu.weightG, (v) => setPu("weightG", v), "г")}
-                      {puField("Кол-во", pu.qty, (v) => setPu("qty", v), "шт")}
-                    </div>
-                    <div className="flex flex-col justify-center gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">
-                      {resRow("Цена в руб за ед.", money(puRubPerUnit))}
-                      {resRow("Цена партии в рублях", money(puLotRub))}
-                      {resRow("Цена партии в юанях", yuan(puLotCny))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </section>
-
-            {/* Аналитика — конкуренты + сезонность */}
-            <section className="rounded-2xl border border-neutral-200 bg-white">
-              <button onClick={() => setAnalyticsOpen((v) => !v)} className="flex w-full items-center gap-2 px-4 py-3 text-left">
-                <span className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-800">
-                  {analyticsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  Аналитика
-                </span>
-                <div className="ml-auto flex items-center gap-2">
-                  {competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-500">Конкуренты: {competitors.length}</span>}
-                  {product.seasonality?.points?.length > 0 && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}
-                </div>
+            {/* Блоки-плитки: Продвижение / Закупка / Аналитика (раскрываются на весь экран) */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <button onClick={() => setFullBlock("promo")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-orange-300 hover:shadow-sm">
+                <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-orange-500" />
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-400" /> Продвижение</div>
+                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{promoBudget.allocated > 0 ? Math.round((promoBudget.spent / promoBudget.allocated) * 100) : 0}<span className="text-base font-semibold text-neutral-400">%</span></div>
+                <div className="text-[11px] text-neutral-400">израсходовано фонда</div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, promoBudget.allocated > 0 ? (promoBudget.spent / promoBudget.allocated) * 100 : 0))}%`, background: promoBudget.ostatok < 0 ? "#ef4444" : "#f59e0b" }} /></div>
               </button>
-              {analyticsOpen && (
-                <div className="space-y-5 border-t border-neutral-100 px-4 py-4">
-                  {/* Конкуренты */}
-                  <div>
-                    <div className="mb-2 flex items-center gap-2">
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Конкуренты</h4>
-                      {competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span>}
-                    </div>
-                    {competitors.length > 0 ? (
-                      <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
-                        {competitors.map((c) => (<CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />))}
+
+              <button onClick={() => setFullBlock("purchase")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-sky-300 hover:shadow-sm">
+                <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-sky-500" />
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-sky-400" /> Закупка</div>
+                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{isNaN(puLotRub) ? "—" : money(puLotRub)}</div>
+                <div className="text-[11px] text-neutral-400">итоговая цена партии</div>
+                <div className="mt-2 text-[11px] text-neutral-400">за ед.: <b className="text-neutral-600">{isNaN(puRubPerUnit) ? "—" : money(puRubPerUnit)}</b></div>
+              </button>
+
+              <button onClick={() => setFullBlock("analytics")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-violet-300 hover:shadow-sm">
+                <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-violet-500" />
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-violet-400" /> Аналитика</div>
+                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">—</div>
+                <div className="text-[11px] text-neutral-400">рейтинг карточки</div>
+                <div className="mt-2 text-[11px] text-neutral-400">{competitors.length > 0 ? `конкурентов: ${competitors.length}` : "появится после анализа"}</div>
+              </button>
+            </div>
+
+            {/* Полноэкранный просмотр выбранного блока */}
+            {fullBlock && (
+              <div className="fixed inset-0 z-[70] flex items-start justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={() => setFullBlock(null)}>
+                <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
+                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "Продвижение" : fullBlock === "purchase" ? "Закупка" : "Аналитика"}</h3>
+                    {fullBlock === "promo" && (
+                      <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
+                        <button onClick={() => setPromoView("gantt")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "gantt" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Гант</button>
+                        <button onClick={() => setPromoView("cal")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "cal" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Календарь</button>
                       </div>
-                    ) : (
-                      <p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>
                     )}
-                    <div className="mt-3 flex items-center gap-2">
-                      <input
-                        value={compUrl}
-                        onChange={(e) => setCompUrl(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addComp()}
-                        placeholder="Ссылка на карточку ВБ…"
-                        className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
-                      />
-                      <button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex shrink-0 items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
-                        <Plus size={14} /> Добавить
-                      </button>
-                    </div>
+                    <button onClick={() => setFullBlock(null)} className="ml-auto rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Свернуть"><X size={18} /></button>
                   </div>
+                  <div className="min-w-0 flex-1 overflow-auto p-5">
 
-                  {/* Сезонность */}
-                  <div className="border-t border-neutral-100 pt-4">
-                    <button onClick={() => setSeasonOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">
-                      {seasonOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Сезонность</h4>
-                      {product.seasonality?.points?.length > 0 && <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}
-                    </button>
-                    {seasonOpen && <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} />}
-                  </div>
-
-                  {/* Календарь производства */}
-                  <div className="border-t border-neutral-100 pt-4">
-                    <button onClick={() => setCalBlockOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">
-                      {calBlockOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Календарь</h4>
-                    </button>
-                    {calBlockOpen && (
-                      <CalendarBlock
-                        product={product}
-                        productList={productList || []}
-                        onSetEntry={onCalEntry}
-                        onSetStart={onCalStart}
-                        onSetName={onCalName}
-                        onSetComponents={onCalComponents}
-                        onCopyFrom={onCalCopyFrom}
-                      />
+                    {fullBlock === "promo" && (
+                      <>
+                        <div className="mb-4 flex flex-wrap items-center gap-2">
+                          <div className="rounded-xl border border-neutral-200 px-3 py-1">
+                            <div className="text-[10px] text-neutral-500">Фонд маркетинга</div>
+                            <div className="flex items-baseline gap-0.5"><input value={product.rnp?.budget?.allocated ?? ""} onChange={(e) => onSetRnpBudget(e.target.value)} inputMode="decimal" placeholder="0" className="w-24 bg-transparent text-sm font-bold tabular-nums text-neutral-900 focus:outline-none" /><span className="text-xs text-neutral-400">₽</span></div>
+                          </div>
+                          <div className="rounded-xl border border-neutral-200 px-3 py-1"><div className="text-[10px] text-neutral-500">Затраты</div><div className="text-sm font-bold tabular-nums text-neutral-800">{money(promoBudget.spent)}</div></div>
+                          <div className="rounded-xl border px-3 py-1" style={{ background: promoBudget.ostatok < 0 ? "#fef2f2" : "#f0fdf4", borderColor: promoBudget.ostatok < 0 ? "#fecaca" : "#dcfce7" }}><div className="text-[10px] text-neutral-500">Остаток</div><div className="text-sm font-bold tabular-nums" style={{ color: promoBudget.ostatok < 0 ? "#b91c1c" : "#15803d" }}>{money(promoBudget.ostatok)}</div></div>
+                        </div>
+                        {promoView === "gantt" ? (
+                          <GanttBlock product={product} hiddenTasks={hiddenTasks} startDate={rnpStartDate} days={rnpDays} onSetStartDate={onSetRnpStartDate} onSetDays={onSetRnpDays} onSetCell={onSetRnpCell} onSetEntries={onSetRnpEntries} onSetFill={onSetRnpFill} onSetFlag={onSetRnpFlag} onSetBudget={onSetRnpBudget} onOpenPopup={onOpenPopup} onOpenDB={onOpenDB} wbOrders={wbOrders} wbLoading={wbLoading} wbProgress={wbProgress} onFetchWb={onFetchWb} hideBudget />
+                        ) : (
+                          <PromoCalendar product={product} wbOrders={wbOrders} onOpenDay={(ds) => setPromoDay(ds)} />
+                        )}
+                      </>
                     )}
+
+                    {fullBlock === "purchase" && (
+                      <>
+                        {(isNaN(puCny) || isNaN(puUsd) || isNaN(puCargo)) && (<p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Укажите курс юаня, курс доллара и ставку карго в «Настройки → Единые данные» — иначе расчёт неполный.</p>)}
+                        <div className="mb-4 flex flex-wrap items-center gap-2">
+                          <span className="shrink-0 text-xs text-neutral-600">Ссылка</span>
+                          <div className="relative min-w-[180px] flex-[2]"><input value={pu.link ?? ""} onChange={(e) => setPu("link", e.target.value)} placeholder="https://…" className="w-full rounded-lg border border-neutral-200 px-3 py-1.5 pr-8 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />{String(pu.link || "").trim() && <a href={pu.link} target="_blank" rel="noreferrer" className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-sky-600" title="Открыть"><ExternalLink size={14} /></a>}</div>
+                          <span className="shrink-0 text-xs text-neutral-600">Параметр</span>
+                          <input value={pu.param ?? ""} onChange={(e) => setPu("param", e.target.value)} placeholder="цвет / размер" className="min-w-[120px] flex-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="space-y-2">{puField("Цена в юанях за ед.", pu.priceCny, (v) => setPu("priceCny", v), "¥")}{puField("Вес, г", pu.weightG, (v) => setPu("weightG", v), "г")}{puField("Кол-во", pu.qty, (v) => setPu("qty", v), "шт")}</div>
+                          <div className="flex flex-col justify-center gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">{resRow("Цена в руб за ед.", money(puRubPerUnit))}{resRow("Цена партии в рублях", money(puLotRub))}{resRow("Цена партии в юанях", yuan(puLotCny))}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {fullBlock === "analytics" && (
+                      <div className="space-y-5">
+                        <div>
+                          <div className="mb-2 flex items-center gap-2"><h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Конкуренты</h4>{competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span>}</div>
+                          {competitors.length > 0 ? (<div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">{competitors.map((c) => (<CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />))}</div>) : (<p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>)}
+                          <div className="mt-3 flex items-center gap-2"><input value={compUrl} onChange={(e) => setCompUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addComp()} placeholder="Ссылка на карточку ВБ…" className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" /><button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex shrink-0 items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"><Plus size={14} /> Добавить</button></div>
+                        </div>
+                        <div className="border-t border-neutral-100 pt-4">
+                          <button onClick={() => setSeasonOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">{seasonOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Сезонность</h4>{product.seasonality?.points?.length > 0 && <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}</button>
+                          {seasonOpen && <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} />}
+                        </div>
+                        <div className="border-t border-neutral-100 pt-4">
+                          <button onClick={() => setCalBlockOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">{calBlockOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Календарь</h4></button>
+                          {calBlockOpen && (<CalendarBlock product={product} productList={productList || []} onSetEntry={onCalEntry} onSetStart={onCalStart} onSetName={onCalName} onSetComponents={onCalComponents} onCopyFrom={onCalCopyFrom} />)}
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 </div>
-              )}
-            </section>
+              </div>
+            )}
           </div>
         </div>
       </div>
