@@ -5426,7 +5426,12 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
   };
   useEffect(() => {
     const el = vpRef.current; if (!el) return;
-    const onWheel = (e) => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1); };
+    const onWheel = (e) => {
+      e.preventDefault();
+      // pinch на тачпаде (ctrl) или Ctrl/⌘+колесо — масштаб; обычный свайп двумя пальцами — панорама
+      if (e.ctrlKey || e.metaKey) { const r = el.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1); }
+      else { setView((v) => ({ ...v, tx: v.tx - e.deltaX, ty: v.ty - e.deltaY })); }
+    };
     el.addEventListener("wheel", onWheel, { passive: false });
     const ro = new ResizeObserver(() => { const r = el.getBoundingClientRect(); setVpSize({ w: r.width, h: r.height }); });
     ro.observe(el);
