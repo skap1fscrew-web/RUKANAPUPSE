@@ -5109,7 +5109,7 @@ function makeStratNode(o = {}) {
 // Новая карта выбранного шаблона — один корневой блок, дальше растим через «+».
 function makeTemplatedMap(template, name) {
   const tpl = STRAT_TPLS[template] ? template : "mind";
-  const root = makeStratNode({ title: STRAT_TPLS[tpl].root, color: "#6366f1", hasCheck: false });
+  const root = makeStratNode({ title: STRAT_TPLS[tpl].root, color: "#a3a3a3", hasCheck: false });
   return { id: uid(), name, template: tpl, rootId: root.id, nodes: [root], edges: [] };
 }
 
@@ -5332,7 +5332,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
   const addChild = (parentId) => {
     const s = stateRef.current; const parent = s.nodes.find((n) => n.id === parentId); if (!parent) return;
     const id = uid();
-    const node = { id, title: "", note: "", color: parent.color || "#2563eb", done: false, hasCheck: true, type: "stage", collapsed: false, checklist: [] };
+    const node = { id, title: "", note: "", color: "#a3a3a3", done: false, hasCheck: false, type: "stage", collapsed: false, checklist: [] };
     commit({ ...s, nodes: s.nodes.map((n) => (n.id === parentId ? { ...n, collapsed: false } : n)).concat(node), edges: [...s.edges, { id: uid(), from: parentId, to: id }] });
     setSel([id]); setSettingsFor(null); focusRef.current = id;
   };
@@ -5521,8 +5521,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
             if (hidden) return null;
             const on = sel.includes(n.id); const isDrop = dropTarget === n.id; const cnt = n.hasCheck !== false; const done = nodeIsDone(n); const showDone = cnt && done; const hasCl = !!(n.checklist && n.checklist.length);
             const cdone = hasCl ? n.checklist.filter((c) => c.done).length : 0;
-            const TI = STRAT_TYPES[n.type || "stage"].icon; const tc = TYPE_COLOR[n.type || "stage"];
-            const col = n.color || "#2563eb"; const kids = childCount(n.id); const isRoot = n.id === rootId;
+            const col = n.color || "#a3a3a3"; const kids = childCount(n.id); const isRoot = n.id === rootId;
             return (
               <div key={n.id} data-node={n.id} onPointerDown={(e) => onNodeDown(e, n)}
                 className="group absolute select-none rounded-xl bg-white shadow-sm"
@@ -5533,7 +5532,6 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
                   ) : (
                     <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
                   ))}
-                  <TI size={14} className="mt-1 shrink-0" style={{ color: tc }} title={STRAT_TYPES[n.type || "stage"].label} />
                   <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; if (focusRef.current === n.id) { focusRef.current = null; setTimeout(() => el.focus(), 0); } } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder={isRoot ? "Тема…" : "Блок…"} className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
                   {kids > 0 && (
                     <button onPointerDown={stop} onClick={() => toggleCollapse(n.id)} title={n.collapsed ? "Развернуть ветку" : "Свернуть ветку"} className="mt-0.5 flex h-5 shrink-0 items-center gap-0.5 rounded px-1 text-[10px] font-bold text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600">{n.collapsed ? <><ChevronRight size={13} />{kids}</> : <ChevronDown size={13} />}</button>
@@ -5564,11 +5562,6 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
                       ))}
                       <button onPointerDown={stop} onClick={() => addCheck(n.id)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={11} /> подзадача</button>
                     </div>
-                    <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
-                      {Object.keys(STRAT_TYPES).map((tk) => { const Ic = STRAT_TYPES[tk].icon; const act = (n.type || "stage") === tk; return (
-                        <button key={tk} onPointerDown={stop} onClick={() => patchNode(n.id, { type: tk })} title={STRAT_TYPES[tk].label} className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold" style={{ background: act ? `${TYPE_COLOR[tk]}1a` : "transparent", color: act ? TYPE_COLOR[tk] : "#a3a3a3" }}><Ic size={12} />{act && STRAT_TYPES[tk].label}</button>
-                      ); })}
-                    </div>
                     <div className="flex flex-wrap items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
                       {SWATCHES.map((c) => (<button key={c} onPointerDown={stop} onClick={() => patchNode(n.id, { color: c })} className="h-4 w-4 rounded-full transition" style={{ background: c, boxShadow: n.color === c ? `0 0 0 2px #fff, 0 0 0 3.5px ${c}` : "none" }} />))}
                     </div>
@@ -5578,15 +5571,10 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
                         <span className="absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all" style={{ left: cnt ? 14 : 2 }} />
                       </button>
                     </div>
-                    <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
-                      <button onPointerDown={stop} onClick={() => setTaskFor(taskFor === n.id ? null : n.id)} className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-1 text-[11px] font-semibold text-neutral-600 hover:bg-neutral-200"><CalendarPlus size={12} /> В задачу</button>
-                      {!isRoot && <button onPointerDown={stop} onClick={() => duplicateNode(n.id)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Дублировать блок"><Copy size={13} /></button>}
-                      {!isRoot && <button onPointerDown={stop} onClick={() => removeSubtree(n.id)} className="rounded-md p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500" title="Удалить блок и ветку"><Trash2 size={13} /></button>}
-                    </div>
-                    {taskFor === n.id && (
-                      <div className="flex items-center gap-1.5 border-t border-neutral-100 bg-neutral-50 px-2.5 py-2">
-                        <input type="date" defaultValue={todayISO} onPointerDown={stop} id={`sd-${n.id}`} className="rounded-md border border-neutral-200 px-1.5 py-1 text-[11px] text-neutral-700 focus:outline-none" />
-                        <button onPointerDown={stop} onClick={() => { const el = document.getElementById(`sd-${n.id}`); createTask(n, el ? el.value : todayISO); }} className="rounded-md bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-neutral-800">Создать задачу</button>
+                    {!isRoot && (
+                      <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
+                        <button onPointerDown={stop} onClick={() => duplicateNode(n.id)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Дублировать блок"><Copy size={13} /></button>
+                        <button onPointerDown={stop} onClick={() => removeSubtree(n.id)} className="rounded-md p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500" title="Удалить блок и ветку"><Trash2 size={13} /></button>
                       </div>
                     )}
                   </div>
