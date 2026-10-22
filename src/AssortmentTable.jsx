@@ -2052,9 +2052,10 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
   const [picker, setPicker] = useState(false);
   const [pq, setPq] = useState("");
   const [stOpen, setStOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
   const active = list.find((b) => b.id === activeId) || list[0] || null;
 
-  const addBatch = () => { const id = uid(); const b = { id, name: `Партия #${list.length + 1}`, status: "draft", cny: defaultRates.cny || "", usd: defaultRates.usd || "", cargo: defaultRates.cargo || "", commission: "", insurance: "", items: [] }; onChange([...list, b]); setActiveId(id); };
+  const addBatch = () => { const id = uid(); const b = { id, name: `Партия #${list.length + 1}`, status: "draft", cny: defaultRates.cny || "", usd: defaultRates.usd || "", cargo: defaultRates.cargo || "", commission: "", insurance: "", items: [], payments: [] }; onChange([...list, b]); setActiveId(id); };
   const dupBatch = (id) => { const src = list.find((b) => b.id === id); if (!src) return; const nid = uid(); const copy = JSON.parse(JSON.stringify({ ...src, id: nid, name: `${src.name} (копия)`, items: (src.items || []).map((it) => ({ ...it, id: uid() })) })); const at = list.findIndex((b) => b.id === id); const next = list.slice(); next.splice(at + 1, 0, copy); onChange(next); setActiveId(nid); };
   const renameBatch = (id, name) => onChange(list.map((b) => (b.id === id ? { ...b, name: name.trim() || "Партия" } : b)));
   const removeBatch = (id) => { const rest = list.filter((b) => b.id !== id); onChange(rest); if (id === activeId) setActiveId(rest[0]?.id || null); };
@@ -2062,6 +2063,10 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
   const addItem = (productId) => { patchBatch({ items: [...(active.items || []), { id: uid(), productId, priceCny: "", qty: "" }] }); setPicker(false); setPq(""); };
   const setItem = (iid, k, v) => patchBatch({ items: active.items.map((it) => (it.id === iid ? { ...it, [k]: v } : it)) });
   const removeItem = (iid) => patchBatch({ items: active.items.filter((it) => it.id !== iid) });
+  // фактическая оплата поставщику частями
+  const addPayment = () => patchBatch({ payments: [...(active.payments || []), { id: uid(), amount: "", note: "", date: new Date().toISOString().slice(0, 10) }] });
+  const setPayment = (pid, k, v) => patchBatch({ payments: (active.payments || []).map((p) => (p.id === pid ? { ...p, [k]: v } : p)) });
+  const removePayment = (pid) => patchBatch({ payments: (active.payments || []).filter((p) => p.id !== pid) });
 
   const fmtRub = (n) => (isNaN(n) ? "—" : Math.round(n).toLocaleString("ru-RU") + " ₽");
   const fmtCny = (n) => (isNaN(n) ? "—" : (Math.round(n * 100) / 100).toLocaleString("ru-RU") + " ¥");
@@ -2087,6 +2092,8 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
     return { it, p, w, rubUnit: hasUnit ? rubUnit : NaN, sumCny: (!isNaN(pc) && !isNaN(q)) ? pc * q : NaN, sumRub: (hasUnit && !isNaN(q)) ? rubUnit * q : NaN, wkg: (isNaN(w) ? 0 : w) / 1000 * (isNaN(q) ? 0 : q) };
   });
   const tot = rows.reduce((a, r) => ({ qty: a.qty + (isNaN(toNum(r.it.qty)) ? 0 : toNum(r.it.qty)), cnySum: a.cnySum + (isNaN(r.sumCny) ? 0 : r.sumCny), rubSum: a.rubSum + (isNaN(r.sumRub) ? 0 : r.sumRub), wkg: a.wkg + r.wkg }), { qty: 0, cnySum: 0, rubSum: 0, wkg: 0 });
+  const payments = active.payments || [];
+  const paidRub = payments.reduce((a, p) => a + (isNaN(toNum(p.amount)) ? 0 : toNum(p.amount)), 0); // фактически оплачено, ₽
 
   const inBatch = new Set((active.items || []).map((it) => it.productId));
   const q = pq.trim().toLowerCase();
@@ -2126,8 +2133,33 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
             {[["Позиций", rows.length], ["Кол-во", tot.qty.toLocaleString("ru-RU")], ["Вес", (Math.round(tot.wkg * 10) / 10).toLocaleString("ru-RU") + " кг"], ["Сумма ¥", fmtCny(tot.cnySum)], ["Сумма ₽", fmtRub(tot.rubSum)]].map(([k, v]) => (
               <div key={k} className="rounded-lg bg-neutral-50 px-3 py-1.5"><div className="text-[10px] uppercase tracking-wide text-neutral-400">{k}</div><div className="text-sm font-bold text-neutral-800">{v}</div></div>
             ))}
+            <button onClick={() => setPayOpen((o) => !o)} title="Фактическая оплата — показать транзакции" className={"rounded-lg border px-3 py-1.5 text-left transition " + (payOpen ? "border-emerald-300 bg-emerald-50" : "border-emerald-200/70 bg-white hover:bg-emerald-50")}>
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-neutral-400">Оплачено <ChevronDown size={11} className={"text-neutral-400 transition " + (payOpen ? "rotate-180" : "")} /></div>
+              <div className="text-sm font-bold text-emerald-600">{fmtRub(paidRub)}</div>
+            </button>
           </div>
         </div>
+
+        {payOpen && (
+          <div className="border-b border-neutral-100 bg-neutral-50/40 px-4 py-3">
+            <div className="space-y-1.5">
+              {payments.map((p) => (
+                <div key={p.id} className="flex flex-wrap items-center gap-2">
+                  <input type="date" value={p.date || ""} onChange={(e) => setPayment(p.id, "date", e.target.value)} className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-600 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                  <div className="relative"><input value={p.amount} onChange={(e) => setPayment(p.id, "amount", e.target.value)} inputMode="decimal" placeholder="0" className="w-32 rounded-md border border-neutral-200 bg-white px-2 py-1 pr-6 text-right text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" /><span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">₽</span></div>
+                  <input value={p.note} onChange={(e) => setPayment(p.id, "note", e.target.value)} placeholder="пояснение к транзакции (за что / как передали)…" className="min-w-[200px] flex-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                  <button onClick={() => removePayment(p.id)} className="shrink-0 rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить транзакцию"><X size={14} /></button>
+                </div>
+              ))}
+              {payments.length === 0 && <p className="text-xs text-neutral-400">Пока нет транзакций. Добавьте первый платёж поставщику.</p>}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <button onClick={addPayment} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Транзакция</button>
+              <span className="text-xs text-neutral-500">Всего оплачено: <b className="text-neutral-800">{fmtRub(paidRub)}</b></span>
+              {payments.length > 0 && <span className="text-xs text-neutral-400">Транзакций: {payments.length}</span>}
+            </div>
+          </div>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
