@@ -1041,10 +1041,12 @@ export default function AssortmentTable() {
       const ST = { draft: "Черновик", paid: "Оплачено", transit: "В пути", received: "Получено" };
       rows = (purchaseBatches || []).flatMap((b) => {
         const cny = toNum(b.cny), usd = toNum(b.usd), cargo = toNum(b.cargo);
+        const bc = toNum(b.commission), bi = toNum(b.insurance);
+        const feeMul = 1 + ((isNaN(bc) ? 0 : bc) + (isNaN(bi) ? 0 : bi)) / 100;
         return (b.items || []).map((it) => {
           const pr = products.find((p) => p.id === it.productId) || {};
           const w = toNum(pr?.purchase?.weightG), pc = toNum(it.priceCny), q = toNum(it.qty);
-          const rub = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
+          const rub = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) * feeMul + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
           return [b.name, ST[b.status] || "", pr.code || "", pr.name || "", it.priceCny || "", pr?.purchase?.weightG || "", Math.round(rub), it.qty || "", (isNaN(pc) || isNaN(q) ? "" : pc * q), (isNaN(q) ? "" : Math.round(rub * q))];
         });
       });
@@ -2052,7 +2054,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
   const [stOpen, setStOpen] = useState(false);
   const active = list.find((b) => b.id === activeId) || list[0] || null;
 
-  const addBatch = () => { const id = uid(); const b = { id, name: `Партия #${list.length + 1}`, status: "draft", cny: defaultRates.cny || "", usd: defaultRates.usd || "", cargo: defaultRates.cargo || "", items: [] }; onChange([...list, b]); setActiveId(id); };
+  const addBatch = () => { const id = uid(); const b = { id, name: `Партия #${list.length + 1}`, status: "draft", cny: defaultRates.cny || "", usd: defaultRates.usd || "", cargo: defaultRates.cargo || "", commission: "", insurance: "", items: [] }; onChange([...list, b]); setActiveId(id); };
   const dupBatch = (id) => { const src = list.find((b) => b.id === id); if (!src) return; const nid = uid(); const copy = JSON.parse(JSON.stringify({ ...src, id: nid, name: `${src.name} (копия)`, items: (src.items || []).map((it) => ({ ...it, id: uid() })) })); const at = list.findIndex((b) => b.id === id); const next = list.slice(); next.splice(at + 1, 0, copy); onChange(next); setActiveId(nid); };
   const renameBatch = (id, name) => onChange(list.map((b) => (b.id === id ? { ...b, name: name.trim() || "Партия" } : b)));
   const removeBatch = (id) => { const rest = list.filter((b) => b.id !== id); onChange(rest); if (id === activeId) setActiveId(rest[0]?.id || null); };
@@ -2074,12 +2076,14 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
   }
 
   const cny = toNum(active.cny), usd = toNum(active.usd), cargo = toNum(active.cargo);
+  const comm = toNum(active.commission), ins = toNum(active.insurance);
+  const feeMul = 1 + ((isNaN(comm) ? 0 : comm) + (isNaN(ins) ? 0 : ins)) / 100; // комиссия + страховка к сумме за товар в юанях
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
   const rows = (active.items || []).map((it) => {
     const p = prodById[it.productId] || {};
     const w = toNum(p?.purchase?.weightG), pc = toNum(it.priceCny), q = toNum(it.qty);
     const hasUnit = !isNaN(pc);
-    const rubUnit = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
+    const rubUnit = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) * feeMul + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
     return { it, p, w, rubUnit: hasUnit ? rubUnit : NaN, sumCny: (!isNaN(pc) && !isNaN(q)) ? pc * q : NaN, sumRub: (hasUnit && !isNaN(q)) ? rubUnit * q : NaN, wkg: (isNaN(w) ? 0 : w) / 1000 * (isNaN(q) ? 0 : q) };
   });
   const tot = rows.reduce((a, r) => ({ qty: a.qty + (isNaN(toNum(r.it.qty)) ? 0 : toNum(r.it.qty)), cnySum: a.cnySum + (isNaN(r.sumCny) ? 0 : r.sumCny), rubSum: a.rubSum + (isNaN(r.sumRub) ? 0 : r.sumRub), wkg: a.wkg + r.wkg }), { qty: 0, cnySum: 0, rubSum: 0, wkg: 0 });
@@ -2117,7 +2121,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
             <button onClick={() => setStOpen((o) => !o)} className={"inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold " + stCur.cls}>{stCur.label} <ChevronDown size={12} /></button>
             {stOpen && <><div className="fixed inset-0 z-10" onClick={() => setStOpen(false)} /><div className="absolute left-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">{Object.keys(PU_STATUS).map((k) => <button key={k} onClick={() => { patchBatch({ status: k }); setStOpen(false); }} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50"><span className={"rounded-full px-2 py-0.5 text-[11px] font-bold " + PU_STATUS[k].cls}>{PU_STATUS[k].label}</span></button>)}</div></>}
           </div>
-          <div className="flex flex-wrap items-center gap-3 border-l border-neutral-200 pl-3">{rate("Курс ¥", "cny", "₽")}{rate("Курс $", "usd", "₽")}{rate("Карго", "cargo", "$/кг")}</div>
+          <div className="flex flex-wrap items-center gap-3 border-l border-neutral-200 pl-3">{rate("Курс ¥", "cny", "₽")}{rate("Курс $", "usd", "₽")}{rate("Карго", "cargo", "$/кг")}{rate("Комиссия", "commission", "%")}{rate("Страховка", "insurance", "%")}</div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {[["Позиций", rows.length], ["Кол-во", tot.qty.toLocaleString("ru-RU")], ["Вес", (Math.round(tot.wkg * 10) / 10).toLocaleString("ru-RU") + " кг"], ["Сумма ¥", fmtCny(tot.cnySum)], ["Сумма ₽", fmtRub(tot.rubSum)]].map(([k, v]) => (
               <div key={k} className="rounded-lg bg-neutral-50 px-3 py-1.5"><div className="text-[10px] uppercase tracking-wide text-neutral-400">{k}</div><div className="text-sm font-bold text-neutral-800">{v}</div></div>
