@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -34,6 +34,18 @@ const FROZEN = [
   { id: "name", label: "Наименование", width: 180 },
   { id: "status", label: "Статус", width: 120 },
 ];
+// Колонки списка «Товары», которые можно двигать / менять ширину / фильтровать.
+const DCOL = {
+  image: { label: "Фото", w: 48, filter: null, field: null },
+  code: { label: "Код", w: 72, filter: "text", field: "code" },
+  wb: { label: "Артикул", w: 120, filter: "text", field: "wb" },
+  subject: { label: "Предмет", w: 130, filter: "text", field: "subject" },
+  name: { label: "Наименование", w: 220, filter: "text", field: "name" },
+  status: { label: "Статус", w: 130, filter: "status", field: "status" },
+};
+const DCOL_ORDER = ["image", "code", "wb", "subject", "name", "status"];
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 // Группы. tab — к какой вкладке относится группа. kind:
 //   "columns" — добавляет столбцы к каждой строке товара (как Юнит);
@@ -482,6 +494,25 @@ export default function AssortmentTable() {
   const [codeFilter, setCodeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState([]); // выбранные статусы (мультивыбор); пусто = все
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
+  // настраиваемые колонки списка «Товары»: порядок, ширина, фильтры (per-device, localStorage)
+  const [colOrder, setColOrder] = useState(() => { const s = lsGet("rnp.listOrder", null); const base = DCOL_ORDER.slice(); if (Array.isArray(s)) { const r = s.filter((x) => DCOL[x]); base.forEach((x) => { if (!r.includes(x)) r.push(x); }); return r; } return base; });
+  const [colW, setColW] = useState(() => lsGet("rnp.listWidths", {}));
+  const [colFilters, setColFilters] = useState(() => lsGet("rnp.listFilters", {}));
+  const [colMenu, setColMenu] = useState(null); // id колонки с открытым фильтром
+  const dragColRef = useRef(null);
+  const resizeColRef = useRef(null);
+  useEffect(() => lsSet("rnp.listOrder", colOrder), [colOrder]);
+  useEffect(() => lsSet("rnp.listWidths", colW), [colW]);
+  useEffect(() => lsSet("rnp.listFilters", colFilters), [colFilters]);
+  useEffect(() => {
+    const mv = (e) => { const r = resizeColRef.current; if (!r) return; const nw = Math.max(40, Math.min(640, r.w + (e.clientX - r.x))); setColW((w) => ({ ...w, [r.id]: nw })); };
+    const up = () => { if (resizeColRef.current) { resizeColRef.current = null; document.body.style.cursor = ""; } };
+    window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
+    return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
+  }, []);
+  const startColResize = (e, id) => { e.preventDefault(); e.stopPropagation(); resizeColRef.current = { id, x: e.clientX, w: colW[id] || DCOL[id].w }; document.body.style.cursor = "col-resize"; };
+  const reorderCol = (from, to) => { if (!from || from === to) return; setColOrder((o) => { const a = o.filter((x) => x !== from); const idx = a.indexOf(to); a.splice(idx < 0 ? a.length : idx, 0, from); return a; }); };
+  const resetCols = () => { setColOrder(DCOL_ORDER.slice()); setColW({}); setColFilters({}); setColMenu(null); };
   const [bloggerDB, setBloggerDB] = useState([]);
   const [razdachDB, setRazdachDB] = useState([]);
   const [dbOpen, setDbOpen] = useState(false);
@@ -1002,13 +1033,20 @@ export default function AssortmentTable() {
   // есть ли переключаемые группы для выпадашки «Группы столбцов» (гант и календарь показываются всегда)
   const toggleableGroups = tabGroups.filter((g) => g.kind !== "gantt" && g.kind !== "calendar");
 
-  const frozenCols = hasExpandable
-    ? [{ id: "expander", label: "", width: 40 }, ...FROZEN]
-    : FROZEN;
+  const dataFrozen = colOrder.map((id) => ({ id, label: DCOL[id].label, width: colW[id] || DCOL[id].w }));
+  const frozenCols = [
+    ...(hasExpandable ? [{ id: "expander", label: "", width: 40 }] : []),
+    { id: "actions", label: "", width: 32 },
+    ...dataFrozen,
+  ];
 
   const filteredProducts = products.filter((p) => {
     if (codeFilter.trim() && !(p.code || "").toLowerCase().includes(codeFilter.trim().toLowerCase())) return false;
     if (statusFilter.length && !statusFilter.includes(p.status)) return false;
+    for (const id of colOrder) {
+      const meta = DCOL[id];
+      if (meta.filter === "text") { const q = (colFilters[id] || "").trim().toLowerCase(); if (q && !String(p[meta.field] || "").toLowerCase().includes(q)) return false; }
+    }
     return true;
   });
 
@@ -1279,6 +1317,14 @@ export default function AssortmentTable() {
               <button onClick={() => setProductsView("list")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (productsView === "list" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Список</button>
               <button onClick={() => setProductsView("tiles")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (productsView === "tiles" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Плитки</button>
             </div>
+            {productsView === "list" && (
+              <>
+                <span className="hidden text-[11px] text-neutral-400 sm:inline">Колонки: тяните заголовок — поменять местами · правый край — ширина · <Filter size={10} className="inline" /> — фильтр</span>
+                {(JSON.stringify(colOrder) !== JSON.stringify(DCOL_ORDER) || Object.keys(colW).length > 0 || Object.values(colFilters).some((v) => (v || "").trim())) && (
+                  <button onClick={resetCols} className="ml-auto rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-500 hover:bg-neutral-50">Сбросить колонки</button>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -1289,16 +1335,56 @@ export default function AssortmentTable() {
           <table className="text-sm" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
             <thead>
               <tr>
-                {frozenCols.map((f, i) => (
+                {frozenCols.map((f, i) => {
+                  const meta = DCOL[f.id];
+                  const canFilter = meta && meta.filter;
+                  const filterOn = f.id === "status" ? statusFilter.length > 0 : !!(colFilters[f.id] || "").trim();
+                  return (
                   <th
                     key={f.id}
                     rowSpan={2}
-                    className="bg-neutral-50 px-2 py-2 text-left align-bottom text-xs font-semibold uppercase tracking-wide text-neutral-500"
-                    style={{ ...frozenCell(i), top: 0, zIndex: 40, borderBottom: "1px solid #e5e5e5" }}
+                    draggable={!!meta}
+                    onDragStart={meta ? (e) => { dragColRef.current = f.id; e.dataTransfer.effectAllowed = "move"; } : undefined}
+                    onDragOver={meta ? (e) => e.preventDefault() : undefined}
+                    onDrop={meta ? (e) => { e.preventDefault(); reorderCol(dragColRef.current, f.id); dragColRef.current = null; } : undefined}
+                    className="relative bg-neutral-50 px-2 py-2 text-left align-bottom text-xs font-semibold uppercase tracking-wide text-neutral-500"
+                    style={{ ...frozenCell(i), top: 0, zIndex: 40, borderBottom: "1px solid #e5e5e5", cursor: meta ? "grab" : "default" }}
                   >
-                    {f.label}
+                    <div className="flex items-center gap-1">
+                      {meta && <GripVertical size={11} className="shrink-0 text-neutral-300" />}
+                      <span className="truncate">{f.label}</span>
+                      {canFilter && (
+                        <button onClick={(e) => { e.stopPropagation(); setColMenu((m) => (m === f.id ? null : f.id)); }} className={"ml-auto shrink-0 rounded p-0.5 " + (filterOn ? "text-orange-600" : "text-neutral-300 hover:text-neutral-600")} title="Фильтр по столбцу"><Filter size={12} /></button>
+                      )}
+                    </div>
+                    {colMenu === f.id && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setColMenu(null)} />
+                        <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-xl" onClick={(e) => e.stopPropagation()}>
+                          {meta.filter === "text" ? (
+                            <>
+                              <input autoFocus value={colFilters[f.id] || ""} onChange={(e) => setColFilters((c) => ({ ...c, [f.id]: e.target.value }))} placeholder={`Фильтр: ${f.label.toLowerCase()}…`} className="w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm normal-case text-neutral-700 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                              {(colFilters[f.id] || "").trim() && <button onClick={() => { setColFilters((c) => ({ ...c, [f.id]: "" })); }} className="mt-1.5 text-[11px] font-semibold text-neutral-400 hover:text-red-500">Сбросить</button>}
+                            </>
+                          ) : (
+                            <div className="max-h-56 overflow-auto">
+                              <div className="mb-1 px-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Статусы</div>
+                              {statuses.map((s) => { const on = statusFilter.includes(s.name); return (
+                                <button key={s.name} onClick={() => setStatusFilter((arr) => (on ? arr.filter((x) => x !== s.name) : [...arr, s.name]))} className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm normal-case hover:bg-neutral-50">
+                                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded border" style={{ background: on ? "#ea580c" : "#fff", borderColor: on ? "#ea580c" : "#d4d4d4", color: "#fff" }}>{on && <Check size={9} strokeWidth={3} />}</span>
+                                  <span className="text-neutral-700">{s.name}</span>
+                                </button>
+                              ); })}
+                              {statusFilter.length > 0 && <button onClick={() => setStatusFilter([])} className="mt-1 px-1.5 text-[11px] font-semibold text-neutral-400 hover:text-red-500">Сбросить</button>}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    {meta && <div onPointerDown={(e) => startColResize(e, f.id)} onDragStart={(e) => e.preventDefault()} className="absolute right-0 top-0 z-10 h-full w-1.5 cursor-col-resize hover:bg-orange-300/60" title="Потяните — ширина колонки" />}
                   </th>
-                ))}
+                  );
+                })}
                 {columnGroupsView.map((g) => (
                   <th
                     key={g.id}
@@ -1578,6 +1664,7 @@ export default function AssortmentTable() {
             onChange={setPurchaseBatches}
             products={products}
             defaultRates={{ cny: unitConst.cny, usd: unitConst.usd, cargo: unitConst.cargo }}
+            onOpenCard={(id) => setCardModal(id)}
           />
         )}
 
@@ -2045,7 +2132,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
 const PU_STATUS = { draft: { label: "Черновик", cls: "bg-neutral-100 text-neutral-500" }, paid: { label: "Оплачено", cls: "bg-emerald-50 text-emerald-600" }, transit: { label: "В пути", cls: "bg-amber-50 text-amber-600" }, received: { label: "Получено", cls: "bg-blue-50 text-blue-600" } };
 
 // Блок «Закупки» — партии (как карты в «Стратегии»); внутри партии товары из каталога.
-function PurchasesBoard({ batches, onChange, products, defaultRates }) {
+function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard }) {
   const list = Array.isArray(batches) ? batches : [];
   const [activeId, setActiveId] = useState(list[0]?.id || null);
   const [editingId, setEditingId] = useState(null);
@@ -2180,7 +2267,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates }) {
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-11 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-neutral-100 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={14} />}</div>
-                      <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><div className="truncate font-medium text-neutral-800" style={{ maxWidth: 230 }}>{p.name || "Без названия"}</div></div>
+                      <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><button onClick={() => onOpenCard && onOpenCard(it.productId)} title="Открыть карточку товара" className="block max-w-full truncate text-left font-medium text-neutral-800 hover:text-orange-700 hover:underline" style={{ maxWidth: 230 }}>{p.name || "Без названия"}</button></div>
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right"><input value={it.priceCny} onChange={(e) => setItem(it.id, "priceCny", e.target.value)} inputMode="decimal" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
