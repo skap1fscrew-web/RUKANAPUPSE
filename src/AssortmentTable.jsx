@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -4146,6 +4146,20 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const pu = product.purchase || {};
   const setPu = (k, v) => onSetField && onSetField("purchase", { ...(product.purchase || {}), [k]: v });
+  // ссылки закупки: несколько, одна отмечена звёздочкой как главная (по ней переход)
+  const puLinks = (Array.isArray(pu.links) && pu.links.length) ? pu.links : (pu.link && String(pu.link).trim() ? [{ id: "l0", url: pu.link, main: true }] : []);
+  const savePuLinks = (arr) => {
+    const a = arr.map((l) => ({ ...l }));
+    if (a.length && !a.some((l) => l.main)) a[0].main = true;
+    const main = a.find((l) => l.main) || a[0];
+    onSetField && onSetField("purchase", { ...(product.purchase || {}), links: a, link: (main && main.url) || "" });
+  };
+  const addPuLink = (url) => savePuLinks([...puLinks, { id: uid(), url, main: puLinks.length === 0 }]);
+  const setPuLinkUrl = (id, url) => savePuLinks(puLinks.map((l) => (l.id === id ? { ...l, url } : l)));
+  const setPuLinkMain = (id) => savePuLinks(puLinks.map((l) => ({ ...l, main: l.id === id })));
+  const removePuLink = (id) => savePuLinks(puLinks.filter((l) => l.id !== id));
+  const [linkDraft, setLinkDraft] = useState("");
+  const commitLinkDraft = () => { const v = linkDraft.trim(); if (v) { addPuLink(v); setLinkDraft(""); } };
   const puCny = toNum(product.cny), puUsd = toNum(product.usd), puCargo = toNum(product.cargo);
   const puPriceCny = toNum(pu.priceCny), puWeightG = toNum(pu.weightG), puQty = toNum(pu.qty);
   const puRubPerUnit = !isNaN(puPriceCny)
@@ -4563,10 +4577,26 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                     {fullBlock === "purchase" && (
                       <>
                         {(isNaN(puCny) || isNaN(puUsd) || isNaN(puCargo)) && (<p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Укажите курс юаня, курс доллара и ставку карго в «Настройки → Единые данные» — иначе расчёт неполный.</p>)}
-                        <div className="mb-4 flex flex-wrap items-center gap-2">
-                          <span className="shrink-0 text-xs text-neutral-600">Ссылка</span>
-                          <div className="relative min-w-[180px] flex-[2]"><input value={pu.link ?? ""} onChange={(e) => setPu("link", e.target.value)} placeholder="https://…" className="w-full rounded-lg border border-neutral-200 px-3 py-1.5 pr-8 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />{String(pu.link || "").trim() && <a href={pu.link} target="_blank" rel="noreferrer" className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-sky-600" title="Открыть"><ExternalLink size={14} /></a>}</div>
-                          <span className="shrink-0 text-xs text-neutral-600">Параметр</span>
+                        <div className="mb-4 flex flex-wrap items-start gap-2">
+                          <span className="shrink-0 pt-2 text-xs text-neutral-600">Ссылки</span>
+                          <div className="min-w-[220px] flex-[2] space-y-1.5">
+                            {puLinks.map((l) => (
+                              <div key={l.id} className="flex items-center gap-1.5">
+                                <button onClick={() => setPuLinkMain(l.id)} title={l.main ? "Главная — по ней переходим" : "Сделать главной"} className={"shrink-0 transition " + (l.main ? "text-amber-500" : "text-neutral-300 hover:text-amber-400")}><Star size={16} fill={l.main ? "#f59e0b" : "none"} /></button>
+                                <div className="relative flex-1">
+                                  <input value={l.url} onChange={(e) => setPuLinkUrl(l.id, e.target.value)} placeholder="https://…" className="w-full rounded-lg border border-neutral-200 px-3 py-1.5 pr-8 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                                  {String(l.url || "").trim() && <a href={l.url} target="_blank" rel="noreferrer" className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-sky-600" title="Открыть"><ExternalLink size={14} /></a>}
+                                </div>
+                                <button onClick={() => removePuLink(l.id)} title="Удалить ссылку" className="shrink-0 rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500"><X size={14} /></button>
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-4 shrink-0" />
+                              <input value={linkDraft} onChange={(e) => setLinkDraft(e.target.value)} onBlur={commitLinkDraft} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitLinkDraft(); } }} placeholder={puLinks.length ? "добавить ещё ссылку…" : "https://…"} className="min-w-0 flex-1 rounded-lg border border-dashed border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                              <span className="w-[22px] shrink-0" />
+                            </div>
+                          </div>
+                          <span className="shrink-0 pt-2 text-xs text-neutral-600">Параметр</span>
                           <input value={pu.param ?? ""} onChange={(e) => setPu("param", e.target.value)} placeholder="цвет / размер" className="min-w-[120px] flex-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
                         </div>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -5511,7 +5541,8 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
             <defs><marker id="stratArr" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#94a3b8" /></marker></defs>
             {edges.map((ed) => {
               const a = byId[ed.from], b = byId[ed.to]; if (!a || !b) return null;
-              if (byId[ed.from]?.collapsed) return null;
+              // оба конца должны быть реально размещены (скрытые под свёрнутой веткой позиции не получают)
+              if (!pos[ed.from] || !pos[ed.to]) return null;
               return <path key={ed.id} d={edgePath(a, b)} stroke="#cbd5e1" strokeWidth="1.8" fill="none" markerEnd={tpl === "process" ? "url(#stratArr)" : undefined} />;
             })}
           </svg>
