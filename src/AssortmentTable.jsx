@@ -544,7 +544,7 @@ export default function AssortmentTable() {
   const [hiddenTasks, setHiddenTasks] = useState({});
   const [hiddenCols, setHiddenCols] = useState({}); // скрытые столбцы юнита: { "unit:spp": true }
   const [colFilterOpen, setColFilterOpen] = useState(false);
-  const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170", cny: "", usd: "", cargo: "" }); // единые для всех товаров
+  const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170", cny: "", usd: "", cargo: "", commission: "", insurance: "" }); // единые для всех товаров
   const [subjects, setSubjects] = useState([]); // предметы с комиссией ВБ — [{id, name, commission}]
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
@@ -1858,6 +1858,9 @@ export default function AssortmentTable() {
             onSetOneSize={(v) => setPlanField(cp.id, "oneSize", v)}
             onSetOneLabel={(v) => setPlanField(cp.id, "oneLabel", v)}
             onSetField={(f, v) => updateProduct(cp.id, f, v)}
+            subjects={subjects}
+            unitConst={unitConst}
+            onSetUnitConst={(patch) => setUnitConst((c) => ({ ...c, ...patch }))}
             productList={products}
             onCalEntry={(v) => setCalEntry(cp.id, v)}
             onCalStart={(v) => setCalStart(cp.id, v)}
@@ -4403,6 +4406,36 @@ function PromoDayEditor({ product, dkey, wbOrders = {}, onSetCell, onSetFlag, on
   );
 }
 
+// Выпадающий список «Предмет» (combobox): фильтрация по вводу + выбор из списка, свой текст разрешён
+function SubjectCombo({ value, subjects = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const opts = (subjects || []).map((s) => s.name).filter(Boolean);
+  const q = (value || "").trim().toLowerCase();
+  const filtered = q ? opts.filter((n) => n.toLowerCase().includes(q)) : opts;
+  return (
+    <div ref={ref} className="relative w-full max-w-xs">
+      <div className="flex items-center rounded-md border border-transparent pr-1 hover:border-neutral-200 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-orange-200">
+        <input value={value || ""} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder="категория ВБ" className="min-w-0 flex-1 bg-transparent px-1.5 py-0.5 text-sm text-neutral-700 focus:outline-none" />
+        <button type="button" onClick={() => setOpen((o) => !o)} className="shrink-0 rounded p-0.5 text-neutral-400 hover:text-neutral-700" title="Выбрать предмет"><ChevronDown size={14} /></button>
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute left-0 top-full z-[60] mt-1 max-h-60 w-full min-w-[180px] overflow-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-xl">
+          {filtered.map((n) => (
+            <button key={n} type="button" onMouseDown={(e) => { e.preventDefault(); onChange(n); setOpen(false); }} className={"flex w-full items-center px-3 py-1.5 text-left text-sm hover:bg-neutral-50 " + (n === value ? "font-semibold text-orange-700" : "text-neutral-700")}>{n}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Светофорный переключатель оценки критерия (зелёный / оранжевый / красный)
 function TrafficToggle({ value, onChange }) {
   return (
@@ -4597,7 +4630,7 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -4631,9 +4664,11 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   const [linkDraft, setLinkDraft] = useState("");
   const commitLinkDraft = () => { const v = linkDraft.trim(); if (v) { addPuLink(v); setLinkDraft(""); } };
   const puCny = toNum(product.cny), puUsd = toNum(product.usd), puCargo = toNum(product.cargo);
+  const puComm = toNum(unitConst.commission), puIns = toNum(unitConst.insurance);
+  const puFeeMul = 1 + ((isNaN(puComm) ? 0 : puComm) + (isNaN(puIns) ? 0 : puIns)) / 100; // комиссия + страховка к сумме за товар в юанях
   const puPriceCny = toNum(pu.priceCny), puWeightG = toNum(pu.weightG), puQty = toNum(pu.qty);
   const puRubPerUnit = !isNaN(puPriceCny)
-    ? (isNaN(puCny) ? 0 : puCny) * puPriceCny + (isNaN(puCargo) ? 0 : puCargo) * ((isNaN(puWeightG) ? 0 : puWeightG) / 1000) * (isNaN(puUsd) ? 0 : puUsd)
+    ? (isNaN(puCny) ? 0 : puCny) * puPriceCny * puFeeMul + (isNaN(puCargo) ? 0 : puCargo) * ((isNaN(puWeightG) ? 0 : puWeightG) / 1000) * (isNaN(puUsd) ? 0 : puUsd)
     : NaN;
   const puLotRub = !isNaN(puRubPerUnit) && !isNaN(puQty) ? puRubPerUnit * puQty : NaN;
   const puLotCny = !isNaN(puPriceCny) && !isNaN(puQty) ? puPriceCny * puQty : NaN;
@@ -4831,13 +4866,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
           />
           <div className="mt-1 flex items-center gap-2">
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-neutral-400">Предмет</span>
-            <input
-              list="subjects-datalist"
-              value={product.subject || ""}
-              onChange={(e) => onSetField("subject", e.target.value)}
-              placeholder="категория ВБ"
-              className="w-full max-w-xs rounded-md border border-transparent px-1.5 py-0.5 text-sm text-neutral-700 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
-            />
+            <SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
           </div>
         </div>
         <button onClick={onClose} className="rounded-lg shrink-0 p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
@@ -5088,7 +5117,19 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
 
                     {fullBlock === "purchase" && (
                       <>
-                        {(isNaN(puCny) || isNaN(puUsd) || isNaN(puCargo)) && (<p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Укажите курс юаня, курс доллара и ставку карго в «Настройки → Единые данные» — иначе расчёт неполный.</p>)}
+                        <div className="mb-4 flex flex-wrap items-end gap-x-4 gap-y-2 rounded-xl border border-neutral-200 bg-neutral-50/60 px-3 py-2.5">
+                          <div className="-mb-0.5 w-full text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Курсы и комиссии <span className="font-normal normal-case text-neutral-400">· общие для всех товаров, меняются сразу везде</span></div>
+                          {[["Курс ¥", "cny", "₽"], ["Курс $", "usd", "₽"], ["Карго", "cargo", "$/кг"], ["Комиссия", "commission", "%"], ["Страховка", "insurance", "%"]].map(([label, key, suf]) => (
+                            <label key={key} className="flex flex-col gap-0.5">
+                              <span className="text-[10px] text-neutral-500">{label}</span>
+                              <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1 focus-within:border-neutral-400 focus-within:ring-2 focus-within:ring-orange-200">
+                                <input value={(unitConst || {})[key] ?? ""} onChange={(e) => onSetUnitConst && onSetUnitConst({ [key]: e.target.value })} inputMode="decimal" placeholder="0" className="w-14 bg-transparent text-right text-sm tabular-nums focus:outline-none" />
+                                <span className="text-[11px] text-neutral-400">{suf}</span>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                        {(isNaN(puCny) || isNaN(puUsd) || isNaN(puCargo)) && (<p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Заполните курс юаня, курс доллара и ставку карго выше — иначе расчёт неполный.</p>)}
                         <div className="mb-4 flex flex-wrap items-start gap-2">
                           <span className="shrink-0 pt-2 text-xs text-neutral-600">Ссылки</span>
                           <div className="min-w-[220px] flex-[2] space-y-1.5">
