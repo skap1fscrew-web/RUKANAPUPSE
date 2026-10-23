@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -1708,7 +1708,7 @@ export default function AssortmentTable() {
             opDone={opDone}
             onToggleDone={toggleOpDone}
             onEditOp={(op) => setOpEditor({ ...op })}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, tags: [], stage: "wait", _new: true, ...preset })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: isoYMD(new Date()), done: false, labelId: null, productId: null, priority: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
         )}
@@ -4933,6 +4933,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], onUpdateJob, products, opT
     <button onClick={() => setView(id)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{children}</button>
   );
   const isBoard = view === "kanban" || view === "list";
+  const GROUP_LABELS = { status: "Статусу", priority: "Приоритету", label: "Метке" };
+  const activeFilters = (fltPrio ? 1 : 0) + (fltTag ? 1 : 0);
   const fJobs = jobs.filter((j) => {
     if (fltPrio && (j.priority || null) !== fltPrio) return false;
     if (fltTag && !(Array.isArray(j.tags) && j.tags.includes(fltTag))) return false;
@@ -4954,39 +4956,31 @@ function TasksView({ jobs, taskLabels, taskTags = [], onUpdateJob, products, opT
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {view === "kanban" && (
-            <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-1 py-0.5">
-              <span className="pl-1.5 text-[11px] text-neutral-400">Колонки:</span>
-              <button onClick={() => setGroupBy("status")} className={"rounded-md px-2 py-1 text-xs font-semibold " + (groupBy === "status" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-700")}>Статус</button>
-              <button onClick={() => setGroupBy("priority")} className={"rounded-md px-2 py-1 text-xs font-semibold " + (groupBy === "priority" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-700")}>Приоритет</button>
-              <button onClick={() => setGroupBy("label")} className={"rounded-md px-2 py-1 text-xs font-semibold " + (groupBy === "label" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-700")}>Метка</button>
+            <div className="relative">
+              <button onClick={() => setFltOpen(fltOpen === "group" ? null : "group")} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" title="Группировка колонок"><Columns3 size={14} className="text-neutral-400" /><span className="font-medium text-neutral-400">по</span> {GROUP_LABELS[groupBy]}<ChevronDown size={13} className="text-neutral-400" /></button>
+              {fltOpen === "group" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Колонки по</div>
+                {[["status", "Статусу"], ["priority", "Приоритету"], ["label", "Метке"]].map(([k, lbl]) => <button key={k} onClick={() => { setGroupBy(k); setFltOpen(null); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (groupBy === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{groupBy === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}</button>)}
+              </div></>)}
             </div>
           )}
           {isBoard && (
-            <>
-              <div className="relative">
-                <button onClick={() => setFltOpen(fltOpen === "prio" ? null : "prio")} className={"rounded-lg inline-flex items-center gap-1 border px-2.5 py-1 text-xs font-medium " + (fltPrio ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>{fltPrio ? PRIORITIES[fltPrio].label : "Приоритет"}<ChevronDown size={13} /></button>
-                {fltOpen === "prio" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-40 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
-                  <button onClick={() => { setFltPrio(null); setFltOpen(null); }} className="block w-full rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50">Все</button>
-                  {Object.keys(PRIORITIES).map((k) => <button key={k} onClick={() => { setFltPrio(k); setFltOpen(null); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50"><span className="h-2 w-2 rounded-full" style={{ background: PRIORITIES[k].color }} />{PRIORITIES[k].label}</button>)}
-                </div></>)}
-              </div>
-              <div className="relative">
-                <button onClick={() => setFltOpen(fltOpen === "tag" ? null : "tag")} className={"rounded-lg inline-flex items-center gap-1 border px-2.5 py-1 text-xs font-medium " + (fltTag ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>{fltTag ? (taskTags.find((t) => t.id === fltTag)?.name || "Тег") : "Теги"}<ChevronDown size={13} /></button>
-                {fltOpen === "tag" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 max-h-60 w-44 overflow-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
-                  <button onClick={() => { setFltTag(null); setFltOpen(null); }} className="block w-full rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50">Все</button>
-                  {taskTags.length === 0 && <div className="px-2.5 py-1.5 text-xs text-neutral-400">Тегов нет</div>}
-                  {taskTags.map((t) => <button key={t.id} onClick={() => { setFltTag(t.id); setFltOpen(null); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50"><span className="h-2 w-2 rounded-full" style={{ background: t.color }} />{t.name}</button>)}
-                </div></>)}
-              </div>
-            </>
+            <div className="relative">
+              <button onClick={() => setFltOpen(fltOpen === "filter" ? null : "filter")} className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold " + (activeFilters ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><Filter size={13} />Фильтр{activeFilters > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">{activeFilters}</span>}</button>
+              {fltOpen === "filter" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-neutral-200 bg-white p-2.5 shadow-lg">
+                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Приоритет</span>{fltPrio && <button onClick={() => setFltPrio(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
+                <div className="mb-3 flex flex-wrap gap-1">{Object.keys(PRIORITIES).map((k) => <button key={k} onClick={() => setFltPrio(fltPrio === k ? null : k)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltPrio === k ? { background: PRIORITIES[k].color, color: "#fff" } : { background: PRIORITIES[k].bg, color: PRIORITIES[k].color }}>{PRIORITIES[k].label}</button>)}</div>
+                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Теги</span>{fltTag && <button onClick={() => setFltTag(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
+                <div className="flex max-h-36 flex-wrap gap-1 overflow-auto">{taskTags.length === 0 && <span className="text-[11px] text-neutral-400">Тегов нет</span>}{taskTags.map((t) => <button key={t.id} onClick={() => setFltTag(fltTag === t.id ? null : t.id)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltTag === t.id ? { background: t.color, color: "#fff" } : { background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</button>)}</div>
+              </div></>)}
+            </div>
           )}
           <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-            <SegBtn id="kanban">Канбан</SegBtn>
-            <SegBtn id="list">Список</SegBtn>
-            <SegBtn id="cal">Календарь</SegBtn>
-            <SegBtn id="gantt">Гант</SegBtn>
+            {[["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["cal", CalendarIcon, "Календарь"], ["gantt", GanttChart, "Гант"]].map(([id, Icon, title]) => (
+              <button key={id} onClick={() => setView(id)} title={title} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Icon size={16} /></button>
+            ))}
           </div>
-          <button onClick={() => onAddJob({ date: todayStr })} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Задача</button>
+          <button onClick={() => onAddJob({ date: todayStr })} title="Новая задача" className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800"><Plus size={17} /></button>
         </div>
       </div>
 
@@ -5046,7 +5040,7 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJ
             <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.key].length}</span>
           </div>
           <div className="flex min-h-[40px] flex-col gap-2">
-            {byCol[col.key].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); return (
+            {byCol[col.key].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; return (
               <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl border bg-white p-2.5 shadow-sm transition hover:border-neutral-300" style={{ borderColor: "#e9e9ec" }}>
                 {lc && <div className="mb-1.5 h-[3px] rounded-full" style={{ background: lc }} />}
                 <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
@@ -5054,6 +5048,7 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJ
                   {groupBy !== "status" && <StageChip j={j} />}
                   {groupBy !== "priority" && <PrioChip p={j.priority} />}
                   {jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}
+                  {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
                   {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
                 </div>
               </div>
@@ -5378,68 +5373,110 @@ function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onSave, 
   const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
   const jtags = Array.isArray(j.tags) ? j.tags : [];
   const toggleTag = (id) => set("tags", jtags.includes(id) ? jtags.filter((x) => x !== id) : [...jtags, id]);
+  const checklist = Array.isArray(j.checklist) ? j.checklist : [];
+  const setCl = (cl) => set("checklist", cl);
+  const addCheck = () => setCl([...checklist, { id: uid(), text: "", done: false }]);
+  const toggleCheck = (id) => setCl(checklist.map((c) => (c.id === id ? { ...c, done: !c.done } : c)));
+  const setCheckText = (id, text) => setCl(checklist.map((c) => (c.id === id ? { ...c, text } : c)));
+  const removeCheck = (id) => setCl(checklist.filter((c) => c.id !== id));
+  const cdone = checklist.filter((c) => c.done).length;
+  const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="rounded-2xl w-full max-w-sm bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
+      <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
           <h2 className="text-base font-semibold text-neutral-900">{job._new ? "Новая задача" : "Задача"}</h2>
           <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
         </div>
-        <div className="space-y-3">
-          <input value={j.title} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => e.key === "Enter" && onSave(j)} placeholder="Название задачи…" autoFocus className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
-          <label className="flex items-center justify-between gap-3">
-            <span className="text-sm text-neutral-600">Начало</span>
-            <input type="date" value={j.start || ""} onChange={(e) => set("start", e.target.value || null)} max={j.date || undefined} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
-          </label>
-          <label className="flex items-center justify-between gap-3">
-            <span className="text-sm text-neutral-600">Дедлайн</span>
-            <input type="date" value={j.date || ""} onChange={(e) => set("date", e.target.value)} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
-          </label>
-          <p className="-mt-1 text-[11px] text-neutral-400">Без даты начала задача длится 1 день (дедлайн).</p>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-neutral-600">Статус</span>
-            <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-              {STAGE_ORDER.map((k) => { const on = stageOf(j) === k; return (
-                <button key={k} onClick={() => setJ((o) => applyStage(o, k))} className={"rounded-md px-2 py-1 text-xs font-semibold " + (on ? "shadow-sm" : "")} style={on ? { background: STAGES[k].bg, color: STAGES[k].color } : { color: "#a3a3a3" }}>{STAGES[k].label}</button>
-              ); })}
+
+        <div className="grid flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-[1fr_300px]">
+          {/* ЛЕВО: название · заметка · подзадачи */}
+          <div className="flex flex-col gap-5 border-b border-neutral-100 p-5 sm:border-b-0 sm:border-r">
+            <input value={j.title} onChange={(e) => set("title", e.target.value)} placeholder="Название задачи…" autoFocus className="w-full border-none bg-transparent text-lg font-bold leading-snug text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
+            <div>
+              <div className={fieldL + " mb-1.5"}>Заметка</div>
+              <textarea value={j.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Добавьте описание, контекст, ссылки…" rows={4} className="w-full resize-y rounded-xl border border-neutral-200 px-3 py-2 text-sm leading-relaxed text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+            </div>
+            <div>
+              <div className={fieldL + " mb-2"}>Подзадачи</div>
+              {checklist.length > 0 && (
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full bg-green-600" style={{ width: `${Math.round((cdone / checklist.length) * 100)}%` }} /></div>
+                  <span className="text-[11px] font-bold text-neutral-400">{cdone}/{checklist.length}</span>
+                </div>
+              )}
+              <div className="flex flex-col">
+                {checklist.map((c) => (
+                  <div key={c.id} className="group flex items-center gap-2.5 py-1">
+                    <button onClick={() => toggleCheck(c.id)} className="flex h-4 w-4 shrink-0 items-center justify-center rounded border" style={{ background: c.done ? "#16a34a" : "#fff", borderColor: c.done ? "#16a34a" : "#d4d4d8", color: "#fff" }}>{c.done && <Check size={10} strokeWidth={3} />}</button>
+                    <input value={c.text} onChange={(e) => setCheckText(c.id, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCheck(); } }} placeholder="Подзадача…" className="min-w-0 flex-1 border-none bg-transparent text-sm text-neutral-700 focus:outline-none" style={c.done ? { textDecoration: "line-through", color: "#a3a3a3" } : undefined} />
+                    <button onClick={() => removeCheck(c.id)} className="shrink-0 text-neutral-300 opacity-0 transition hover:text-red-500 group-hover:opacity-100"><X size={13} /></button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={addCheck} className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> подзадача</button>
             </div>
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-neutral-600">Приоритет</span>
-            <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-              <button onClick={() => set("priority", null)} className={"rounded-md px-2 py-1 text-xs font-semibold " + (!j.priority ? "bg-white text-neutral-800 shadow-sm" : "text-neutral-400")}>—</button>
-              {Object.keys(PRIORITIES).map((k) => (
-                <button key={k} onClick={() => set("priority", k)} className={"rounded-md px-2 py-1 text-xs font-semibold " + (j.priority === k ? "shadow-sm" : "")} style={j.priority === k ? { background: PRIORITIES[k].bg, color: PRIORITIES[k].color } : { color: "#a3a3a3" }}>{PRIORITIES[k].label}</button>
-              ))}
+
+          {/* ПРАВО: настройки */}
+          <div className="flex flex-col gap-4 bg-neutral-50/50 p-5">
+            <div className="flex flex-col gap-2">
+              <span className={fieldL}>Даты</span>
+              <label className="flex items-center justify-between gap-3">
+                <span className="text-sm text-neutral-600">Начало</span>
+                <input type="date" value={j.start || ""} onChange={(e) => set("start", e.target.value || null)} max={j.date || undefined} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
+              </label>
+              <label className="flex items-center justify-between gap-3">
+                <span className="text-sm text-neutral-600">Дедлайн</span>
+                <input type="date" value={j.date || ""} onChange={(e) => set("date", e.target.value)} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
+              </label>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={fieldL}>Статус</span>
+              <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+                {STAGE_ORDER.map((k) => { const on = stageOf(j) === k; return (
+                  <button key={k} onClick={() => setJ((o) => applyStage(o, k))} className={"flex-1 rounded-md px-2 py-1 text-xs font-semibold " + (on ? "shadow-sm" : "")} style={on ? { background: STAGES[k].bg, color: STAGES[k].color } : { color: "#a3a3a3" }}>{STAGES[k].label}</button>
+                ); })}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={fieldL}>Приоритет</span>
+              <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+                <button onClick={() => set("priority", null)} className={"rounded-md px-2 py-1 text-xs font-semibold " + (!j.priority ? "bg-white text-neutral-800 shadow-sm" : "text-neutral-400")}>—</button>
+                {Object.keys(PRIORITIES).map((k) => (
+                  <button key={k} onClick={() => set("priority", k)} className={"flex-1 rounded-md px-2 py-1 text-xs font-semibold " + (j.priority === k ? "shadow-sm" : "")} style={j.priority === k ? { background: PRIORITIES[k].bg, color: PRIORITIES[k].color } : { color: "#a3a3a3" }}>{PRIORITIES[k].label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={fieldL}>Метка</span>
+              <select value={j.labelId || ""} onChange={(e) => set("labelId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+                <option value="">Без метки</option>
+                {(taskLabels || []).map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={fieldL}>Теги</span>
+              <div className="flex flex-wrap gap-1.5">
+                {taskTags.length === 0 && <span className="text-[11px] text-neutral-400">Тегов пока нет — добавьте в «Настройки → Теги».</span>}
+                {taskTags.map((t) => { const on = jtags.includes(t.id); return (
+                  <button key={t.id} onClick={() => toggleTag(t.id)} className="rounded-full px-2.5 py-1 text-xs font-semibold transition" style={on ? { background: t.color, color: "#fff" } : { background: (t.color || "#999") + "1f", color: t.color || "#737373" }}>{t.name}</button>
+                ); })}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={fieldL}>Товар</span>
+              <select value={j.productId || ""} onChange={(e) => set("productId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+                <option value="">—</option>
+                {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
+              </select>
             </div>
           </div>
-          <label className="flex items-center justify-between gap-3">
-            <span className="text-sm text-neutral-600">Метка</span>
-            <select value={j.labelId || ""} onChange={(e) => set("labelId", e.target.value || null)} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-              <option value="">Без метки</option>
-              {(taskLabels || []).map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
-            </select>
-          </label>
-          <div>
-            <span className="text-sm text-neutral-600">Теги</span>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {taskTags.length === 0 && <span className="text-[11px] text-neutral-400">Тегов пока нет — добавьте в «Настройки → Теги».</span>}
-              {taskTags.map((t) => { const on = jtags.includes(t.id); return (
-                <button key={t.id} onClick={() => toggleTag(t.id)} className="rounded-full px-2.5 py-1 text-xs font-semibold transition" style={on ? { background: t.color, color: "#fff" } : { background: (t.color || "#999") + "1f", color: t.color || "#737373" }}>{t.name}</button>
-              ); })}
-            </div>
-          </div>
-          <label className="flex items-center justify-between gap-3">
-            <span className="text-sm text-neutral-600">Товар</span>
-            <select value={j.productId || ""} onChange={(e) => set("productId", e.target.value || null)} className="max-w-[200px] rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-              <option value="">—</option>
-              {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
-            </select>
-          </label>
         </div>
-        <div className="mt-5 flex items-center gap-2">
-          <button onClick={() => onSave(j)} disabled={!j.title.trim()} className="rounded-lg flex-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Сохранить</button>
-          {!job._new && <button onClick={() => onDelete(j.id)} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600">Удалить</button>}
+
+        <div className="flex items-center gap-2 border-t border-neutral-100 px-5 py-3.5">
+          <button onClick={() => onSave(j)} disabled={!j.title.trim()} className="flex-1 rounded-xl bg-neutral-900 px-3 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Сохранить</button>
+          {!job._new && <button onClick={() => onDelete(j.id)} className="rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600">Удалить</button>}
         </div>
       </div>
     </div>
