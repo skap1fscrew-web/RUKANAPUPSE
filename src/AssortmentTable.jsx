@@ -2233,6 +2233,8 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
   const [activeId, setActiveId] = useState(list[0]?.id || null);
   const [editingId, setEditingId] = useState(null);
   const [picker, setPicker] = useState(false);
+  const [pickerUp, setPickerUp] = useState(false); // открывать выпадашку товаров вверх, если снизу мало места
+  const addBtnRef = useRef(null);
   const [pq, setPq] = useState("");
   const [stOpen, setStOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
@@ -2435,11 +2437,11 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
           </table>
         </div>
         <div className="relative border-t border-neutral-100 px-3 py-3">
-          <button onClick={() => setPicker((o) => !o)} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Товар в партию</button>
+          <button ref={addBtnRef} onClick={() => setPicker((o) => { const next = !o; if (next && addBtnRef.current) { const r = addBtnRef.current.getBoundingClientRect(); const below = window.innerHeight - r.bottom; setPickerUp(below < 360 && r.top > below); } return next; })} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Товар в партию</button>
           {picker && <><div className="fixed inset-0 z-30" onClick={() => { setPicker(false); setPq(""); }} />
-            <div className="absolute left-3 top-full z-40 mt-1 w-80 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl">
+            <div className={"absolute left-3 z-40 w-80 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl " + (pickerUp ? "bottom-full mb-1" : "top-full mt-1")}>
               <input autoFocus value={pq} onChange={(e) => setPq(e.target.value)} placeholder="Поиск по коду или названию…" className="mb-2 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
-              <div className="max-h-72 overflow-auto">
+              <div className="overflow-auto" style={{ maxHeight: "min(18rem, 60vh)" }}>
                 {pcands.length === 0 && <div className="px-2 py-3 text-center text-xs text-neutral-400">Нет подходящих товаров</div>}
                 {pcands.slice(0, 50).map((p) => (
                   <button key={p.id} onClick={() => addItem(p.id)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50">
