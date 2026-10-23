@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment } from "react";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
@@ -96,6 +96,14 @@ const analyticsScore = (crits, ratings) => {
   const score10 = max > 0 ? Math.round((got / max) * 10) : 0;
   return { got, max, score10, counts, rated, total: list.length };
 };
+// пресеты размерных рядов для дашборда «Размеры»
+const SIZE_PRESETS = [
+  { label: "RU 40–52", sizes: ["40", "42", "44", "46", "48", "50", "52"] },
+  { label: "RU 42–56", sizes: ["42", "44", "46", "48", "50", "52", "54", "56"] },
+  { label: "S · M · L · XL", sizes: ["S", "M", "L", "XL"] },
+  { label: "XS–XXL", sizes: ["XS", "S", "M", "L", "XL", "XXL"] },
+  { label: "Школа 122–164", sizes: ["122", "128", "134", "140", "146", "152", "158", "164"] },
+];
 const scoreVerdict = (sc) => {
   if (!sc.rated) return { text: "Ещё не оценено", color: "#94a3b8" };
   if (sc.score10 >= 8) return { text: "Отлично — брать в работу", color: "#16a34a" };
@@ -476,7 +484,7 @@ const normalizeProduct = (p) => {
     id: p?.id || uid(),
     external: undefined,
     blocks,
-    plan: { sizes: p?.plan?.sizes || [] },
+    plan: { sizes: p?.plan?.sizes || [], oneSize: !!p?.plan?.oneSize, oneLabel: p?.plan?.oneLabel || "ONE SIZE" },
     rnp: p?.rnp || { cells: {}, entries: {}, fills: {}, flags: {}, budget: { allocated: "" } },
     calendar: normalizeCalendar(p?.calendar),
     tasks: Array.isArray(p?.tasks) ? p.tasks : [],
@@ -866,12 +874,15 @@ export default function AssortmentTable() {
 
   /* --- план отгрузок: размеры (по товару) --- */
   const editSizes = (pid, fn) =>
-    setProducts((ps) => ps.map((p) => (p.id === pid ? { ...p, plan: { sizes: fn(p.plan?.sizes || []) } } : p)));
+    setProducts((ps) => ps.map((p) => (p.id === pid ? { ...p, plan: { ...(p.plan || {}), sizes: fn(p.plan?.sizes || []) } } : p)));
   const addSize = (pid) =>
     editSizes(pid, (ss) => [...ss, { id: uid(), name: "", total: "", toShip: "", qty: {} }]);
   const removeSize = (pid, sid) => editSizes(pid, (ss) => ss.filter((s) => s.id !== sid));
   const setSize = (pid, sid, field, val) =>
     editSizes(pid, (ss) => ss.map((s) => (s.id === sid ? { ...s, [field]: val } : s)));
+  const setSizes = (pid, arr) => editSizes(pid, () => arr);
+  const setPlanField = (pid, field, val) =>
+    setProducts((ps) => ps.map((p) => (p.id === pid ? { ...p, plan: { ...(p.plan || {}), [field]: val } } : p)));
   const setSizeQty = (pid, sid, whid, qty) =>
     editSizes(pid, (ss) => ss.map((s) => (s.id === sid ? { ...s, qty: { ...s.qty, [whid]: qty } } : s)));
 
@@ -1843,6 +1854,9 @@ export default function AssortmentTable() {
             analyticsCriteria={analyticsCriteria}
             onSetCriteria={setAnalyticsCriteria}
             onSetAnalytics={(a) => setProductAnalytics(cp.id, a)}
+            onSizesSet={(arr) => setSizes(cp.id, arr)}
+            onSetOneSize={(v) => setPlanField(cp.id, "oneSize", v)}
+            onSetOneLabel={(v) => setPlanField(cp.id, "oneLabel", v)}
             onSetField={(f, v) => updateProduct(cp.id, f, v)}
             productList={products}
             onCalEntry={(v) => setCalEntry(cp.id, v)}
@@ -2222,6 +2236,8 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
   const [pq, setPq] = useState("");
   const [stOpen, setStOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const [qtyOpen, setQtyOpen] = useState({}); // раскрытые ячейки «Кол-во» по id позиции
+  const toggleQty = (iid) => setQtyOpen((o) => ({ ...o, [iid]: !o[iid] }));
   const active = list.find((b) => b.id === activeId) || list[0] || null;
 
   const addBatch = () => { const id = uid(); const b = { id, name: `Партия #${list.length + 1}`, status: "draft", cny: defaultRates.cny || "", usd: defaultRates.usd || "", cargo: defaultRates.cargo || "", commission: "", insurance: "", items: [], payments: [] }; onChange([...list, b]); setActiveId(id); };
@@ -2232,6 +2248,13 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
   const addItem = (productId) => { patchBatch({ items: [...(active.items || []), { id: uid(), productId, priceCny: "", qty: "" }] }); setPicker(false); setPq(""); };
   const setItem = (iid, k, v) => patchBatch({ items: active.items.map((it) => (it.id === iid ? { ...it, [k]: v } : it)) });
   const removeItem = (iid) => patchBatch({ items: active.items.filter((it) => it.id !== iid) });
+  // количество по размерам: обновляем qtyBySize и пересчитываем общий qty = сумма
+  const setItemSizeQty = (iid, sid, v) => patchBatch({ items: active.items.map((it) => {
+    if (it.id !== iid) return it;
+    const qbs = { ...(it.qtyBySize || {}), [sid]: v };
+    const sum = Object.values(qbs).reduce((a, x) => a + (isNaN(toNum(x)) ? 0 : toNum(x)), 0);
+    return { ...it, qtyBySize: qbs, qty: String(sum) };
+  }) });
   // фактическая оплата поставщику частями
   const addPayment = () => patchBatch({ payments: [...(active.payments || []), { id: uid(), amount: "", note: "", date: new Date().toISOString().slice(0, 10) }] });
   const setPayment = (pid, k, v) => patchBatch({ payments: (active.payments || []).map((p) => (p.id === pid ? { ...p, [k]: v } : p)) });
@@ -2344,8 +2367,14 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
               <th className="px-3 py-2" />
             </tr></thead>
             <tbody>
-              {rows.map(({ it, p, w, rubUnit, sumCny, sumRub }) => (
-                <tr key={it.id} className="border-t border-neutral-100 text-sm text-neutral-700">
+              {rows.map(({ it, p, w, rubUnit, sumCny, sumRub }) => {
+                const pSizes = Array.isArray(p.plan?.sizes) ? p.plan.sizes : [];
+                const pOne = !!p.plan?.oneSize;
+                const open = !!qtyOpen[it.id];
+                const qTotal = toNum(it.qty);
+                return (
+                <Fragment key={it.id}>
+                <tr className="border-t border-neutral-100 text-sm text-neutral-700">
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-11 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-neutral-100 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={14} />}</div>
@@ -2355,13 +2384,53 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
                   <td className="px-3 py-2 text-right"><input value={it.priceCny} onChange={(e) => setItem(it.id, "priceCny", e.target.value)} inputMode="decimal" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
                   <td className="px-3 py-2 text-right text-neutral-500">{isNaN(w) ? "—" : w}</td>
                   <td className="px-3 py-2 text-right text-neutral-500">{fmtRub(rubUnit)}</td>
-                  <td className="px-3 py-2 text-right"><input value={it.qty} onChange={(e) => setItem(it.id, "qty", e.target.value)} inputMode="numeric" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                  <td className="px-3 py-2 text-right">
+                    <button onClick={() => toggleQty(it.id)} title="Количество по размерам" className={"inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold transition " + (open ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-800 hover:border-neutral-300")}>
+                      {qTotal ? qTotal.toLocaleString("ru-RU") : "0"}
+                      {open ? <ChevronUp size={12} className="text-neutral-400" /> : <ChevronDown size={12} className="text-neutral-400" />}
+                    </button>
+                  </td>
                   <td className="px-3 py-2 text-right">{fmtCny(sumCny)}</td>
                   <td className="px-3 py-2 text-right font-semibold text-neutral-900">{fmtRub(sumRub)}</td>
                   <td className="px-3 py-2 text-left">{p?.purchase?.link ? <a href={p.purchase.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">ссылка <ExternalLink size={11} /></a> : <span className="text-xs text-neutral-300">—</span>}</td>
                   <td className="px-3 py-2 text-right"><button onClick={() => removeItem(it.id)} className="text-neutral-300 hover:text-red-500" title="Убрать из партии"><X size={14} /></button></td>
                 </tr>
-              ))}
+                {open && (
+                  <tr className="text-sm">
+                    <td colSpan={9} className="bg-neutral-50/70 px-4 py-3" style={{ borderTop: "1px dashed #e5e5e5" }}>
+                      {pOne ? (
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-teal-100 bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-700"><Target size={13} /> {p.plan?.oneLabel || "One size"}</span>
+                          <input value={it.qty} onChange={(e) => setItem(it.id, "qty", e.target.value)} inputMode="numeric" placeholder="0" className="w-20 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                          <span className="text-xs text-neutral-400">единый размер — одно число</span>
+                        </div>
+                      ) : pSizes.length > 0 ? (
+                        <>
+                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Количество по размерам</div>
+                          <div className="flex flex-wrap gap-3">
+                            {pSizes.map((s) => (
+                              <div key={s.id} className="flex flex-col items-center gap-1">
+                                <span className="text-xs font-bold text-teal-700">{s.name || "—"}</span>
+                                <input value={(it.qtyBySize || {})[s.id] ?? ""} onChange={(e) => setItemSizeQty(it.id, s.id, e.target.value)} inputMode="numeric" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1.5 text-center font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2.5 text-xs text-neutral-500">Итого: <b className="text-neutral-800">{qTotal || 0} шт</b> · подставляется в «Кол-во» и суммы</div>
+                        </>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-1.5 text-sm text-neutral-500">
+                          <span>У товара не задан размерный ряд.</span>
+                          <button onClick={() => onOpenCard && onOpenCard(it.productId)} className="text-blue-600 hover:underline">Задать размеры в карточке →</button>
+                          <span>или введите общее количество:</span>
+                          <input value={it.qty} onChange={(e) => setItem(it.id, "qty", e.target.value)} inputMode="numeric" placeholder="0" className="ml-1 w-20 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -4463,7 +4532,70 @@ function CritScorecard({ criteria = [], onSetCriteria, analytics, onSetAnalytics
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSetField, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+// Дашборд «Размеры»: размерный ряд (пилюли + пресеты) либо режим One size
+function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, onSetOneLabel }) {
+  const [draft, setDraft] = useState("");
+  const list = Array.isArray(sizes) ? sizes : [];
+  const mkSize = (name) => ({ id: uid(), name, total: "", toShip: "", qty: {} });
+
+  const renameSize = (sid, name) => onSizesSet(list.map((s) => (s.id === sid ? { ...s, name } : s)));
+  const removeSize = (sid) => onSizesSet(list.filter((s) => s.id !== sid));
+  const addSize = () => { const t = draft.trim(); if (!t) return; onSizesSet([...list, mkSize(t)]); setDraft(""); };
+  const applyPreset = (names) => {
+    // сохраняем склад/кол-во для совпадающих по имени размеров
+    const byName = new Map(list.map((s) => [String(s.name).trim(), s]));
+    onSizesSet(names.map((n) => byName.get(n) || mkSize(n)));
+  };
+
+  return (
+    <div className="mx-auto max-w-xl">
+      {!oneSize ? (
+        <>
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Быстрый выбор</div>
+          <div className="mb-5 flex flex-wrap gap-2">
+            {SIZE_PRESETS.map((p) => (
+              <button key={p.label} onClick={() => applyPreset(p.sizes)} className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700">{p.label}</button>
+            ))}
+            {list.length > 0 && <button onClick={() => onSizesSet([])} className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600">Очистить</button>}
+          </div>
+
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Размеры товара</div>
+          <div className="flex flex-wrap gap-2">
+            {list.map((s) => (
+              <span key={s.id} className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 py-1.5 pl-3 pr-1.5">
+                <input value={s.name} onChange={(e) => renameSize(s.id, e.target.value)} placeholder="—" className="w-12 bg-transparent text-center text-sm font-bold text-teal-700 focus:outline-none" />
+                <button onClick={() => removeSize(s.id)} className="rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить размер"><X size={13} /></button>
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1 rounded-xl border border-dashed border-neutral-300 py-1.5 pl-3 pr-2 text-neutral-400">
+              <Plus size={14} />
+              <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSize(); } }} onBlur={addSize} placeholder="размер…" className="w-20 bg-transparent text-sm font-medium text-neutral-800 focus:outline-none" />
+            </span>
+          </div>
+
+          <p className="mt-6 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3.5 py-3 text-xs text-neutral-500"><b className="text-neutral-700">Как работает:</b> вводите размеры этого товара пресетами или вручную. Это общий размерный ряд карточки — он подхватывается в плане поставок и закупке. Переключатель сверху включает режим <b>One size</b>, если товар безразмерный.</p>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center gap-4 rounded-2xl border border-teal-200 bg-teal-50 p-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-white"><Target size={22} /></div>
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-teal-900">Единый размер (One size)</div>
+              <div className="text-xs text-teal-700/80">Товар без размерного ряда — один вариант на всех.</div>
+            </div>
+            <div className="ml-auto flex flex-col gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-teal-700/80">Подпись размера</span>
+              <input value={oneLabel || ""} onChange={(e) => onSetOneLabel(e.target.value)} placeholder="ONE SIZE" className="w-40 rounded-lg border border-teal-200 bg-white px-2.5 py-1.5 text-sm focus:border-teal-400 focus:outline-none" />
+            </div>
+          </div>
+          <p className="mt-5 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3.5 py-3 text-xs text-neutral-500"><b className="text-neutral-700">One size:</b> размерная сетка скрывается, товар считается как один размер. Подпись можно поменять (например «42–48» или «безразмерный»). Вернуться к ряду — тем же переключателем сверху.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -4560,6 +4692,11 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
 
   // --- аналитика: рейтинг карточки по критериям ---
   const aScore = analyticsScore(analyticsCriteria, product.analytics?.ratings);
+
+  // --- размеры ---
+  const planSizes = Array.isArray(product.plan?.sizes) ? product.plan.sizes : [];
+  const oneSize = !!product.plan?.oneSize;
+  const oneLabel = product.plan?.oneLabel || "ONE SIZE";
 
   // --- дашборды: юнит-экономика (переключатель ВБ / Озон) ---
   const MP = mp === "oz"
@@ -4852,8 +4989,8 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               )}
             </section>
 
-            {/* Блоки-плитки: Продвижение / Закупка / Аналитика (раскрываются на весь экран) */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {/* Блоки-плитки: Продвижение / Закупка / Аналитика / Размеры (раскрываются на весь экран) */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <button onClick={() => setFullBlock("promo")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-orange-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-orange-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-400" /> Продвижение</div>
@@ -4877,6 +5014,24 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                 <div className="text-[11px] text-neutral-400">рейтинг карточки</div>
                 <div className="mt-2 text-[11px] text-neutral-400">{aScore.rated > 0 ? `оценено: ${aScore.rated}/${aScore.total}` : competitors.length > 0 ? `конкурентов: ${competitors.length}` : "появится после анализа"}</div>
               </button>
+
+              <button onClick={() => setFullBlock("sizes")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-teal-300 hover:shadow-sm">
+                <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-teal-500" />
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-teal-500" /> Размеры</div>
+                {oneSize ? (
+                  <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-teal-100 bg-teal-50 px-2.5 py-1 text-sm font-bold text-teal-700"><Target size={13} /> {oneLabel || "One size"}</div>
+                ) : planSizes.length > 0 ? (
+                  <>
+                    <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{planSizes.length} <span className="text-base font-semibold text-neutral-400">{planSizes.length === 1 ? "размер" : planSizes.length < 5 ? "размера" : "размеров"}</span></div>
+                    <div className="mt-2 flex flex-wrap gap-1">{planSizes.slice(0, 8).map((s) => (<span key={s.id} className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-md border border-teal-100 bg-teal-50 px-1.5 text-[11px] font-bold text-teal-700">{s.name || "—"}</span>))}{planSizes.length > 8 && <span className="text-[11px] text-neutral-400">+{planSizes.length - 8}</span>}</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">—</div>
+                    <div className="text-[11px] text-neutral-400">размеры не заданы</div>
+                  </>
+                )}
+              </button>
             </div>
 
             {/* Полноэкранный просмотр выбранного блока */}
@@ -4884,7 +5039,13 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               <div className="fixed inset-0 z-[70] flex items-start justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={() => setFullBlock(null)}>
                 <div className={"flex max-h-[94vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "analytics" ? "max-w-6xl" : "max-w-5xl")} onClick={(e) => e.stopPropagation()}>
                   <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
-                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "Продвижение" : fullBlock === "purchase" ? "Закупка" : "Аналитика"}</h3>
+                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "Продвижение" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : "Аналитика"}</h3>
+                    {fullBlock === "sizes" && (
+                      <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
+                        <button onClick={() => onSetOneSize(false)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (!oneSize ? "bg-white text-teal-700 shadow-sm" : "text-neutral-500")}>Размерный ряд</button>
+                        <button onClick={() => onSetOneSize(true)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (oneSize ? "bg-white text-teal-700 shadow-sm" : "text-neutral-500")}>One size</button>
+                      </div>
+                    )}
                     {fullBlock === "promo" && (
                       <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
                         <button onClick={() => setPromoView("gantt")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "gantt" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Гант</button>
@@ -4967,6 +5128,17 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                           </div>
                         </div>
                       </div>
+                    )}
+
+                    {fullBlock === "sizes" && (
+                      <SizesBoard
+                        sizes={planSizes}
+                        oneSize={oneSize}
+                        oneLabel={oneLabel}
+                        onSizesSet={onSizesSet}
+                        onSetOneSize={onSetOneSize}
+                        onSetOneLabel={onSetOneLabel}
+                      />
                     )}
 
                   </div>
@@ -5228,13 +5400,12 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJ
             <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.key].length}</span>
           </div>
           <div className="flex min-h-[40px] flex-col gap-2">
-            {byCol[col.key].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; return (
-              <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl border bg-white p-2.5 shadow-sm transition hover:border-neutral-300" style={{ borderColor: "#e9e9ec" }}>
+            {byCol[col.key].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
+              <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl border p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", borderColor: pm ? pm.color + "59" : "#e9e9ec", borderLeft: pm ? `3px solid ${pm.color}` : undefined }}>
                 {lc && <div className="mb-1.5 h-[3px] rounded-full" style={{ background: lc }} />}
                 <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {groupBy !== "status" && <StageChip j={j} />}
-                  {groupBy !== "priority" && <PrioChip p={j.priority} />}
                   {jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}
                   {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
                   {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
