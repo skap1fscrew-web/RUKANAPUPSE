@@ -70,6 +70,40 @@ const stageOf = (j) => (j && STAGES[j.stage]) ? j.stage : (j && j.done ? "done" 
 // применить статус к задаче, синхронизируя флаг done (для Ганта/Календаря)
 const applyStage = (j, stage) => ({ ...j, stage, done: stage === "done" });
 
+// Критерии аналитики карточки (общие для всех карточек, настраиваются)
+const ANALYTICS_CRIT_DEFAULT = [
+  { id: "comp", name: "Конкуренты с таким же изделием" },
+  { id: "wow", name: "Вау-эффект" },
+  { id: "utp", name: "УТП" },
+  { id: "price", name: "Цена" },
+  { id: "nuance", name: "Нюансы типа изделия" },
+];
+// светофорная оценка: зелёный=2 балла, оранжевый=1, красный=0
+const TL_META = {
+  green: { color: "#16a34a", bg: "#dcfce7", points: 2, label: "хорошо" },
+  orange: { color: "#d97706", bg: "#fef3c7", points: 1, label: "средне" },
+  red: { color: "#dc2626", bg: "#fee2e2", points: 0, label: "плохо" },
+};
+const TL_LEVELS = ["green", "orange", "red"];
+// рейтинг карточки: сумма баллов / максимум → 0..10
+const analyticsScore = (crits, ratings) => {
+  const r = ratings || {};
+  const list = Array.isArray(crits) ? crits : [];
+  const counts = { green: 0, orange: 0, red: 0 };
+  let got = 0, rated = 0;
+  list.forEach((c) => { const lv = r[c.id]; if (lv && TL_META[lv]) { counts[lv]++; got += TL_META[lv].points; rated++; } });
+  const max = list.length * 2;
+  const score10 = max > 0 ? Math.round((got / max) * 10) : 0;
+  return { got, max, score10, counts, rated, total: list.length };
+};
+const scoreVerdict = (sc) => {
+  if (!sc.rated) return { text: "Ещё не оценено", color: "#94a3b8" };
+  if (sc.score10 >= 8) return { text: "Отлично — брать в работу", color: "#16a34a" };
+  if (sc.score10 >= 6) return { text: "Хорошо — можно брать в работу", color: "#16a34a" };
+  if (sc.score10 >= 4) return { text: "Средне — есть риски", color: "#d97706" };
+  return { text: "Слабо — высокий риск", color: "#dc2626" };
+};
+
 // Группы. tab — к какой вкладке относится группа. kind:
 //   "columns" — добавляет столбцы к каждой строке товара (как Юнит);
 //   "matrix"  — раскрывается под строкой товара (метрики × интеграции, как Внешка).
@@ -448,6 +482,9 @@ const normalizeProduct = (p) => {
     tasks: Array.isArray(p?.tasks) ? p.tasks : [],
     competitors: Array.isArray(p?.competitors) ? p.competitors : [],
     seasonality: p?.seasonality || null,
+    analytics: (p?.analytics && typeof p.analytics === "object")
+      ? { ratings: p.analytics.ratings || {}, comments: p.analytics.comments || {} }
+      : { ratings: {}, comments: {} },
   };
 };
 
@@ -510,6 +547,7 @@ export default function AssortmentTable() {
   const [defaultTasks, setDefaultTasks] = useState([]); // задачи по умолчанию (общие) — [{id, text, labelId}]
   const [taskLabels, setTaskLabels] = useState([]); // метки задач (общие) — [{id, name, color}]
   const [taskTags, setTaskTags] = useState([]); // теги задач — [{id, name, color}], несколько на задачу
+  const [analyticsCriteria, setAnalyticsCriteria] = useState(() => ANALYTICS_CRIT_DEFAULT.slice()); // критерии аналитики (общие) — [{id, name}]
   const [kanbanCols, setKanbanCols] = useState(() => KANBAN_DEFAULT.slice()); // колонки Канбана — [{id, name, color}]
   const [opTypes, setOpTypes] = useState([]); // операционные задачи (регулярные строки Ганта) — [{id, name, recur}]
   const [opDone, setOpDone] = useState({}); // отметки выполнения операционных задач — {opId:{"YYYY-MM-DD":true}}
@@ -593,6 +631,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
         if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = JSON.stringify(settings.taskLabels); }
         if (Array.isArray(settings.taskTags)) { setTaskTags(settings.taskTags); syncedRef.current.settings.taskTags = JSON.stringify(settings.taskTags); }
+        if (Array.isArray(settings.analyticsCriteria) && settings.analyticsCriteria.length) { setAnalyticsCriteria(settings.analyticsCriteria); syncedRef.current.settings.analyticsCriteria = JSON.stringify(settings.analyticsCriteria); }
         if (Array.isArray(settings.kanbanCols) && settings.kanbanCols.length) { setKanbanCols(settings.kanbanCols); syncedRef.current.settings.kanbanCols = JSON.stringify(settings.kanbanCols); }
         if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = JSON.stringify(settings.opTypes); }
         if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = JSON.stringify(settings.opDone); }
@@ -643,7 +682,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -686,7 +725,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -729,6 +768,7 @@ export default function AssortmentTable() {
         else if (key === "defaultTasks") setDefaultTasks(value || []);
         else if (key === "taskLabels") setTaskLabels(value || []);
         else if (key === "taskTags") setTaskTags(value || []);
+        else if (key === "analyticsCriteria") { if (Array.isArray(value) && value.length) setAnalyticsCriteria(value); }
         else if (key === "kanbanCols") { if (Array.isArray(value) && value.length) setKanbanCols(value); }
         else if (key === "opTypes") setOpTypes(value || []);
         else if (key === "opDone") setOpDone(value || {});
@@ -769,6 +809,8 @@ export default function AssortmentTable() {
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, competitors } : x)));
   const setProductSeasonality = (id, seasonality) =>
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, seasonality } : x)));
+  const setProductAnalytics = (id, analytics) =>
+    setProducts((p) => p.map((x) => (x.id === id ? { ...x, analytics } : x)));
   const upsertJob = (job) => setJobs((js) => { const i = js.findIndex((j) => j.id === job.id); if (i === -1) return [...js, job]; const c = js.slice(); c[i] = job; return c; });
   const removeJob = (id) => setJobs((js) => js.filter((j) => j.id !== id));
   const upsertOpType = (o) => setOpTypes((list) => { const i = (list || []).findIndex((x) => x.id === o.id); if (i === -1) return [...(list || []), o]; const c = list.slice(); c[i] = o; return c; });
@@ -1798,6 +1840,9 @@ export default function AssortmentTable() {
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
             onSetCompetitors={(c) => setProductCompetitors(cp.id, c)}
             onSetSeasonality={(s) => setProductSeasonality(cp.id, s)}
+            analyticsCriteria={analyticsCriteria}
+            onSetCriteria={setAnalyticsCriteria}
+            onSetAnalytics={(a) => setProductAnalytics(cp.id, a)}
             onSetField={(f, v) => updateProduct(cp.id, f, v)}
             productList={products}
             onCalEntry={(v) => setCalEntry(cp.id, v)}
@@ -4287,7 +4332,138 @@ function PromoDayEditor({ product, dkey, wbOrders = {}, onSetCell, onSetFlag, on
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, onSetField, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+// Светофорный переключатель оценки критерия (зелёный / оранжевый / красный)
+function TrafficToggle({ value, onChange }) {
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-xl bg-neutral-50 p-1">
+      {TL_LEVELS.map((lv) => {
+        const m = TL_META[lv];
+        const on = value === lv;
+        return (
+          <button
+            key={lv}
+            onClick={() => onChange(lv)}
+            title={m.label}
+            className="flex h-7 w-7 items-center justify-center rounded-lg transition"
+            style={on ? { background: m.bg } : {}}
+          >
+            <span
+              className="block h-3.5 w-3.5 rounded-full"
+              style={on ? { background: m.color } : { border: `2px solid ${m.color}`, opacity: 0.55 }}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Оценочная карта карточки: рейтинг-кольцо + саммари + критерии (светофор + комментарий) + настройка критериев
+function CritScorecard({ criteria = [], onSetCriteria, analytics, onSetAnalytics }) {
+  const crits = Array.isArray(criteria) ? criteria : [];
+  const ratings = analytics?.ratings || {};
+  const comments = analytics?.comments || {};
+  const sc = analyticsScore(crits, ratings);
+  const verdict = scoreVerdict(sc);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const dragId = useRef(null);
+
+  const setRating = (cid, lv) =>
+    onSetAnalytics({ ratings: { ...ratings, [cid]: ratings[cid] === lv ? undefined : lv }, comments });
+  const setComment = (cid, text) =>
+    onSetAnalytics({ ratings, comments: { ...comments, [cid]: text } });
+
+  const addCrit = () => { const t = draft.trim(); if (!t) return; onSetCriteria([...crits, { id: uid(), name: t }]); setDraft(""); };
+  const renameCrit = (cid, name) => onSetCriteria(crits.map((c) => (c.id === cid ? { ...c, name } : c)));
+  const removeCrit = (cid) => onSetCriteria(crits.filter((c) => c.id !== cid));
+  const reorder = (from, to) => { if (from === to || from == null || to == null) return; const a = crits.slice(); const [m] = a.splice(from, 1); a.splice(to, 0, m); onSetCriteria(a); };
+
+  // геометрия кольца
+  const R = 26, C = 2 * Math.PI * R;
+  const frac = sc.max > 0 ? sc.got / sc.max : 0;
+
+  return (
+    <div className="rounded-2xl border border-neutral-200 p-4">
+      {/* саммари */}
+      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">Оценка карточки</div>
+      <div className="flex items-center gap-4">
+        <div className="relative h-16 w-16 shrink-0">
+          <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+            <circle cx="32" cy="32" r={R} fill="none" stroke="#eef0f2" strokeWidth="6" />
+            <circle cx="32" cy="32" r={R} fill="none" stroke={verdict.color} strokeWidth="6" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - frac)} />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+            <span className="text-lg font-bold tabular-nums text-neutral-900">{sc.rated ? sc.score10 : "—"}</span>
+            <span className="text-[9px] text-neutral-400">{sc.rated ? "из 10" : "рейтинг"}</span>
+          </div>
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-bold" style={{ color: verdict.color }}>{verdict.text}</div>
+          <div className="mt-1.5 flex h-2 overflow-hidden rounded-full bg-neutral-100">
+            {sc.max > 0 && (<><div style={{ width: `${(sc.counts.green * 2 / sc.max) * 100}%`, background: TL_META.green.color }} /><div style={{ width: `${(sc.counts.orange / sc.max) * 100}%`, background: TL_META.orange.color }} /><div style={{ width: `${(sc.counts.red * 0 / sc.max) * 100}%` }} /></>)}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-neutral-500">
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: TL_META.green.color }} />{sc.counts.green} хорошо</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: TL_META.orange.color }} />{sc.counts.orange} средне</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: TL_META.red.color }} />{sc.counts.red} плохо</span>
+          </div>
+        </div>
+      </div>
+
+      {/* шапка «Критерии» + кнопка настройки */}
+      <div className="mt-4 flex items-center gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Критерии</h4>
+        <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{crits.length}</span>
+        <button onClick={() => setEditOpen((v) => !v)} className={"ml-auto inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition " + (editOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}><Settings2 size={13} /> Настроить</button>
+      </div>
+
+      {/* панель настройки критериев (общие для всех карточек) */}
+      {editOpen && (
+        <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50/60 p-3">
+          <p className="mb-2 text-[11px] text-neutral-400">Критерии общие для всех карточек — изменения применятся везде.</p>
+          <div className="flex flex-col gap-1.5">
+            {crits.map((c, i) => (
+              <div
+                key={c.id}
+                draggable
+                onDragStart={() => { dragId.current = i; }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => { reorder(dragId.current, i); dragId.current = null; }}
+                className="flex items-center gap-2"
+              >
+                <span className="cursor-grab text-neutral-300" title="Перетащить"><GripVertical size={15} /></span>
+                <input value={c.name} onChange={(e) => renameCrit(c.id, e.target.value)} className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
+                <button onClick={() => removeCrit(c.id)} className="shrink-0 rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить критерий"><X size={15} /></button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCrit(); } }} placeholder="Новый критерий…" className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
+            <button onClick={addCrit} disabled={!draft.trim()} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"><Plus size={14} /> Добавить</button>
+          </div>
+        </div>
+      )}
+
+      {/* оценка по каждому критерию */}
+      <div className="mt-3 space-y-3">
+        {crits.length === 0 && <p className="py-4 text-center text-sm text-neutral-400">Критериев пока нет — добавьте в «Настроить».</p>}
+        {crits.map((c) => (
+          <div key={c.id} className="rounded-xl border border-neutral-100 p-3">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-sm font-semibold text-neutral-800">{c.name}</span>
+              <TrafficToggle value={ratings[c.id]} onChange={(lv) => setRating(c.id, lv)} />
+            </div>
+            <input value={comments[c.id] || ""} onChange={(e) => setComment(c.id, e.target.value)} placeholder="Комментарий по критерию…" className="mt-2 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSetField, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -4381,6 +4557,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
     setCompUrl("");
   };
   const removeComp = (id) => onSetCompetitors(competitors.filter((c) => c.id !== id));
+
+  // --- аналитика: рейтинг карточки по критериям ---
+  const aScore = analyticsScore(analyticsCriteria, product.analytics?.ratings);
 
   // --- дашборды: юнит-экономика (переключатель ВБ / Озон) ---
   const MP = mp === "oz"
@@ -4694,16 +4873,16 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               <button onClick={() => setFullBlock("analytics")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-violet-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-violet-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-violet-400" /> Аналитика</div>
-                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">—</div>
+                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{aScore.rated > 0 ? <>{aScore.score10}<span className="text-base font-semibold text-neutral-400">/10</span></> : "—"}</div>
                 <div className="text-[11px] text-neutral-400">рейтинг карточки</div>
-                <div className="mt-2 text-[11px] text-neutral-400">{competitors.length > 0 ? `конкурентов: ${competitors.length}` : "появится после анализа"}</div>
+                <div className="mt-2 text-[11px] text-neutral-400">{aScore.rated > 0 ? `оценено: ${aScore.rated}/${aScore.total}` : competitors.length > 0 ? `конкурентов: ${competitors.length}` : "появится после анализа"}</div>
               </button>
             </div>
 
             {/* Полноэкранный просмотр выбранного блока */}
             {fullBlock && (
               <div className="fixed inset-0 z-[70] flex items-start justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={() => setFullBlock(null)}>
-                <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <div className={"flex max-h-[94vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "analytics" ? "max-w-6xl" : "max-w-5xl")} onClick={(e) => e.stopPropagation()}>
                   <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
                     <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "Продвижение" : fullBlock === "purchase" ? "Закупка" : "Аналитика"}</h3>
                     {fullBlock === "promo" && (
@@ -4767,19 +4946,25 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                     )}
 
                     {fullBlock === "analytics" && (
-                      <div className="space-y-5">
-                        <div>
-                          <div className="mb-2 flex items-center gap-2"><h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Конкуренты</h4>{competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span>}</div>
-                          {competitors.length > 0 ? (<div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">{competitors.map((c) => (<CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />))}</div>) : (<p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>)}
-                          <div className="mt-3 flex items-center gap-2"><input value={compUrl} onChange={(e) => setCompUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addComp()} placeholder="Ссылка на карточку ВБ…" className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" /><button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex shrink-0 items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"><Plus size={14} /> Добавить</button></div>
-                        </div>
-                        <div className="border-t border-neutral-100 pt-4">
-                          <button onClick={() => setSeasonOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">{seasonOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Сезонность и производство</h4>{product.seasonality?.points?.length > 0 && <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}</button>
-                          {seasonOpen && <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} cal={normalizeCalendar(product.calendar)} onSetComponents={onCalComponents} onSetBuffer={onCalBuffer} />}
-                        </div>
-                        <div className="border-t border-neutral-100 pt-4">
-                          <button onClick={() => setCalBlockOpen((v) => !v)} className="mb-2 flex w-full items-center gap-2 text-left">{calBlockOpen ? <ChevronDown size={15} className="text-neutral-500" /> : <ChevronRight size={15} className="text-neutral-500" />}<h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Подробный календарь по датам</h4></button>
-                          {calBlockOpen && (<CalendarBlock product={product} productList={productList || []} onSetEntry={onCalEntry} onSetStart={onCalStart} onSetName={onCalName} onSetComponents={onCalComponents} onCopyFrom={onCalCopyFrom} />)}
+                      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,440px)_1fr]">
+                        {/* ЛЕВО: оценочная карта по критериям */}
+                        <CritScorecard
+                          criteria={analyticsCriteria}
+                          onSetCriteria={onSetCriteria}
+                          analytics={product.analytics}
+                          onSetAnalytics={onSetAnalytics}
+                        />
+                        {/* ПРАВО: сезонность + конкуренты */}
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-neutral-200 p-4">
+                            <div className="mb-2 flex items-center gap-2"><h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Сезонность и производство</h4>{product.seasonality?.points?.length > 0 && <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">график построен</span>}</div>
+                            <SeasonalityPanel data={product.seasonality} onChange={onSetSeasonality} cal={normalizeCalendar(product.calendar)} onSetComponents={onCalComponents} onSetBuffer={onCalBuffer} />
+                          </div>
+                          <div className="rounded-2xl border border-neutral-200 p-4">
+                            <div className="mb-2 flex items-center gap-2"><h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Конкуренты</h4>{competitors.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-semibold text-neutral-500">{competitors.length}</span>}</div>
+                            {competitors.length > 0 ? (<div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-6">{competitors.map((c) => (<CompetitorThumb key={c.id} url={c.url} onRemove={() => removeComp(c.id)} />))}</div>) : (<p className="text-xs text-neutral-400">Пока пусто. Вставьте ссылку на карточку конкурента на ВБ ниже.</p>)}
+                            <div className="mt-3 flex items-center gap-2"><input value={compUrl} onChange={(e) => setCompUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addComp()} placeholder="Ссылка на карточку ВБ…" className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" /><button onClick={addComp} disabled={!wbNmFromUrl(compUrl.trim())} className="rounded-lg inline-flex shrink-0 items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"><Plus size={14} /> Добавить</button></div>
+                          </div>
                         </div>
                       </div>
                     )}
