@@ -4829,6 +4829,16 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
             placeholder="Название товара"
             className="w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-1 text-xl font-semibold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
+          <div className="mt-1 flex items-center gap-2">
+            <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-neutral-400">Предмет</span>
+            <input
+              list="subjects-datalist"
+              value={product.subject || ""}
+              onChange={(e) => onSetField("subject", e.target.value)}
+              placeholder="категория ВБ"
+              className="w-full max-w-xs rounded-md border border-transparent px-1.5 py-0.5 text-sm text-neutral-700 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
+            />
+          </div>
         </div>
         <button onClick={onClose} className="rounded-lg shrink-0 p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
       </div>
