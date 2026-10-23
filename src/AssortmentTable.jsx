@@ -713,6 +713,11 @@ export default function AssortmentTable() {
           const incoming = Array.isArray(value) ? value : [];
           if (incoming.length === 0 && (liveLists[key] || []).length > 0) return;
         }
+        // Нормализуемые настройки сверяем и храним в syncedRef в НОРМАЛИЗОВАННОМ виде.
+        // Иначе (норм. ≠ сырое) каждая вкладка пере-сохраняет только что полученное,
+        // начинается шторм эха между вкладками — правки лагают и затираются.
+        if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = JSON.stringify(ns); setStrategy(ns); } return; }
+        if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = JSON.stringify(nd); setDuties(nd); } return; }
         syncedRef.current.settings[key] = js;
         if (key === "statuses") setStatuses(value);
         else if (key === "warehouses") setWarehouses(value);
@@ -729,8 +734,6 @@ export default function AssortmentTable() {
         else if (key === "opDone") setOpDone(value || {});
         else if (key === "subjects") setSubjects(value || []);
         else if (key === "customDBs") setCustomDBs(value || []);
-        else if (key === "strategy") { if (value && typeof value === "object") setStrategy(normStrategy(value)); }
-        else if (key === "duties") { if (value && typeof value === "object") setDuties(normDuties(value)); }
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
@@ -5392,7 +5395,10 @@ function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onSave, 
         <div className="grid flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-[1fr_300px]">
           {/* ЛЕВО: название · заметка · подзадачи */}
           <div className="flex flex-col gap-5 border-b border-neutral-100 p-5 sm:border-b-0 sm:border-r">
-            <input value={j.title} onChange={(e) => set("title", e.target.value)} placeholder="Название задачи…" autoFocus className="w-full border-none bg-transparent text-lg font-bold leading-snug text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
+            <textarea value={j.title} rows={1} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="Название задачи…" autoFocus
+              ref={(el) => { if (el) { el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 24; const max = lh * 3; el.style.height = Math.min(el.scrollHeight, max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; } }}
+              onInput={(e) => { const el = e.target; el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 24; const max = lh * 3; el.style.height = Math.min(el.scrollHeight, max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; }}
+              className="w-full resize-none break-words border-none bg-transparent text-lg font-bold leading-snug text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
             <div>
               <div className={fieldL + " mb-1.5"}>Заметка</div>
               <textarea value={j.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Добавьте описание, контекст, ссылки…" rows={4} className="w-full resize-y rounded-xl border border-neutral-200 px-3 py-2 text-sm leading-relaxed text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
