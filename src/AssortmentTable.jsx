@@ -58,6 +58,17 @@ const KANBAN_DEFAULT = [
   { id: "doing", name: "В работе", color: "#f59e0b" },
   { id: "done", name: "Готово", color: "#10b981" },
 ];
+// Статусы задачи (этап работы)
+const STAGES = {
+  wait: { label: "Ожидает", color: "#94a3b8", bg: "#f1f5f9" },
+  progress: { label: "В процессе", color: "#c77d1a", bg: "#fff4e5" },
+  done: { label: "Готово", color: "#059669", bg: "#ecfdf5" },
+};
+const STAGE_ORDER = ["wait", "progress", "done"];
+// текущий статус задачи (с миграцией из флага done)
+const stageOf = (j) => (j && STAGES[j.stage]) ? j.stage : (j && j.done ? "done" : "wait");
+// применить статус к задаче, синхронизируя флаг done (для Ганта/Календаря)
+const applyStage = (j, stage) => ({ ...j, stage, done: stage === "done" });
 
 // Группы. tab — к какой вкладке относится группа. kind:
 //   "columns" — добавляет столбцы к каждой строке товара (как Юнит);
@@ -1691,15 +1702,13 @@ export default function AssortmentTable() {
             jobs={jobs}
             taskLabels={taskLabels}
             taskTags={taskTags}
-            kanbanCols={kanbanCols}
-            onSetCols={setKanbanCols}
             onUpdateJob={upsertJob}
             products={products}
             opTypes={opTypes}
             opDone={opDone}
             onToggleDone={toggleOpDone}
             onEditOp={(op) => setOpEditor({ ...op })}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, status: (kanbanCols[0] || {}).id || "backlog", priority: null, tags: [], _new: true, ...preset })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, tags: [], stage: "wait", _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
         )}
@@ -1733,7 +1742,6 @@ export default function AssortmentTable() {
           job={jobEditor}
           taskLabels={taskLabels}
           taskTags={taskTags}
-          kanbanCols={kanbanCols}
           products={products}
           opTypes={opTypes}
           onSave={(j) => { const { _new, ...rest } = j; if (rest.title.trim()) upsertJob(rest); setJobEditor(null); }}
@@ -4905,14 +4913,16 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
   );
 }
 
-function TasksView({ jobs, taskLabels, taskTags = [], kanbanCols = [], onSetCols, onUpdateJob, products, opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
+function TasksView({ jobs, taskLabels, taskTags = [], onUpdateJob, products, opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
+  const [groupBy, setGroupBy] = useState(() => lsGet("rnp.kanbanGroup", "status")); // status | priority | label
   const [fltPrio, setFltPrio] = useState(null);
   const [fltTag, setFltTag] = useState(null);
   const [fltOpen, setFltOpen] = useState(null);
   const todayStr = isoYMD(now);
+  useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
 
   const labelColor = (id) => (taskLabels || []).find((l) => l.id === id)?.color || "#cbd5e1";
   const prevM = () => setYm((s) => { const d = new Date(s.y, s.m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
@@ -4943,6 +4953,14 @@ function TasksView({ jobs, taskLabels, taskTags = [], kanbanCols = [], onSetCols
           </>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {view === "kanban" && (
+            <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-1 py-0.5">
+              <span className="pl-1.5 text-[11px] text-neutral-400">Колонки:</span>
+              <button onClick={() => setGroupBy("status")} className={"rounded-md px-2 py-1 text-xs font-semibold " + (groupBy === "status" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-700")}>Статус</button>
+              <button onClick={() => setGroupBy("priority")} className={"rounded-md px-2 py-1 text-xs font-semibold " + (groupBy === "priority" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-700")}>Приоритет</button>
+              <button onClick={() => setGroupBy("label")} className={"rounded-md px-2 py-1 text-xs font-semibold " + (groupBy === "label" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-700")}>Метка</button>
+            </div>
+          )}
           {isBoard && (
             <>
               <div className="relative">
@@ -4972,8 +4990,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], kanbanCols = [], onSetCols
         </div>
       </div>
 
-      {view === "kanban" ? <KanbanBoard jobs={fJobs} cols={kanbanCols} tags={taskTags} taskLabels={taskLabels} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} onSetCols={onSetCols} />
-        : view === "list" ? <JobsListView jobs={fJobs} cols={kanbanCols} tags={taskTags} taskLabels={taskLabels} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
+      {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
+        : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
         : view === "cal" ? <CalendarGrid jobs={jobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
         : <GanttBoard jobs={jobs} products={products} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} />}
     </div>
@@ -4982,86 +5000,76 @@ function TasksView({ jobs, taskLabels, taskTags = [], kanbanCols = [], onSetCols
 
 // Карточка задачи (Канбан) и строка (Список) используют общие мелкие элементы
 function PrioChip({ p }) { if (!p || !PRIORITIES[p]) return null; const m = PRIORITIES[p]; return <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: m.bg, color: m.color }}><span className="h-1.5 w-1.5 rounded-full" style={{ background: m.color }} />{m.label}</span>; }
+function StageChip({ j }) { const k = stageOf(j); const m = STAGES[k]; return <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: m.bg, color: m.color }}><span className="h-1.5 w-1.5 rounded-full" style={{ background: m.color }} />{m.label}</span>; }
 
-function KanbanBoard({ jobs, cols, tags, taskLabels, products, onOpen, onAddJob, onUpdateJob, onSetCols }) {
+function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJob, onUpdateJob }) {
   const dragRef = useRef(null);
   const [overCol, setOverCol] = useState(null);
-  const [editCol, setEditCol] = useState(null);
-  const [menuCol, setMenuCol] = useState(null);
   const tagById = Object.fromEntries((tags || []).map((t) => [t.id, t]));
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
   const labelColor = (id) => (taskLabels || []).find((l) => l.id === id)?.color;
-  const colIds = cols.map((c) => c.id);
-  const colOf = (j) => (j.status && colIds.includes(j.status)) ? j.status : cols[0]?.id;
-  const byCol = Object.fromEntries(cols.map((c) => [c.id, []]));
-  jobs.forEach((j) => { const c = colOf(j); if (byCol[c]) byCol[c].push(j); });
   const fmtD = (d) => d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : "";
-  const moveJob = (id, toCol) => { const j = jobs.find((x) => x.id === id); if (j && colOf(j) !== toCol) onUpdateJob({ ...j, status: toCol }); };
-  const addCol = () => onSetCols([...cols, { id: uid(), name: "Новая колонка", color: "#94a3b8" }]);
-  const renameCol = (id, name) => onSetCols(cols.map((c) => (c.id === id ? { ...c, name: name.trim() || "Без названия" } : c)));
-  const setColColor = (id, color) => onSetCols(cols.map((c) => (c.id === id ? { ...c, color } : c)));
-  const removeCol = (id) => { if (cols.length <= 1) return; onSetCols(cols.filter((c) => c.id !== id)); setMenuCol(null); };
-  const moveCol = (id, dir) => { const i = cols.findIndex((c) => c.id === id); const j = i + dir; if (j < 0 || j >= cols.length) return; const a = cols.slice(); const t = a[i]; a[i] = a[j]; a[j] = t; onSetCols(a); };
+
+  // колонки строятся из выбранного параметра группировки
+  let columns;
+  if (groupBy === "status") {
+    columns = STAGE_ORDER.map((k) => ({ key: k, name: STAGES[k].label, color: STAGES[k].color, match: (j) => stageOf(j) === k, preset: { stage: k, done: k === "done" } }));
+  } else if (groupBy === "label") {
+    columns = [
+      ...(taskLabels || []).map((l) => ({ key: l.id, name: l.name, color: l.color || "#94a3b8", match: (j) => j.labelId === l.id, preset: { labelId: l.id } })),
+      { key: "__none", name: "Без метки", color: "#cbd5e1", match: (j) => !j.labelId || !(taskLabels || []).some((l) => l.id === j.labelId), preset: { labelId: null } },
+    ];
+  } else {
+    columns = [
+      { key: "high", name: "Высокий", color: PRIORITIES.high.color, match: (j) => j.priority === "high", preset: { priority: "high" } },
+      { key: "med", name: "Средний", color: PRIORITIES.med.color, match: (j) => j.priority === "med", preset: { priority: "med" } },
+      { key: "low", name: "Низкий", color: PRIORITIES.low.color, match: (j) => j.priority === "low", preset: { priority: "low" } },
+      { key: "__none", name: "Без приоритета", color: "#cbd5e1", match: (j) => !j.priority, preset: { priority: null } },
+    ];
+  }
+  const byCol = Object.fromEntries(columns.map((c) => [c.key, []]));
+  jobs.forEach((j) => { const c = columns.find((c) => c.match(j)) || columns[columns.length - 1]; byCol[c.key].push(j); });
+  const moveJob = (id, col) => { const j = jobs.find((x) => x.id === id); if (j && !col.match(j)) onUpdateJob({ ...j, ...col.preset }); };
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-1">
-      {cols.map((col) => (
-        <div key={col.id}
-          onDragOver={(e) => { e.preventDefault(); setOverCol(col.id); }}
-          onDragLeave={() => setOverCol((o) => (o === col.id ? null : o))}
-          onDrop={(e) => { e.preventDefault(); moveJob(dragRef.current, col.id); dragRef.current = null; setOverCol(null); }}
-          className={"flex w-72 shrink-0 flex-col rounded-2xl border p-2.5 transition " + (overCol === col.id ? "border-orange-300 bg-orange-50/40" : "border-neutral-150 bg-neutral-50")}
-          style={{ borderColor: overCol === col.id ? "#fdba74" : "#ececef" }}>
+      {columns.map((col) => (
+        <div key={col.key}
+          onDragOver={(e) => { e.preventDefault(); setOverCol(col.key); }}
+          onDragLeave={() => setOverCol((o) => (o === col.key ? null : o))}
+          onDrop={(e) => { e.preventDefault(); moveJob(dragRef.current, col); dragRef.current = null; setOverCol(null); }}
+          className="flex w-72 shrink-0 flex-col rounded-2xl border p-2.5 transition"
+          style={{ borderColor: overCol === col.key ? "#fdba74" : "#ececef", background: overCol === col.key ? "#fff7ed" : "#fafafa" }}>
           <div className="mb-2 flex items-center gap-2 px-1">
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: col.color }} />
-            {editCol === col.id ? (
-              <input autoFocus defaultValue={col.name} onBlur={(e) => { renameCol(col.id, e.target.value); setEditCol(null); }} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setEditCol(null); }} className="min-w-0 flex-1 rounded border border-neutral-300 px-1.5 py-0.5 text-xs font-bold uppercase text-neutral-700 focus:outline-none" />
-            ) : (
-              <span onDoubleClick={() => setEditCol(col.id)} title="Двойной клик — переименовать" className="truncate text-xs font-bold uppercase tracking-wide text-neutral-600">{col.name}</span>
-            )}
-            <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.id].length}</span>
-            <div className="relative">
-              <button onClick={() => setMenuCol(menuCol === col.id ? null : col.id)} className="rounded p-0.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"><Settings2 size={13} /></button>
-              {menuCol === col.id && (<><div className="fixed inset-0 z-10" onClick={() => setMenuCol(null)} /><div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg">
-                <div className="mb-1 flex gap-1">
-                  <button onClick={() => moveCol(col.id, -1)} className="flex-1 rounded-md border border-neutral-200 py-1 text-xs text-neutral-600 hover:bg-neutral-50">← влево</button>
-                  <button onClick={() => moveCol(col.id, 1)} className="flex-1 rounded-md border border-neutral-200 py-1 text-xs text-neutral-600 hover:bg-neutral-50">вправо →</button>
-                </div>
-                <div className="flex flex-wrap gap-1 px-0.5 py-1">
-                  {["#94a3b8", "#f59e0b", "#10b981", "#2563eb", "#ec4899", "#7c3aed", "#ef4444"].map((c) => <button key={c} onClick={() => setColColor(col.id, c)} className="h-4 w-4 rounded-full" style={{ background: c, boxShadow: col.color === c ? `0 0 0 2px #fff,0 0 0 3.5px ${c}` : "none" }} />)}
-                </div>
-                <button onClick={() => { setEditCol(col.id); setMenuCol(null); }} className="block w-full rounded-md px-2 py-1 text-left text-xs text-neutral-600 hover:bg-neutral-50">Переименовать</button>
-                <button onClick={() => removeCol(col.id)} disabled={cols.length <= 1} className="block w-full rounded-md px-2 py-1 text-left text-xs text-red-500 hover:bg-red-50 disabled:opacity-40">Удалить колонку</button>
-              </div></>)}
-            </div>
+            <span className="truncate text-xs font-bold uppercase tracking-wide text-neutral-600">{col.name}</span>
+            <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.key].length}</span>
           </div>
           <div className="flex min-h-[40px] flex-col gap-2">
-            {byCol[col.id].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); return (
-              <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl border border-neutral-150 bg-white p-2.5 shadow-sm transition hover:border-neutral-300" style={{ borderColor: "#e9e9ec" }}>
+            {byCol[col.key].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); return (
+              <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl border bg-white p-2.5 shadow-sm transition hover:border-neutral-300" style={{ borderColor: "#e9e9ec" }}>
                 {lc && <div className="mb-1.5 h-[3px] rounded-full" style={{ background: lc }} />}
                 <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <PrioChip p={j.priority} />
+                  {groupBy !== "status" && <StageChip j={j} />}
+                  {groupBy !== "priority" && <PrioChip p={j.priority} />}
                   {jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}
                   {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
                 </div>
               </div>
             ); })}
           </div>
-          <button onClick={() => onAddJob({ status: col.id })} className="mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"><Plus size={13} /> задача</button>
+          <button onClick={() => onAddJob({ ...col.preset })} className="mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"><Plus size={13} /> задача</button>
         </div>
       ))}
-      <button onClick={addCol} className="flex h-9 w-44 shrink-0 items-center justify-center gap-1 rounded-2xl border border-dashed border-neutral-300 text-xs font-semibold text-neutral-400 hover:border-neutral-400 hover:text-neutral-600"><Plus size={14} /> Колонка</button>
     </div>
   );
 }
 
-function JobsListView({ jobs, cols, tags, taskLabels, products, onOpen, onUpdateJob }) {
+function JobsListView({ jobs, tags, taskLabels, products, onOpen, onUpdateJob }) {
   const tagById = Object.fromEntries((tags || []).map((t) => [t.id, t]));
-  const colById = Object.fromEntries((cols || []).map((c) => [c.id, c]));
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
   const label = (id) => (taskLabels || []).find((l) => l.id === id);
-  const colOf = (j) => colById[j.status] || cols[0];
   const fmtD = (d) => d ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}` : "—";
   const sorted = jobs.slice().sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
   return (
@@ -5070,25 +5078,25 @@ function JobsListView({ jobs, cols, tags, taskLabels, products, onOpen, onUpdate
         <thead><tr className="text-[10px] uppercase tracking-wide text-neutral-400">
           <th className="w-8 px-2 py-2" />
           <th className="px-3 py-2 text-left font-semibold">Задача</th>
+          <th className="px-3 py-2 text-left font-semibold">Статус</th>
           <th className="px-3 py-2 text-left font-semibold">Приоритет</th>
           <th className="px-3 py-2 text-left font-semibold">Теги</th>
           <th className="px-3 py-2 text-left font-semibold">Метка</th>
           <th className="px-3 py-2 text-left font-semibold">Дедлайн</th>
           <th className="px-3 py-2 text-left font-semibold">Товар</th>
-          <th className="px-3 py-2 text-left font-semibold">Колонка</th>
         </tr></thead>
         <tbody>
           {sorted.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-neutral-400">Задач нет</td></tr>}
-          {sorted.map((j) => { const col = colOf(j); const lb = label(j.labelId); const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); return (
+          {sorted.map((j) => { const lb = label(j.labelId); const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const done = stageOf(j) === "done"; return (
             <tr key={j.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
-              <td className="px-2 py-2 text-center"><button onClick={() => onUpdateJob({ ...j, done: !j.done })} className="flex h-4 w-4 items-center justify-center rounded border" style={{ background: j.done ? "#16a34a" : "#fff", borderColor: j.done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{j.done && <Check size={10} strokeWidth={3} />}</button></td>
-              <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</button></td>
+              <td className="px-2 py-2 text-center"><button onClick={() => onUpdateJob(applyStage(j, done ? "wait" : "done"))} className="flex h-4 w-4 items-center justify-center rounded border" style={{ background: done ? "#16a34a" : "#fff", borderColor: done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{done && <Check size={10} strokeWidth={3} />}</button></td>
+              <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</button></td>
+              <td className="px-3 py-2"><StageChip j={j} /></td>
               <td className="px-3 py-2"><PrioChip p={j.priority} /></td>
               <td className="px-3 py-2"><div className="flex flex-wrap gap-1">{jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}{jtags.length === 0 && <span className="text-neutral-300">—</span>}</div></td>
               <td className="px-3 py-2">{lb ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600"><span className="h-2 w-2 rounded-full" style={{ background: lb.color }} />{lb.name}</span> : <span className="text-neutral-300">—</span>}</td>
               <td className="px-3 py-2 text-xs text-neutral-600">{fmtD(j.date)}</td>
               <td className="px-3 py-2 text-xs text-neutral-500">{prod ? (prod.code || prod.name || "товар") : <span className="text-neutral-300">—</span>}</td>
-              <td className="px-3 py-2">{col ? <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600"><span className="h-2 w-2 rounded-sm" style={{ background: col.color }} />{col.name}</span> : "—"}</td>
             </tr>
           ); })}
         </tbody>
@@ -5365,7 +5373,7 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
   );
 }
 
-function JobEditor({ job, taskLabels, taskTags = [], kanbanCols = [], products, opTypes, onSave, onDelete, onClose }) {
+function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onSave, onDelete, onClose }) {
   const [j, setJ] = useState(job);
   const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
   const jtags = Array.isArray(j.tags) ? j.tags : [];
@@ -5388,12 +5396,14 @@ function JobEditor({ job, taskLabels, taskTags = [], kanbanCols = [], products, 
             <input type="date" value={j.date || ""} onChange={(e) => set("date", e.target.value)} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
           </label>
           <p className="-mt-1 text-[11px] text-neutral-400">Без даты начала задача длится 1 день (дедлайн).</p>
-          <label className="flex items-center justify-between gap-3">
-            <span className="text-sm text-neutral-600">Колонка</span>
-            <select value={j.status || (kanbanCols[0] || {}).id || ""} onChange={(e) => set("status", e.target.value)} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-              {kanbanCols.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
-            </select>
-          </label>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-neutral-600">Статус</span>
+            <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+              {STAGE_ORDER.map((k) => { const on = stageOf(j) === k; return (
+                <button key={k} onClick={() => setJ((o) => applyStage(o, k))} className={"rounded-md px-2 py-1 text-xs font-semibold " + (on ? "shadow-sm" : "")} style={on ? { background: STAGES[k].bg, color: STAGES[k].color } : { color: "#a3a3a3" }}>{STAGES[k].label}</button>
+              ); })}
+            </div>
+          </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-neutral-600">Приоритет</span>
             <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
@@ -5425,10 +5435,6 @@ function JobEditor({ job, taskLabels, taskTags = [], kanbanCols = [], products, 
               <option value="">—</option>
               {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
             </select>
-          </label>
-          <label className="flex cursor-pointer items-center gap-2">
-            <input type="checkbox" checked={!!j.done} onChange={(e) => set("done", e.target.checked)} className="h-4 w-4 accent-green-600" />
-            <span className="text-sm text-neutral-600">Выполнено</span>
           </label>
         </div>
         <div className="mt-5 flex items-center gap-2">
