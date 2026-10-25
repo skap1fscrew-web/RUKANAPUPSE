@@ -6468,7 +6468,6 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-100 px-3 py-2.5">
         <button onClick={() => { const ids = selRef.current; addChild(ids.length === 1 ? ids[0] : rootId); }} className="rounded-lg inline-flex items-center gap-1.5 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800" title="Добавить дочерний блок к выбранному (или к корню). Tab"><Plus size={14} /> Подтема</button>
-        <span className="rounded-lg inline-flex items-center gap-1.5 border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-500"><LayoutTemplate size={14} /> {STRAT_TPLS[tpl].label}</span>
         <div className="mx-1 h-6 w-px bg-neutral-200" />
         <button onClick={() => actRef.current.undo()} disabled={!canUndo} className={tBtn} title="Отменить (Ctrl+Z)"><Undo2 size={15} /></button>
         <button onClick={() => actRef.current.redo()} disabled={!canRedo} className={tBtn} title="Повторить (Ctrl+Shift+Z)"><Redo2 size={15} /></button>
@@ -6477,7 +6476,6 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
         <span className="w-10 text-center text-xs font-semibold text-neutral-500">{Math.round(view.s * 100)}%</span>
         <button onClick={() => zoomBtn(1.2)} className={tBtn} title="Приблизить"><ZoomIn size={15} /></button>
         <button onClick={fitView} className={tBtn} title="Вписать в экран"><Maximize2 size={15} /></button>
-        {countTotal > 0 && <span className="ml-auto rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-semibold text-neutral-500">Готово {doneCount}/{countTotal}</span>}
       </div>
 
       <div ref={vpRef} onPointerDown={onBgDown} className="relative overflow-hidden" style={{ height: "68vh", touchAction: "none", cursor: "default", background: "#fafafa" }}>
@@ -6498,10 +6496,12 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
             const on = sel.includes(n.id); const isDrop = dropTarget === n.id; const cnt = n.hasCheck !== false; const done = nodeIsDone(n); const showDone = cnt && done; const hasCl = !!(n.checklist && n.checklist.length);
             const cdone = hasCl ? n.checklist.filter((c) => c.done).length : 0;
             const col = n.color || "#a3a3a3"; const kids = childCount(n.id); const isRoot = n.id === rootId;
+            // заливка: тусклый тон цвета блока (серый — почти белый), выполненные — зелёные
+            const fill = showDone ? "#f0fdf4" : (col === "#a3a3a3" ? col + "0a" : col + "14");
             return (
               <div key={n.id} data-node={n.id} onPointerDown={(e) => onNodeDown(e, n)}
-                className="group absolute select-none rounded-xl bg-white shadow-sm"
-                style={{ left: n.x, top: n.y, width: W, cursor: isRoot ? "default" : "grab", border: `1.5px solid ${isDrop ? "#16a34a" : col}`, background: showDone ? "#f0fdf4" : "#fff", boxShadow: isDrop ? "0 0 0 3px #16a34a55" : (on ? `0 0 0 2px ${col}40` : undefined), zIndex: on ? 6 : 3 }}>
+                className="group absolute select-none rounded-xl shadow-sm"
+                style={{ left: n.x, top: n.y, width: W, cursor: isRoot ? "default" : "grab", border: `1.5px solid ${isDrop ? "#16a34a" : col}`, background: fill, boxShadow: isDrop ? "0 0 0 3px #16a34a55" : (on ? `0 0 0 2px ${col}40` : undefined), zIndex: on ? 6 : 3 }}>
                 {n.image && (
                   <div className="group/img relative overflow-hidden rounded-t-[10px]" style={{ height: 110 }}>
                     <img src={n.image} alt="" className="h-full w-full object-cover" draggable={false} />
@@ -6589,7 +6589,6 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
         )}
 
         {toast && <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">{toast}</div>}
-        <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/80 px-2 py-1 text-[10px] text-neutral-400">«＋» на блоке или Tab — дочерний · Enter — соседний · блоки тяни на другой, чтобы переподчинить · фон — панорама</div>
       </div>
     </div>
   );
