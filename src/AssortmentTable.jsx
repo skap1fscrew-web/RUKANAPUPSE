@@ -4846,31 +4846,31 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-50" onClick={(e) => e.stopPropagation()}>
       {/* Шапка */}
-      <div className="flex items-start gap-4 border-b border-neutral-200 bg-white px-5 py-4 sm:px-8">
-        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+      <div className="flex items-stretch gap-4 border-b border-neutral-200 bg-white px-5 py-4 sm:px-8">
+        <div className="h-32 w-24 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 shadow-sm">
           {product.image
             ? <img src={product.image} alt="" className="h-full w-full object-cover" />
-            : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={20} /></div>}
+            : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={26} /></div>}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
-            {product.code && <span className="font-semibold text-neutral-500">{product.code}</span>}
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+          <div className="flex items-center gap-2 pl-1.5 text-[13px] text-neutral-400">
+            {product.code && <span className="font-bold text-neutral-600">{product.code}</span>}
             {product.wb && (
-              <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-sky-600">· {product.wb} <ExternalLink size={11} /></a>
+              <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-sky-600">· {product.wb} <ExternalLink size={12} /></a>
             )}
           </div>
           <input
             value={product.name}
             onChange={(e) => onSetName(e.target.value)}
             placeholder="Название товара"
-            className="w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-1 text-xl font-semibold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
+            className="w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-0.5 text-2xl font-bold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
-          <div className="mt-1 flex items-center gap-2">
-            <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-neutral-400">Предмет</span>
+          <div className="flex items-center gap-2 pl-1.5">
+            <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Предмет</span>
             <SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
           </div>
         </div>
-        <button onClick={onClose} className="rounded-lg shrink-0 p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
+        <button onClick={onClose} className="rounded-lg shrink-0 self-start p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
       </div>
 
       {/* Тело — дашборды */}
