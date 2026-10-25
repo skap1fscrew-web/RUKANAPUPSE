@@ -5740,7 +5740,11 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
     return (
       <div className="flex border-t border-neutral-100">
         <div className="group relative flex shrink-0 items-center gap-1 py-1 pr-2" style={{ width: LW }}>
-          <span className="min-w-0 flex-1 truncate pl-1 text-[12px] text-neutral-700" title={row.label}>{row.label}</span>
+          {!row.preset && row.items.length === 1 ? (
+            <button onClick={() => onOpen(row.items[0].j)} title="Открыть задачу" className="min-w-0 flex-1 truncate pl-1 text-left text-[12px] text-neutral-700 hover:text-orange-700 hover:underline">{row.label}</button>
+          ) : (
+            <span className="min-w-0 flex-1 truncate pl-1 text-[12px] text-neutral-700" title={row.label}>{row.label}</span>
+          )}
           {row.preset && (
             <button
               onClick={() => onAddJob({ ...row.preset, date: todayStr })}
@@ -6060,7 +6064,7 @@ const STRAT_TPLS = {
 const STRAT_TPL_COLOR = { mind: "#8b5cf6", process: "#f59e0b", hierarchy: "#0ea5e9", logic: "#10b981" };
 
 function makeStratNode(o = {}) {
-  return { id: uid(), title: o.title || "", note: o.note || "", color: o.color || "#2563eb", done: false, hasCheck: o.hasCheck === false ? false : true, type: STRAT_TYPES[o.type] ? o.type : "stage", collapsed: false, checklist: (o.cl || []).map((t) => ({ id: uid(), text: t, done: false })) };
+  return { id: uid(), title: o.title || "", note: o.note || "", color: o.color || "#2563eb", done: false, hasCheck: o.hasCheck === false ? false : true, type: STRAT_TYPES[o.type] ? o.type : "stage", collapsed: false, image: null, checklist: (o.cl || []).map((t) => ({ id: uid(), text: t, done: false })) };
 }
 // Новая карта выбранного шаблона — один корневой блок, дальше растим через «+».
 function makeTemplatedMap(template, name) {
@@ -6081,6 +6085,7 @@ function normStrategy(v) {
     hasCheck: n && n.hasCheck === false ? false : true,
     type: n && STRAT_TYPES[n.type] ? n.type : "stage",
     collapsed: !!(n && n.collapsed),
+    image: (n && typeof n.image === "string") ? n.image : null,
     checklist: n && Array.isArray(n.checklist)
       ? n.checklist.filter((c) => c && typeof c === "object").map((c) => ({ id: c.id || uid(), text: c.text || "", done: !!c.done }))
       : [],
@@ -6298,10 +6303,11 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
   const patchLive = (id, p) => { const s = stateRef.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) }); };
   const patchNode = (id, p) => { const s = stateRef.current; commit({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) }); };
   const toggleCollapse = (id) => patchNode(id, { collapsed: !byId[id]?.collapsed });
+  const attachImage = async (id, file) => { try { const thumb = await fileToThumb(file, 560); patchNode(id, { image: thumb }); } catch {} };
   const addChild = (parentId) => {
     const s = stateRef.current; const parent = s.nodes.find((n) => n.id === parentId); if (!parent) return;
     const id = uid();
-    const node = { id, title: "", note: "", color: "#a3a3a3", done: false, hasCheck: false, type: "stage", collapsed: false, checklist: [] };
+    const node = { id, title: "", note: "", color: "#a3a3a3", done: false, hasCheck: false, type: "stage", collapsed: false, image: null, checklist: [] };
     commit({ ...s, nodes: s.nodes.map((n) => (n.id === parentId ? { ...n, collapsed: false } : n)).concat(node), edges: [...s.edges, { id: uid(), from: parentId, to: id }] });
     setSel([id]); setSettingsFor(null); focusRef.current = id;
   };
@@ -6496,6 +6502,13 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
               <div key={n.id} data-node={n.id} onPointerDown={(e) => onNodeDown(e, n)}
                 className="group absolute select-none rounded-xl bg-white shadow-sm"
                 style={{ left: n.x, top: n.y, width: W, cursor: isRoot ? "default" : "grab", border: `1.5px solid ${isDrop ? "#16a34a" : col}`, background: showDone ? "#f0fdf4" : "#fff", boxShadow: isDrop ? "0 0 0 3px #16a34a55" : (on ? `0 0 0 2px ${col}40` : undefined), zIndex: on ? 6 : 3 }}>
+                {n.image && (
+                  <div className="group/img relative overflow-hidden rounded-t-[10px]" style={{ height: 110 }}>
+                    <img src={n.image} alt="" className="h-full w-full object-cover" draggable={false} />
+                    <button onPointerDown={stop} onClick={() => patchNode(n.id, { image: null })} className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition hover:bg-black/60 group-hover/img:opacity-100" title="Убрать картинку"><X size={12} /></button>
+                    <a href={n.image} target="_blank" rel="noreferrer" onPointerDown={stop} onClick={(e) => e.stopPropagation()} className="absolute bottom-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded bg-black/40 text-white opacity-0 transition hover:bg-black/60 group-hover/img:opacity-100" title="Открыть в полном размере"><Maximize2 size={11} /></a>
+                  </div>
+                )}
                 <div className="flex items-start gap-1.5 px-2.5 pt-2.5">
                   {cnt && (hasCl ? (
                     <span title="Прогресс по подзадачам" className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: done ? "#16a34a" : "#fff", border: done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }}>{done ? <Check size={12} strokeWidth={3} /> : (cdone > 0 && <Minus size={12} strokeWidth={3} style={{ color: "#a3a3a3" }} />)}</span>
@@ -6534,6 +6547,18 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
                     </div>
                     <div className="flex flex-wrap items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
                       {SWATCHES.map((c) => (<button key={c} onPointerDown={stop} onClick={() => patchNode(n.id, { color: c })} className="h-4 w-4 rounded-full transition" style={{ background: c, boxShadow: n.color === c ? `0 0 0 2px #fff, 0 0 0 3.5px ${c}` : "none" }} />))}
+                    </div>
+                    <div className="border-t border-neutral-100 px-2.5 py-1.5">
+                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Картинка</div>
+                      {n.image ? (
+                        <div className="flex items-center gap-2">
+                          <img src={n.image} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-neutral-200 object-cover" />
+                          <label onPointerDown={stop} className="cursor-pointer rounded-md border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-600 hover:bg-neutral-50">Заменить<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) attachImage(n.id, f); e.target.value = ""; }} /></label>
+                          <button onPointerDown={stop} onClick={() => patchNode(n.id, { image: null })} className="rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50">Удалить</button>
+                        </div>
+                      ) : (
+                        <label onPointerDown={stop} className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-neutral-300 py-2 text-[11px] font-medium text-neutral-500 transition hover:border-neutral-400 hover:text-neutral-700"><ImagePlus size={13} /> Прикрепить картинку<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) attachImage(n.id, f); e.target.value = ""; }} /></label>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 border-t border-neutral-100 px-2.5 py-1.5">
                       <span className="text-[11px] text-neutral-500">Чекбокс выполнения</span>
