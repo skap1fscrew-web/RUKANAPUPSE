@@ -2362,6 +2362,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
           <table className="w-full border-collapse">
             <thead><tr className="text-[10px] uppercase tracking-wide text-neutral-400">
               <th className="px-3 py-2 text-left font-semibold">Товар</th>
+              <th className="px-3 py-2 text-left font-semibold">Примечание</th>
               <th className="px-3 py-2 text-right font-semibold">Цена ¥/ед</th>
               <th className="px-3 py-2 text-right font-semibold">Вес, г</th>
               <th className="px-3 py-2 text-right font-semibold">Цена ₽/ед</th>
@@ -2386,6 +2387,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
                       <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><button onClick={() => onOpenCard && onOpenCard(it.productId)} title="Открыть карточку товара" className="block max-w-full truncate text-left font-medium text-neutral-800 hover:text-orange-700 hover:underline" style={{ maxWidth: 230 }}>{p.name || "Без названия"}</button></div>
                     </div>
                   </td>
+                  <td className="px-3 py-2"><input value={it.note || ""} onChange={(e) => setItem(it.id, "note", e.target.value)} placeholder="примечание…" className="w-full min-w-[120px] rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-neutral-700 placeholder:text-neutral-300 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
                   <td className="px-3 py-2 text-right"><input value={it.priceCny} onChange={(e) => setItem(it.id, "priceCny", e.target.value)} inputMode="decimal" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
                   <td className="px-3 py-2 text-right text-neutral-500">{isNaN(w) ? "—" : w}</td>
                   <td className="px-3 py-2 text-right text-neutral-500">{fmtRub(rubUnit)}</td>
@@ -2402,7 +2404,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
                 </tr>
                 {open && (
                   <tr className="text-sm">
-                    <td colSpan={9} className="bg-neutral-50/70 px-4 py-3" style={{ borderTop: "1px dashed #e5e5e5" }}>
+                    <td colSpan={10} className="bg-neutral-50/70 px-4 py-3" style={{ borderTop: "1px dashed #e5e5e5" }}>
                       {pOne ? (
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="inline-flex items-center gap-1.5 rounded-lg border border-teal-100 bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-700"><Target size={13} /> {p.plan?.oneLabel || "One size"}</span>
@@ -4490,25 +4492,24 @@ function CritScorecard({ criteria = [], onSetCriteria, analytics, onSetAnalytics
 
   return (
     <div className="rounded-2xl border border-neutral-200 p-4">
-      {/* саммари */}
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">Оценка карточки</div>
-      <div className="flex items-center gap-4">
-        <div className="relative h-16 w-16 shrink-0">
-          <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+      {/* саммари — компактно, в одну строку */}
+      <div className="flex items-center gap-3">
+        <div className="relative h-12 w-12 shrink-0">
+          <svg viewBox="0 0 64 64" className="h-12 w-12 -rotate-90">
             <circle cx="32" cy="32" r={R} fill="none" stroke="#eef0f2" strokeWidth="6" />
             <circle cx="32" cy="32" r={R} fill="none" stroke={verdict.color} strokeWidth="6" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - frac)} />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
-            <span className="text-lg font-bold tabular-nums text-neutral-900">{sc.rated ? sc.score10 : "—"}</span>
-            <span className="text-[9px] text-neutral-400">{sc.rated ? "из 10" : "рейтинг"}</span>
+            <span className="text-sm font-bold tabular-nums text-neutral-900">{sc.rated ? sc.score10 : "—"}</span>
+            <span className="text-[8px] text-neutral-400">{sc.rated ? "из 10" : "рейтинг"}</span>
           </div>
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-bold" style={{ color: verdict.color }}>{verdict.text}</div>
-          <div className="mt-1.5 flex h-2 overflow-hidden rounded-full bg-neutral-100">
+          <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-neutral-100">
             {sc.max > 0 && (<><div style={{ width: `${(sc.counts.green * 2 / sc.max) * 100}%`, background: TL_META.green.color }} /><div style={{ width: `${(sc.counts.orange / sc.max) * 100}%`, background: TL_META.orange.color }} /><div style={{ width: `${(sc.counts.red * 0 / sc.max) * 100}%` }} /></>)}
           </div>
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-neutral-500">
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-neutral-500">
             <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: TL_META.green.color }} />{sc.counts.green} хорошо</span>
             <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: TL_META.orange.color }} />{sc.counts.orange} средне</span>
             <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: TL_META.red.color }} />{sc.counts.red} плохо</span>
@@ -4550,16 +4551,16 @@ function CritScorecard({ criteria = [], onSetCriteria, analytics, onSetAnalytics
         </div>
       )}
 
-      {/* оценка по каждому критерию */}
-      <div className="mt-3 space-y-3">
+      {/* оценка по каждому критерию — компактные строки без карточек */}
+      <div className="mt-2">
         {crits.length === 0 && <p className="py-4 text-center text-sm text-neutral-400">Критериев пока нет — добавьте в «Настроить».</p>}
         {crits.map((c) => (
-          <div key={c.id} className="rounded-xl border border-neutral-100 p-3">
+          <div key={c.id} className="border-t border-neutral-100 py-2.5 first:border-t-0">
             <div className="flex items-center gap-2">
               <span className="min-w-0 flex-1 text-sm font-semibold text-neutral-800">{c.name}</span>
               <TrafficToggle value={ratings[c.id]} onChange={(lv) => setRating(c.id, lv)} />
             </div>
-            <input value={comments[c.id] || ""} onChange={(e) => setComment(c.id, e.target.value)} placeholder="Комментарий по критерию…" className="mt-2 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+            <input value={comments[c.id] || ""} onChange={(e) => setComment(c.id, e.target.value)} placeholder="комментарий…" className="mt-1 w-full border-0 border-b border-dashed border-neutral-200 bg-transparent px-0.5 py-0.5 text-sm text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:border-solid focus:outline-none" />
           </div>
         ))}
       </div>
@@ -5043,9 +5044,8 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               <button onClick={() => setFullBlock("purchase")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-sky-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-sky-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-sky-400" /> Закупка</div>
-                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{isNaN(puLotRub) ? "—" : money(puLotRub)}</div>
-                <div className="text-[11px] text-neutral-400">итоговая цена партии</div>
-                <div className="mt-2 text-[11px] text-neutral-400">за ед.: <b className="text-neutral-600">{isNaN(puRubPerUnit) ? "—" : money(puRubPerUnit)}</b></div>
+                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{isNaN(puRubPerUnit) ? "—" : money(puRubPerUnit)}</div>
+                <div className="text-[11px] text-neutral-400">цена за единицу</div>
               </button>
 
               <button onClick={() => setFullBlock("analytics")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-violet-300 hover:shadow-sm">
@@ -5400,7 +5400,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], onUpdateJob, products, opT
       {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
         : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
         : view === "cal" ? <CalendarGrid jobs={jobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
-        : <GanttBoard jobs={jobs} products={products} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} />}
+        : <GanttBoard jobs={jobs} products={products} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
     </div>
   );
 }
@@ -5558,11 +5558,91 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
   );
 }
 
-function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen }) {
-  const LW = 200;      // ширина колонки с подписями
+function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob }) {
+  const LW = 320;      // ширина колонки с подписями
   const DW = 30;       // ширина дня
   const BAR_H = 20;    // высота бара
   const TRACK_H = 24;  // шаг дорожки (бар + зазор)
+
+  const timelineRef = useRef(null); // шкала дней — для перевода курсора в день
+  const ganttRef = useRef(null);    // область ганта — для проверки «над таймлайном»
+  const unschedRef = useRef(null);  // панель нераспределённых — для drop «снять дату»
+  const dragRef = useRef(null);     // активное перетаскивание бара
+  const [preview, setPreview] = useState(null);   // { jobId, startISO, dateISO } — живое превью бара
+  const [overUnsched, setOverUnsched] = useState(false);
+  const [cardDrag, setCardDrag] = useState(null);  // перетаскивание карточки из панели { jobId, title, color, x, y }
+  const [dropDay, setDropDay] = useState(null);    // подсвеченный день при drop
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const prioColor = (j) => (PRIORITIES[j && j.priority]?.color) || "#9ca3af";
+  // день под курсором по шкале (1..daysInMonth) или null, если вне таймлайна
+  const dayAtX = (clientX) => {
+    const el = timelineRef.current; if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (clientX < r.left || clientX > r.right) return null;
+    return Math.min(daysInMonth, Math.max(1, Math.floor((clientX - r.left) / DW) + 1));
+  };
+  const overTimeline = (clientX, clientY) => {
+    const t = timelineRef.current, g = ganttRef.current; if (!t || !g) return false;
+    const tr = t.getBoundingClientRect(), gr = g.getBoundingClientRect();
+    return clientX >= tr.left && clientX <= tr.right && clientY >= tr.top && clientY <= gr.bottom;
+  };
+  const overPanel = (clientX, clientY) => {
+    const el = unschedRef.current; if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+  };
+
+  // перетаскивание бара: move (середина) / l,r (ресайз краёв); drop над панелью — снять дату
+  const startBarDrag = (e, j, mode) => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX;
+    const s0 = parseISO(j.start || j.date), e0 = parseISO(j.date || j.start);
+    let moved = false;
+    dragRef.current = { jobId: j.id };
+    const calc = (delta) => {
+      let ns = s0, ne = e0;
+      if (mode === "move") { ns = addDays(s0, delta); ne = addDays(e0, delta); }
+      else if (mode === "l") { ns = addDays(s0, delta); if (ns > e0) ns = e0; }
+      else if (mode === "r") { ne = addDays(e0, delta); if (ne < s0) ne = s0; }
+      return { ns, ne };
+    };
+    const onMove = (ev) => {
+      if (Math.abs(ev.clientX - startX) > 3) moved = true;
+      const { ns, ne } = calc(Math.round((ev.clientX - startX) / DW));
+      setPreview({ jobId: j.id, startISO: isoYMD(ns), dateISO: isoYMD(ne) });
+      setOverUnsched(mode === "move" && overPanel(ev.clientX, ev.clientY));
+    };
+    const onUp = (ev) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      dragRef.current = null; setPreview(null); setOverUnsched(false);
+      if (!moved) { onOpen(j); return; }
+      if (mode === "move" && overPanel(ev.clientX, ev.clientY)) { onUpdateJob({ ...j, start: null, date: null }); return; }
+      const { ns, ne } = calc(Math.round((ev.clientX - startX) / DW));
+      onUpdateJob({ ...j, start: isoYMD(ns), date: isoYMD(ne) });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // перетаскивание нераспределённой задачи из панели на гант — назначить дату (1 день)
+  const startCardDrag = (e, j) => {
+    e.preventDefault();
+    setCardDrag({ jobId: j.id, title: j.title || "—", color: prioColor(j), x: e.clientX, y: e.clientY });
+    const onMove = (ev) => {
+      setCardDrag((c) => (c ? { ...c, x: ev.clientX, y: ev.clientY } : c));
+      setDropDay(overTimeline(ev.clientX, ev.clientY) ? dayAtX(ev.clientX) : null);
+    };
+    const onUp = (ev) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const day = overTimeline(ev.clientX, ev.clientY) ? dayAtX(ev.clientX) : null;
+      setCardDrag(null); setDropDay(null);
+      if (day) { const iso = isoYMD(new Date(ym.y, ym.m, day)); onUpdateJob({ ...j, start: iso, date: iso }); }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
   const monthFirst = new Date(ym.y, ym.m, 1);
@@ -5612,17 +5692,22 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
     .map((p) => ({ key: p.id, label: (p.code || "—") + (p.name ? " · " + p.name : ""), preset: { productId: p.id }, items: prodMap.get(p.id) }));
 
   const timelineW = daysInMonth * DW;
+  // нераспределённые — задачи без даты и без начала (операционные сюда не входят — они в opTypes)
+  const unscheduled = (jobs || []).filter((j) => !j.date && !j.start);
 
   const Bar = ({ x }) => {
-    const { startCol, endCol, clipL, clipR } = x.pos;
+    const prev = preview && preview.jobId === x.j.id;
+    const pos = prev ? (place({ start: preview.startISO, date: preview.dateISO }) || x.pos) : x.pos;
+    const { startCol, endCol, clipL, clipR } = pos;
     const left = (startCol - 1) * DW;
     const width = (endCol - startCol + 1) * DW - 4;
-    const col = labelColor(x.j.labelId);
+    const col = prioColor(x.j);
+    const dragging = dragRef.current && dragRef.current.jobId === x.j.id;
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); onOpen(x.j); }}
+      <div
+        onPointerDown={(e) => startBarDrag(e, x.j, "move")}
         title={x.j.title}
-        className="absolute flex items-center overflow-hidden px-1.5 text-left text-[11px] font-medium text-white shadow-sm transition hover:brightness-95"
+        className="group/bar absolute flex items-center overflow-hidden text-left text-[11px] font-medium text-white shadow-sm"
         style={{
           left: left + 2, width: Math.max(width, DW - 4), top: x.track * TRACK_H + 3, height: BAR_H,
           background: col,
@@ -5630,10 +5715,22 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
           borderTopLeftRadius: clipL ? 0 : 6, borderBottomLeftRadius: clipL ? 0 : 6,
           borderTopRightRadius: clipR ? 0 : 6, borderBottomRightRadius: clipR ? 0 : 6,
           opacity: x.j.done ? 0.5 : 1,
+          cursor: "grab", touchAction: "none",
+          outline: dragging ? "2px solid rgba(0,0,0,.25)" : "none",
         }}
       >
-        <span className="truncate" style={x.j.done ? { textDecoration: "line-through" } : undefined}>{x.j.title || "—"}</span>
-      </button>
+        <span
+          onPointerDown={(e) => startBarDrag(e, x.j, "l")}
+          className="absolute inset-y-0 left-0 flex w-2 cursor-ew-resize items-center justify-center opacity-0 transition group-hover/bar:opacity-100"
+          title="Изменить начало"
+        ><span className="h-2.5 w-0.5 rounded bg-white/70" /></span>
+        <span className="truncate px-2" style={x.j.done ? { textDecoration: "line-through" } : undefined}>{x.j.title || "—"}</span>
+        <span
+          onPointerDown={(e) => startBarDrag(e, x.j, "r")}
+          className="absolute inset-y-0 right-0 flex w-2 cursor-ew-resize items-center justify-center opacity-0 transition group-hover/bar:opacity-100"
+          title="Изменить длительность"
+        ><span className="h-2.5 w-0.5 rounded bg-white/70" /></span>
+      </div>
     );
   };
 
@@ -5722,17 +5819,23 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
   };
 
   return (
-    <div className="overflow-x-auto">
+    <div className="flex items-stretch">
+    <div ref={ganttRef} className="min-w-0 flex-1 overflow-x-auto">
       <div className="relative" style={{ minWidth: LW + timelineW }}>
         {/* линия «сегодня» на всю высоту */}
         {todayInMonth && (
           <div className="pointer-events-none absolute bottom-0 z-10 w-px bg-orange-400" style={{ left: LW + (todayCol - 1) * DW + DW / 2, top: 36 }} />
         )}
 
+        {/* подсветка дня при перетаскивании карточки из панели */}
+        {cardDrag && dropDay && (
+          <div className="pointer-events-none absolute z-10 border-x border-orange-300 bg-orange-100/40" style={{ left: LW + (dropDay - 1) * DW, width: DW, top: 36, bottom: 0 }} />
+        )}
+
         {/* шапка дней */}
         <div className="flex" style={{ height: 36 }}>
           <div className="shrink-0" style={{ width: LW }} />
-          <div className="flex shrink-0" style={{ width: timelineW }}>
+          <div ref={timelineRef} className="flex shrink-0" style={{ width: timelineW }}>
             {Array.from({ length: daysInMonth }, (_, i) => {
               const d = new Date(ym.y, ym.m, i + 1);
               const we = d.getDay() === 0 || d.getDay() === 6;
@@ -5776,6 +5879,43 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
           </Section>
         </div>
       </div>
+    </div>
+
+    {/* Нераспределённые задачи (без даты) */}
+    <aside ref={unschedRef} className={"flex w-[250px] shrink-0 flex-col self-stretch border-l transition " + (overUnsched ? "border-orange-300 bg-orange-50/60" : "border-neutral-200 bg-neutral-50/40")}>
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <ListIcon size={14} className="text-neutral-400" />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Нераспределённые</span>
+        <span className="rounded-full bg-neutral-200/80 px-1.5 text-[10px] font-semibold leading-[16px] text-neutral-500">{unscheduled.length}</span>
+      </div>
+      <div className="flex-1 space-y-2 overflow-auto px-3 pb-3">
+        {unscheduled.length === 0 ? (
+          <p className="px-1 py-6 text-center text-[11px] text-neutral-400">Все задачи на ганте. Перетащите бар сюда, чтобы снять дату.</p>
+        ) : unscheduled.map((j) => {
+          const pm = PRIORITIES[j.priority];
+          return (
+            <div key={j.id} onPointerDown={(e) => startCardDrag(e, j)} onClick={() => onOpen(j)}
+              className="cursor-grab rounded-lg border border-l-4 bg-white p-2.5 shadow-sm transition hover:shadow-md"
+              style={{ borderLeftColor: prioColor(j), touchAction: "none" }}>
+              <div className="text-[12.5px] font-semibold leading-snug text-neutral-800">{j.title || "Без названия"}</div>
+              <div className="mt-1.5">
+                {pm ? <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: pm.bg, color: pm.color }}>{pm.label}</span>
+                    : <span className="text-[10px] text-neutral-400">без приоритета</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="border-t border-neutral-100 px-3 py-2 text-[10px] leading-snug text-neutral-400">Перетащите карточку на гант → назначить дату. Перетащите бар сюда → снять дату.</div>
+    </aside>
+
+    {/* Плавающий «призрак» перетаскиваемой карточки */}
+    {cardDrag && (
+      <div className="pointer-events-none fixed z-[90] max-w-[220px] truncate rounded-lg border border-l-4 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-neutral-800 shadow-lg"
+        style={{ left: cardDrag.x + 12, top: cardDrag.y + 12, borderLeftColor: cardDrag.color }}>
+        {cardDrag.title}
+      </div>
+    )}
     </div>
   );
 }
@@ -5916,6 +6056,8 @@ const STRAT_TPLS = {
   hierarchy: { label: "Иерархия",           root: "Верхний уровень", hint: "сверху вниз, как оргструктура" },
   logic:     { label: "Логическая цепочка", root: "Корень",          hint: "слева направо, ветвями" },
 };
+// цвет-маркер шаблона карты (для компактного селектора «Стратегия»)
+const STRAT_TPL_COLOR = { mind: "#8b5cf6", process: "#f59e0b", hierarchy: "#0ea5e9", logic: "#10b981" };
 
 function makeStratNode(o = {}) {
   return { id: uid(), title: o.title || "", note: o.note || "", color: o.color || "#2563eb", done: false, hasCheck: o.hasCheck === false ? false : true, type: STRAT_TYPES[o.type] ? o.type : "stage", collapsed: false, checklist: (o.cl || []).map((t) => ({ id: uid(), text: t, done: false })) };
@@ -6017,6 +6159,7 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
   const active = maps.find((m) => m.id === st.activeId) || maps[0];
   const [editingId, setEditingId] = useState(null);
   const [tplOpen, setTplOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const save = (next) => onChange({ __v: 2, ...next });
   const updateActive = (next) => save({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges } : m)), activeId: active.id });
@@ -6040,50 +6183,62 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {maps.map((m) => {
-          const on = m.id === active.id;
-          if (editingId === m.id) {
-            return (
-              <input key={m.id} autoFocus defaultValue={m.name}
-                onBlur={(e) => { renameMap(m.id, e.target.value); setEditingId(null); }}
-                onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setEditingId(null); }}
-                className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-800 focus:outline-none" style={{ width: 170 }} />
-            );
-          }
-          return (
-            <button key={m.id} onClick={() => selectMap(m.id)} onDoubleClick={() => setEditingId(m.id)}
-              title={`Шаблон: ${STRAT_TPLS[m.template]?.label || "—"} · клик — открыть · двойной клик — переименовать`}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${on ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
-              <span className="max-w-[220px] truncate">{m.name}</span>
-              <span className={`rounded px-1 py-px text-[9px] font-bold uppercase ${on ? "bg-white/20 text-white/80" : "bg-neutral-200 text-neutral-500"}`}>{(STRAT_TPLS[m.template]?.label || "").slice(0, 4)}</span>
-              {on && (
-                <>
-                  <Pencil size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingId(m.id); }} title="Переименовать" />
-                  <Copy size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); dupMap(m.id); }} title="Дублировать карту" />
-                  <Trash2 size={12} className="opacity-70 hover:opacity-100 hover:text-red-300" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Удалить карту «${m.name}»?`)) removeMap(m.id); }} title="Удалить карту" />
-                </>
-              )}
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Компактный селектор активной карты */}
         <div className="relative">
-          <button onClick={() => setTplOpen((o) => !o)} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Карта <ChevronDown size={13} /></button>
-          {tplOpen && (
+          {editingId === active.id ? (
+            <input autoFocus defaultValue={active.name}
+              onBlur={(e) => { renameMap(active.id, e.target.value); setEditingId(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setEditingId(null); }}
+              className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-800 focus:outline-none" style={{ width: 210 }} />
+          ) : (
+            <button onClick={() => { setMapOpen((o) => !o); setTplOpen(false); }} title="Выбрать карту"
+              className="inline-flex max-w-full items-center gap-2 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STRAT_TPL_COLOR[active.template] || "#9ca3af" }} />
+              <span className="max-w-[220px] truncate">{active.name}</span>
+              <span className="rounded bg-white/20 px-1 py-px text-[9px] font-bold uppercase text-white/80">{(STRAT_TPLS[active.template]?.label || "").slice(0, 4)}</span>
+              <ChevronDown size={13} className="shrink-0 opacity-80" />
+            </button>
+          )}
+          {mapOpen && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setTplOpen(false)} />
+              <div className="fixed inset-0 z-10" onClick={() => setMapOpen(false)} />
               <div className="absolute left-0 z-20 mt-1 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
-                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Новая карта — выберите шаблон</div>
+                <div className="max-h-72 overflow-auto">
+                  {maps.map((m) => {
+                    const on = m.id === active.id;
+                    return (
+                      <div key={m.id} onClick={() => { selectMap(m.id); setMapOpen(false); }}
+                        className={"group/mi flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 " + (on ? "bg-neutral-100" : "hover:bg-neutral-50")}>
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STRAT_TPL_COLOR[m.template] || "#9ca3af" }} />
+                        <span className={"min-w-0 flex-1 truncate text-sm " + (on ? "font-semibold text-neutral-900" : "text-neutral-700")}>{m.name}</span>
+                        <span className="shrink-0 text-[9px] font-bold uppercase text-neutral-400">{(STRAT_TPLS[m.template]?.label || "").slice(0, 4)}</span>
+                        {maps.length > 1 && (
+                          <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Удалить карту «${m.name}»?`)) removeMap(m.id); }}
+                            className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/mi:opacity-100" title="Удалить карту"><X size={13} /></button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="my-1 h-px bg-neutral-100" />
+                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Новая карта — шаблон</div>
                 {Object.keys(STRAT_TPLS).map((k) => (
-                  <button key={k} onClick={() => addMap(k)} className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-neutral-50">
-                    <div className="text-sm font-semibold text-neutral-800">{STRAT_TPLS[k].label}</div>
-                    <div className="text-[11px] text-neutral-400">{STRAT_TPLS[k].hint}</div>
+                  <button key={k} onClick={() => { addMap(k); setMapOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-neutral-50">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STRAT_TPL_COLOR[k] }} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-800">{STRAT_TPLS[k].label}</span>
+                    <Plus size={13} className="shrink-0 text-neutral-400" />
                   </button>
                 ))}
               </div>
             </>
           )}
         </div>
+
+        {/* Действия над активной картой */}
+        <button onClick={() => setEditingId(active.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700" title="Переименовать"><Pencil size={13} /> Переименовать</button>
+        <button onClick={() => dupMap(active.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700" title="Дублировать карту"><Copy size={13} /> Дублировать</button>
+        <button onClick={() => { if (window.confirm(`Удалить карту «${active.name}»?`)) removeMap(active.id); }} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600" title="Удалить карту"><Trash2 size={13} /> Удалить</button>
       </div>
       <StrategyBoard key={active.id} template={active.template} rootId={active.rootId} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} onCreateTask={onCreateTask} />
     </div>
