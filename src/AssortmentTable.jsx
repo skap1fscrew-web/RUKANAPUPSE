@@ -1751,11 +1751,11 @@ export default function AssortmentTable() {
                         : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={28} /></div>}
                     </button>
                     {p.status && <span className="rounded-full absolute left-2 top-2 px-2 py-0.5 text-[11px] font-semibold" style={{ background: sc + "26", color: sc }}>{p.status}</span>}
-                    <button onClick={() => triggerUpload(p.id)} className="rounded-lg absolute bottom-2 right-2 bg-white/90 p-1.5 text-neutral-500 opacity-0 shadow transition hover:text-neutral-800 group-hover:opacity-100" title="Загрузить фото"><ImagePlus size={14} /></button>
+                    <button onClick={() => triggerUpload(p.id)} className="rounded-lg absolute bottom-2 left-2 bg-white/90 p-1.5 text-neutral-500 opacity-0 shadow transition hover:text-neutral-800 group-hover:opacity-100" title="Загрузить фото"><ImagePlus size={14} /></button>
                     {(() => { const inSupply = (purchaseBatches || []).some((b) => (b.items || []).some((it) => it.productId === p.id)); return (
                       <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setSupplyMenu({ productId: p.id, x: r.right, y: r.bottom }); }} className={"rounded-md absolute right-2 top-2 p-1 shadow transition " + (inSupply ? "bg-teal-600 text-white opacity-100" : "bg-white/90 text-neutral-500 opacity-0 hover:text-teal-700 group-hover:opacity-100")} title="Добавить в поставку"><PackagePlus size={14} /></button>
                     ); })()}
-                    <button onClick={() => removeProduct(p.id)} className="rounded-md absolute left-2 bottom-2 bg-white/90 p-1 text-neutral-400 opacity-0 shadow transition hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+                    <button onClick={() => removeProduct(p.id)} className="rounded-md absolute right-2 bottom-2 bg-white/90 p-1 text-neutral-400 opacity-0 shadow transition hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
                   </div>
                   <button onClick={() => setCardModal(p.id)} className="block w-full px-3 py-2 text-left">
                     <div className="flex items-center gap-1.5 truncate text-[11px] text-neutral-400">
@@ -6128,9 +6128,10 @@ const STRAT_TPLS = {
   process:   { label: "Процесс",            root: "Старт",           hint: "поток шагов слева направо" },
   hierarchy: { label: "Иерархия",           root: "Верхний уровень", hint: "сверху вниз, как оргструктура" },
   logic:     { label: "Логическая цепочка", root: "Корень",          hint: "слева направо, ветвями" },
+  stages:    { label: "Этапы",              root: "Старт",           hint: "этапы цепочкой, ответвления вниз" },
 };
 // цвет-маркер шаблона карты (для компактного селектора «Стратегия»)
-const STRAT_TPL_COLOR = { mind: "#8b5cf6", process: "#f59e0b", hierarchy: "#0ea5e9", logic: "#10b981" };
+const STRAT_TPL_COLOR = { mind: "#8b5cf6", process: "#f59e0b", hierarchy: "#0ea5e9", logic: "#10b981", stages: "#f43f5e" };
 
 function makeStratNode(o = {}) {
   return { id: uid(), title: o.title || "", note: o.note || "", color: o.color || "#2563eb", done: false, hasCheck: o.hasCheck === false ? false : true, type: STRAT_TYPES[o.type] ? o.type : "stage", collapsed: false, image: null, checklist: (o.cl || []).map((t) => ({ id: uid(), text: t, done: false })) };
@@ -6198,6 +6199,14 @@ function computeStratLayout(nodes, edges, rootId, template, hOf) {
     const levelY = {}; let acc = 0; Object.keys(maxH).map(Number).sort((a, b) => a - b).forEach((d) => { levelY[d] = acc; acc += maxH[d] + VGAP + LVL_PAD; });
     const place = (id, xStart) => { const ch = vis(id); const cx = xStart + ext[id] / 2; pos[id] = { x: cx - SW / 2, y: levelY[depth[id]] }; const tot = ch.reduce((a, b) => a + ext[b], 0) + HGAP * Math.max(0, ch.length - 1); let c = cx - tot / 2; ch.forEach((k) => { place(k, c); c += ext[k] + HGAP; }); };
     place(rootId, 0);
+  } else if (template === "stages") {
+    // этапы (корень + дети) — горизонтальной цепочкой; у каждого этапа ответвления вниз (отступ-колонкой)
+    const INDENT = 46, DVGAP = 16;
+    const extW = (id) => { const ch = vis(id); if (!ch.length) return SW; return Math.max(SW, INDENT + Math.max(...ch.map(extW))); };
+    const placeDown = (id, x, yTop) => { pos[id] = { x, y: yTop }; let y = yTop + hh(id) + DVGAP; vis(id).forEach((c) => { placeDown(c, x + INDENT, y); const sh = (function h(nid){ const k = vis(nid); if (!k.length) return hh(nid); return hh(nid) + DVGAP + k.reduce((a,b)=>a+h(b)+DVGAP,0) - DVGAP; })(c); y += sh + DVGAP; }); };
+    pos[rootId] = { x: 0, y: 0 };
+    let sx = SW + HGAP;
+    vis(rootId).forEach((st) => { placeDown(st, sx, 0); sx += extW(st) + HGAP; });
   } else if (template === "logic" || template === "process") {
     const ext = {};
     const meas = (id) => { const ch = vis(id); if (!ch.length) { ext[id] = hh(id); return ext[id]; } let s = 0; ch.forEach((c) => (s += meas(c))); s += VGAP * (ch.length - 1); ext[id] = Math.max(hh(id), s); return ext[id]; };
@@ -6295,15 +6304,6 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
                     );
                   })}
                 </div>
-                <div className="my-1 h-px bg-neutral-100" />
-                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Новая карта — шаблон</div>
-                {Object.keys(STRAT_TPLS).map((k) => (
-                  <button key={k} onClick={() => { addMap(k); setMapOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-neutral-50">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STRAT_TPL_COLOR[k] }} />
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-800">{STRAT_TPLS[k].label}</span>
-                    <Plus size={13} className="shrink-0 text-neutral-400" />
-                  </button>
-                ))}
               </div>
             </>
           )}
@@ -6313,6 +6313,27 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
         <button onClick={() => setEditingId(active.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700" title="Переименовать"><Pencil size={13} /> Переименовать</button>
         <button onClick={() => dupMap(active.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700" title="Дублировать карту"><Copy size={13} /> Дублировать</button>
         <button onClick={() => { if (window.confirm(`Удалить карту «${active.name}»?`)) removeMap(active.id); }} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600" title="Удалить карту"><Trash2 size={13} /> Удалить</button>
+
+        {/* Новая карта — выбор шаблона */}
+        <div className="relative ml-auto">
+          <button onClick={() => { setTplOpen((o) => !o); setMapOpen(false); }} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800" title="Создать новую карту"><Plus size={14} /> Карта <ChevronDown size={13} className="opacity-80" /></button>
+          {tplOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setTplOpen(false)} />
+              <div className="absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Новая карта — шаблон</div>
+                {Object.keys(STRAT_TPLS).map((k) => (
+                  <button key={k} onClick={() => { addMap(k); setTplOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-neutral-50">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STRAT_TPL_COLOR[k] }} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-800">{STRAT_TPLS[k].label}</span>
+                    {k === "stages" && <span className="shrink-0 rounded bg-rose-50 px-1.5 text-[9px] font-bold uppercase text-rose-600">новое</span>}
+                    <Plus size={13} className="shrink-0 text-neutral-400" />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
       <StrategyBoard key={active.id} template={active.template} rootId={active.rootId} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} onCreateTask={onCreateTask} />
     </div>
@@ -6509,6 +6530,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
   const ctrlOff = (p, side, k) => ({ x: p.x + (side === "left" ? -k : side === "right" ? k : 0), y: p.y + (side === "top" ? -k : side === "bottom" ? k : 0) });
   const pickSides = (a, b) => {
     if (tpl === "hierarchy") return ["bottom", "top"];
+    if (tpl === "stages") { if (b.y > a.y + 8) return ["bottom", "left"]; const ax = a.x + W / 2, bx = b.x + W / 2; return bx >= ax ? ["right", "left"] : ["left", "right"]; }
     const ax = a.x + W / 2, bx = b.x + W / 2; return bx >= ax ? ["right", "left"] : ["left", "right"];
   };
   const edgePath = (a, b) => { const [sa, sb] = pickSides(a, b); const p1 = sideAnchor(a, sa), p2 = sideAnchor(b, sb); const k = tpl === "hierarchy" ? 40 : 46; const c1 = ctrlOff(p1, sa, k), c2 = ctrlOff(p2, sb, k); return `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`; };
