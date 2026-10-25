@@ -5063,8 +5063,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               </div>
 
               {/* Подсказки: цена под нужную рентабельность (клик — подставить) */}
+              {(() => { const sppMul = (!isNaN(sppVal) && sppVal > 0) ? (1 - sppVal / 100) : null; return (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-neutral-400">Цена для рента:</span>
+                <span className="inline-flex items-center gap-1.5 text-xs text-neutral-400">Цена для рента:{sppMul != null && <span className="rounded bg-sky-100 px-1.5 text-[9px] font-bold uppercase tracking-wide text-sky-600">с СПП</span>}</span>
                 {[50, 100, 150, 200].map((r) => {
                   const v = targetPrice(r / 100);
                   return (
@@ -5073,13 +5074,15 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
                       onClick={() => !isNaN(v) && onSetField && onSetField(MP.f.price, String(Math.round(v)))}
                       disabled={isNaN(v)}
                       title={isNaN(v) ? "Заполните себестоимость" : "Поставить эту цену"}
-                      className="rounded-lg border border-neutral-100 bg-neutral-50/60 px-2 py-1 text-xs transition hover:border-sky-300 hover:bg-sky-50/50 disabled:cursor-default disabled:opacity-60 disabled:hover:border-neutral-100 disabled:hover:bg-neutral-50/60"
+                      className="flex flex-col rounded-lg border border-neutral-100 bg-neutral-50/60 px-2 py-1 text-xs transition hover:border-sky-300 hover:bg-sky-50/50 disabled:cursor-default disabled:opacity-60 disabled:hover:border-neutral-100 disabled:hover:bg-neutral-50/60"
                     >
-                      <span className="text-neutral-400">{r}%</span> <b className="tabular-nums text-neutral-800">{isNaN(v) ? "—" : money(v)}</b>
+                      <span className="whitespace-nowrap"><span className="text-neutral-400">{r}%</span> <b className="tabular-nums text-neutral-800">{isNaN(v) ? "—" : money(v)}</b></span>
+                      {sppMul != null && !isNaN(v) && <span className="text-right text-[10px] font-bold tabular-nums text-sky-600">{money(v * sppMul)}</span>}
                     </button>
                   );
                 })}
               </div>
+              ); })()}
 
               {/* расширенный редактор — тот же компактный размер строк, что и сверху */}
               {unitOpen && (
@@ -6132,6 +6135,8 @@ const STRAT_TPLS = {
 };
 // цвет-маркер шаблона карты (для компактного селектора «Стратегия»)
 const STRAT_TPL_COLOR = { mind: "#8b5cf6", process: "#f59e0b", hierarchy: "#0ea5e9", logic: "#10b981", stages: "#f43f5e" };
+// непрозрачный «тусклый» оттенок: цвет смешанный с белым (чтобы фон не просвечивал)
+const hexTint = (hex, a) => { const h = String(hex || "").replace("#", ""); if (h.length < 6) return "#fff"; const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); const m = (c) => Math.round(255 * (1 - a) + c * a); return `rgb(${m(r)}, ${m(g)}, ${m(b)})`; };
 
 function makeStratNode(o = {}) {
   return { id: uid(), title: o.title || "", note: o.note || "", color: o.color || "#2563eb", done: false, hasCheck: o.hasCheck === false ? false : true, type: STRAT_TYPES[o.type] ? o.type : "stage", collapsed: false, image: null, checklist: (o.cl || []).map((t) => ({ id: uid(), text: t, done: false })) };
@@ -6201,7 +6206,7 @@ function computeStratLayout(nodes, edges, rootId, template, hOf) {
     place(rootId, 0);
   } else if (template === "stages") {
     // этапы (корень + дети) — горизонтальной цепочкой; у каждого этапа ответвления вниз (отступ-колонкой)
-    const INDENT = 46, DVGAP = 16;
+    const INDENT = 130, DVGAP = 16;
     const extW = (id) => { const ch = vis(id); if (!ch.length) return SW; return Math.max(SW, INDENT + Math.max(...ch.map(extW))); };
     const placeDown = (id, x, yTop) => { pos[id] = { x, y: yTop }; let y = yTop + hh(id) + DVGAP; vis(id).forEach((c) => { placeDown(c, x + INDENT, y); const sh = (function h(nid){ const k = vis(nid); if (!k.length) return hh(nid); return hh(nid) + DVGAP + k.reduce((a,b)=>a+h(b)+DVGAP,0) - DVGAP; })(c); y += sh + DVGAP; }); };
     pos[rootId] = { x: 0, y: 0 };
@@ -6533,7 +6538,15 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
     if (tpl === "stages") { if (b.y > a.y + 8) return ["bottom", "left"]; const ax = a.x + W / 2, bx = b.x + W / 2; return bx >= ax ? ["right", "left"] : ["left", "right"]; }
     const ax = a.x + W / 2, bx = b.x + W / 2; return bx >= ax ? ["right", "left"] : ["left", "right"];
   };
-  const edgePath = (a, b) => { const [sa, sb] = pickSides(a, b); const p1 = sideAnchor(a, sa), p2 = sideAnchor(b, sb); const k = tpl === "hierarchy" ? 40 : 46; const c1 = ctrlOff(p1, sa, k), c2 = ctrlOff(p2, sb, k); return `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`; };
+  const edgePath = (a, b) => {
+    const [sa, sb] = pickSides(a, b); const p1 = sideAnchor(a, sa), p2 = sideAnchor(b, sb);
+    if (tpl === "stages" && sa === "bottom" && sb === "left") {
+      // ёлочка: вертикальный ствол от низа этапа вниз, короткий отвод вправо к ребёнку
+      const r = Math.min(7, Math.max(0, (p2.x - p1.x) / 2), Math.max(0, (p2.y - p1.y) / 2));
+      return `M${p1.x},${p1.y} V${p2.y - r} Q ${p1.x},${p2.y} ${p1.x + r},${p2.y} H${p2.x}`;
+    }
+    const k = tpl === "hierarchy" ? 40 : 46; const c1 = ctrlOff(p1, sa, k), c2 = ctrlOff(p2, sb, k); return `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`;
+  };
 
   const counted = (n) => n.hasCheck !== false;
   const countTotal = nodes.filter(counted).length;
@@ -6588,7 +6601,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
             const cdone = hasCl ? n.checklist.filter((c) => c.done).length : 0;
             const col = n.color || "#a3a3a3"; const kids = childCount(n.id); const isRoot = n.id === rootId;
             // заливка: тусклый тон цвета блока (серый — почти белый), выполненные — зелёные
-            const fill = showDone ? "#f0fdf4" : (col === "#a3a3a3" ? col + "0a" : col + "14");
+            const fill = showDone ? "#f0fdf4" : hexTint(col, col === "#a3a3a3" ? 0.05 : 0.08);
             return (
               <div key={n.id} data-node={n.id} onPointerDown={(e) => onNodeDown(e, n)}
                 className="group absolute select-none rounded-xl shadow-sm"
