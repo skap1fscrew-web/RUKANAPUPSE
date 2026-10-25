@@ -4846,14 +4846,14 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-50" onClick={(e) => e.stopPropagation()}>
       {/* Шапка */}
-      <div className="flex items-stretch gap-4 border-b border-neutral-200 bg-white px-5 py-4 sm:px-8">
-        <div className="h-32 w-24 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 shadow-sm">
+      <div className="flex items-center gap-3 border-b border-neutral-200 bg-white px-5 py-2.5 sm:px-8">
+        <div className="h-20 w-[60px] shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 shadow-sm">
           {product.image
             ? <img src={product.image} alt="" className="h-full w-full object-cover" />
-            : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={26} /></div>}
+            : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={20} /></div>}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
-          <div className="flex items-center gap-2 pl-1.5 text-[13px] text-neutral-400">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+          <div className="flex items-center gap-2 pl-1.5 text-[12px] text-neutral-400">
             {product.code && <span className="font-bold text-neutral-600">{product.code}</span>}
             {product.wb && (
               <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-sky-600">· {product.wb} <ExternalLink size={12} /></a>
@@ -4863,10 +4863,10 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
             value={product.name}
             onChange={(e) => onSetName(e.target.value)}
             placeholder="Название товара"
-            className="w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-0.5 text-2xl font-bold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
+            className="w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-0.5 text-xl font-bold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
           <div className="flex items-center gap-2 pl-1.5">
-            <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Предмет</span>
+            <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Предмет</span>
             <SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
           </div>
         </div>
@@ -6200,7 +6200,7 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
             <button onClick={() => { setMapOpen((o) => !o); setTplOpen(false); }} title="Выбрать карту"
               className="inline-flex max-w-full items-center gap-2 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STRAT_TPL_COLOR[active.template] || "#9ca3af" }} />
-              <span className="max-w-[220px] truncate">{active.name}</span>
+              <span className="max-w-[360px] truncate" title={active.name}>{active.name}</span>
               <span className="rounded bg-white/20 px-1 py-px text-[9px] font-bold uppercase text-white/80">{(STRAT_TPLS[active.template]?.label || "").slice(0, 4)}</span>
               <ChevronDown size={13} className="shrink-0 opacity-80" />
             </button>
