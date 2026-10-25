@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -562,6 +562,8 @@ export default function AssortmentTable() {
   const [opEditor, setOpEditor] = useState(null); // открытая настройка операционной задачи (из Ганта)
   const [ganttModal, setGanttModal] = useState(null);
   const [cardModal, setCardModal] = useState(null); // id товара для окна «Задачи по карточке»
+  const [supplyMenu, setSupplyMenu] = useState(null); // выбор партии для добавления товара { productId, x, y }
+  const [toast, setToast] = useState(null); // всплывающее подтверждение
   const [codeFilter, setCodeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState([]); // выбранные статусы (мультивыбор); пусто = все
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
@@ -803,12 +805,37 @@ export default function AssortmentTable() {
     return () => ro.disconnect();
   }, []);
 
+  // авто-скрытие всплывающего подтверждения
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 2800); return () => clearTimeout(t); }, [toast]);
+
   /* --- товары --- */
   const addProduct = () =>
     setProducts((p) => [
       ...p,
       normalizeProduct({ status: statuses[0]?.name || "" }),
     ]);
+
+  // добавить товар в выбранную партию закупки
+  const addProductToBatch = (batchId, productId) => {
+    const prod = products.find((x) => x.id === productId);
+    setPurchaseBatches((bs) => bs.map((b) => {
+      if (b.id !== batchId) return b;
+      if ((b.items || []).some((it) => it.productId === productId)) return b; // уже есть
+      return { ...b, items: [...(b.items || []), { id: uid(), productId, priceCny: "", qty: "" }] };
+    }));
+    const bn = purchaseBatches.find((b) => b.id === batchId)?.name || "партию";
+    setToast({ text: `«${prod?.name || "Товар"}» добавлен в «${bn}»` });
+    setSupplyMenu(null);
+  };
+  // создать новую партию сразу с товаром
+  const addBatchWithProduct = (productId) => {
+    const prod = products.find((x) => x.id === productId);
+    const id = uid();
+    const b = { id, name: `Партия #${purchaseBatches.length + 1}`, status: "draft", cny: unitConst.cny || "", usd: unitConst.usd || "", cargo: unitConst.cargo || "", commission: unitConst.commission || "", insurance: unitConst.insurance || "", items: [{ id: uid(), productId, priceCny: "", qty: "" }], payments: [] };
+    setPurchaseBatches((bs) => [...bs, b]);
+    setToast({ text: `«${prod?.name || "Товар"}» добавлен в «${b.name}»` });
+    setSupplyMenu(null);
+  };
   const updateProduct = (id, field, value) =>
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
   const setProductTasks = (id, tasks) =>
@@ -1725,7 +1752,10 @@ export default function AssortmentTable() {
                     </button>
                     {p.status && <span className="rounded-full absolute left-2 top-2 px-2 py-0.5 text-[11px] font-semibold" style={{ background: sc + "26", color: sc }}>{p.status}</span>}
                     <button onClick={() => triggerUpload(p.id)} className="rounded-lg absolute bottom-2 right-2 bg-white/90 p-1.5 text-neutral-500 opacity-0 shadow transition hover:text-neutral-800 group-hover:opacity-100" title="Загрузить фото"><ImagePlus size={14} /></button>
-                    <button onClick={() => removeProduct(p.id)} className="rounded-md absolute right-2 top-2 bg-white/90 p-1 text-neutral-400 opacity-0 shadow transition hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+                    {(() => { const inSupply = (purchaseBatches || []).some((b) => (b.items || []).some((it) => it.productId === p.id)); return (
+                      <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setSupplyMenu({ productId: p.id, x: r.right, y: r.bottom }); }} className={"rounded-md absolute right-2 top-2 p-1 shadow transition " + (inSupply ? "bg-teal-600 text-white opacity-100" : "bg-white/90 text-neutral-500 opacity-0 hover:text-teal-700 group-hover:opacity-100")} title="Добавить в поставку"><PackagePlus size={14} /></button>
+                    ); })()}
+                    <button onClick={() => removeProduct(p.id)} className="rounded-md absolute left-2 bottom-2 bg-white/90 p-1 text-neutral-400 opacity-0 shadow transition hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
                   </div>
                   <button onClick={() => setCardModal(p.id)} className="block w-full px-3 py-2 text-left">
                     <div className="flex items-center gap-1.5 truncate text-[11px] text-neutral-400">
@@ -1888,6 +1918,45 @@ export default function AssortmentTable() {
           />
         );
       })()}
+
+      {/* Выпадающий список поставок для «Добавить в поставку» */}
+      {supplyMenu && (() => {
+        const prod = products.find((x) => x.id === supplyMenu.productId);
+        if (!prod) return null;
+        return (
+          <>
+            <div className="fixed inset-0 z-[80]" onClick={() => setSupplyMenu(null)} />
+            <div className="fixed z-[81] w-60 overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl" style={{ left: Math.max(8, Math.min(supplyMenu.x - 240, window.innerWidth - 248)), top: supplyMenu.y + 6 }}>
+              <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Добавить в поставку</div>
+              <div className="max-h-64 overflow-auto">
+                {(purchaseBatches || []).length === 0 && <div className="px-2.5 py-2 text-xs text-neutral-400">Партий ещё нет — создайте ниже.</div>}
+                {(purchaseBatches || []).map((b) => {
+                  const has = (b.items || []).some((it) => it.productId === supplyMenu.productId);
+                  const stColor = { draft: "#94a3b8", paid: "#10b981", transit: "#f59e0b", received: "#3b82f6" }[b.status] || "#94a3b8";
+                  return (
+                    <button key={b.id} disabled={has} onClick={() => addProductToBatch(b.id, supplyMenu.productId)} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm " + (has ? "cursor-default text-neutral-400" : "text-neutral-700 hover:bg-neutral-50")}>
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: stColor }} />
+                      <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                      {has ? <Check size={14} className="shrink-0 text-teal-600" /> : <Plus size={14} className="shrink-0 text-neutral-300" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="my-1 h-px bg-neutral-100" />
+              <button onClick={() => addBatchWithProduct(supplyMenu.productId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-semibold text-neutral-700 hover:bg-neutral-50"><Plus size={14} className="text-neutral-400" /> Новая партия</button>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Всплывающее подтверждение */}
+      {toast && (
+        <div className="fixed left-1/2 bottom-6 z-[90] flex -translate-x-1/2 items-center gap-2.5 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-xl">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-500"><Check size={13} strokeWidth={3} /></span>
+          <span>{toast.text}</span>
+          <button onClick={() => { setToast(null); setActiveTab("purchases"); }} className="ml-1 shrink-0 font-semibold text-sky-300 hover:underline">Открыть закупки</button>
+        </div>
+      )}
 
       {ganttModal && (() => {
         const gp = products.find((x) => x.id === ganttModal.productId);
