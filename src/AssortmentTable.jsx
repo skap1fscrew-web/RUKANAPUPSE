@@ -49,9 +49,9 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } ca
 
 // Задачи: приоритеты и дефолтные колонки Канбана
 const PRIORITIES = {
-  high: { label: "Высокий", color: "#e0452c", bg: "#fdecec" },
-  med: { label: "Средний", color: "#c77d1a", bg: "#fff4e5" },
-  low: { label: "Низкий", color: "#5b789b", bg: "#eef3f8" },
+  high: { label: "Высокий", color: "#ef4444", bg: "#fef0f0" },
+  med: { label: "Средний", color: "#f59e0b", bg: "#fef7eb" },
+  low: { label: "Низкий", color: "#a3a3a3", bg: "#fafafa" },
 };
 const KANBAN_DEFAULT = [
   { id: "backlog", name: "Бэклог", color: "#94a3b8" },
@@ -5480,6 +5480,15 @@ function TasksView({ jobs, taskLabels, taskTags = [], onUpdateJob, products, opT
 // Карточка задачи (Канбан) и строка (Список) используют общие мелкие элементы
 function PrioChip({ p }) { if (!p || !PRIORITIES[p]) return null; const m = PRIORITIES[p]; return <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: m.bg, color: m.color }}><span className="h-1.5 w-1.5 rounded-full" style={{ background: m.color }} />{m.label}</span>; }
 function StageChip({ j }) { const k = stageOf(j); const m = STAGES[k]; return <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: m.bg, color: m.color }}><span className="h-1.5 w-1.5 rounded-full" style={{ background: m.color }} />{m.label}</span>; }
+function StageIcon({ j, size = 15 }) {
+  const k = stageOf(j); const m = STAGES[k];
+  const base = { width: size, height: size, viewBox: "0 0 24 24" };
+  let svg;
+  if (k === "progress") svg = (<svg {...base}><circle cx="12" cy="12" r="9" fill="none" stroke={m.color} strokeWidth="2.2" /><path d="M12 3 a9 9 0 0 1 0 18 z" fill={m.color} /></svg>);
+  else if (k === "done") svg = (<svg {...base} fill="none" stroke={m.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-4.8" /></svg>);
+  else svg = (<svg {...base} fill="none" stroke={m.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>);
+  return <span title={m.label} className="inline-flex shrink-0 items-center">{svg}</span>;
+}
 
 function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJob, onUpdateJob }) {
   const dragRef = useRef(null);
@@ -5526,11 +5535,11 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJ
           </div>
           <div className="flex min-h-[40px] flex-col gap-2">
             {byCol[col.key].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
-              <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl border p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", borderColor: pm ? pm.color + "59" : "#e9e9ec", borderLeft: pm ? `3px solid ${pm.color}` : undefined }}>
+              <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
                 {lc && <div className="mb-1.5 h-[3px] rounded-full" style={{ background: lc }} />}
                 <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {groupBy !== "status" && <StageChip j={j} />}
+                  {groupBy !== "status" && <StageIcon j={j} />}
                   {jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}
                   {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
                   {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
@@ -5570,7 +5579,7 @@ function JobsListView({ jobs, tags, taskLabels, products, onOpen, onUpdateJob })
             <tr key={j.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
               <td className="px-2 py-2 text-center"><button onClick={() => onUpdateJob(applyStage(j, done ? "wait" : "done"))} className="flex h-4 w-4 items-center justify-center rounded border" style={{ background: done ? "#16a34a" : "#fff", borderColor: done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{done && <Check size={10} strokeWidth={3} />}</button></td>
               <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</button></td>
-              <td className="px-3 py-2"><StageChip j={j} /></td>
+              <td className="px-3 py-2"><StageIcon j={j} size={16} /></td>
               <td className="px-3 py-2"><PrioChip p={j.priority} /></td>
               <td className="px-3 py-2"><div className="flex flex-wrap gap-1">{jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}{jtags.length === 0 && <span className="text-neutral-300">—</span>}</div></td>
               <td className="px-3 py-2">{lb ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600"><span className="h-2 w-2 rounded-full" style={{ background: lb.color }} />{lb.name}</span> : <span className="text-neutral-300">—</span>}</td>
@@ -6369,6 +6378,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
   const [sel, setSel] = useState([]);
   const selRef = useRef(sel); selRef.current = sel;
   const [settingsFor, setSettingsFor] = useState(null);
+  const [imgView, setImgView] = useState(null);
   const [taskFor, setTaskFor] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [vpSize, setVpSize] = useState({ w: 1000, h: 600 });
@@ -6518,6 +6528,13 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
     window.addEventListener("keydown", onKey);
     return () => { el.removeEventListener("wheel", onWheel); ro.disconnect(); clearTimeout(t); window.removeEventListener("keydown", onKey); };
   }, []);
+
+  useEffect(() => {
+    if (!imgView) return;
+    const onEsc = (e) => { if (e.key === "Escape") setImgView(null); };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [imgView]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 1600); return () => clearTimeout(t); }, [toast]);
   // измеряем высоты блоков → пересчитываем раскладку
   useLayoutEffect(() => {
@@ -6610,7 +6627,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
                   <div className="group/img relative overflow-hidden rounded-t-[10px]" style={{ height: 110 }}>
                     <img src={n.image} alt="" className="h-full w-full object-cover" draggable={false} />
                     <button onPointerDown={stop} onClick={() => patchNode(n.id, { image: null })} className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition hover:bg-black/60 group-hover/img:opacity-100" title="Убрать картинку"><X size={12} /></button>
-                    <a href={n.image} target="_blank" rel="noreferrer" onPointerDown={stop} onClick={(e) => e.stopPropagation()} className="absolute bottom-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded bg-black/40 text-white opacity-0 transition hover:bg-black/60 group-hover/img:opacity-100" title="Открыть в полном размере"><Maximize2 size={11} /></a>
+                    <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); setImgView(n.image); }} className="absolute bottom-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded bg-black/40 text-white opacity-0 transition hover:bg-black/60 group-hover/img:opacity-100" title="Открыть в полном размере"><Maximize2 size={11} /></button>
                   </div>
                 )}
                 <div className={"relative flex items-start gap-1.5 pt-2.5 pl-2.5 " + ((kids > 0 && n.collapsed) ? "pr-9" : "pr-2.5")}>
@@ -6677,6 +6694,13 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
               {pnodes.map((n) => <rect key={n.id} x={mmx(n.x)} y={mmy(n.y)} width={W * mm} height={Math.max(3, nh(n.id) * mm)} rx="1.5" fill={nodeIsDone(n) ? "#16a34a" : (n.color || "#94a3b8")} opacity="0.85" />)}
               <rect x={mmx(vx)} y={mmy(vy)} width={vw * mm} height={vh * mm} fill="none" stroke="#111827" strokeWidth="1" />
             </svg>
+          </div>
+        )}
+
+        {imgView && (
+          <div onPointerDown={(e) => { e.stopPropagation(); setImgView(null); }} className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-6" title="Закрыть">
+            <img src={imgView} alt="" onPointerDown={(e) => e.stopPropagation()} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" draggable={false} />
+            <button onPointerDown={(e) => { e.stopPropagation(); setImgView(null); }} className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/30" title="Закрыть (Esc)"><X size={18} /></button>
           </div>
         )}
 
