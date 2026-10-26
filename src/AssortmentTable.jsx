@@ -6613,28 +6613,32 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
                     <a href={n.image} target="_blank" rel="noreferrer" onPointerDown={stop} onClick={(e) => e.stopPropagation()} className="absolute bottom-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded bg-black/40 text-white opacity-0 transition hover:bg-black/60 group-hover/img:opacity-100" title="Открыть в полном размере"><Maximize2 size={11} /></a>
                   </div>
                 )}
-                <div className="flex items-start gap-1.5 px-2.5 pt-2.5">
-                  {cnt && (hasCl ? (
-                    <span title="Прогресс по подзадачам" className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: done ? "#16a34a" : "#fff", border: done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }}>{done ? <Check size={12} strokeWidth={3} /> : (cdone > 0 && <Minus size={12} strokeWidth={3} style={{ color: "#a3a3a3" }} />)}</span>
-                  ) : (
-                    <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
-                  ))}
-                  <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; if (focusRef.current === n.id) { focusRef.current = null; setTimeout(() => el.focus(), 0); } } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder={isRoot ? "Тема…" : "Блок…"} className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
-                  {kids > 0 && (
-                    <button onPointerDown={stop} onClick={() => toggleCollapse(n.id)} title={n.collapsed ? "Развернуть ветку" : "Свернуть ветку"} className="mt-0.5 flex h-5 shrink-0 items-center gap-0.5 rounded px-1 text-[10px] font-bold text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600">{n.collapsed ? <><ChevronRight size={13} />{kids}</> : <ChevronDown size={13} />}</button>
-                  )}
-                  <button onPointerDown={stop} onClick={() => addChild(n.id)} title="Добавить дочерний блок (Tab)" className={"mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-neutral-100 hover:text-neutral-700 " + (on ? "text-neutral-500 opacity-100" : "text-neutral-400 opacity-0 group-hover:opacity-100")}><Plus size={14} /></button>
-                  <button onPointerDown={stop} onClick={() => { setSel([n.id]); setSettingsFor(settingsFor === n.id ? null : n.id); setTaskFor(null); }} title="Настройки блока" className={"mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-neutral-100 hover:text-neutral-700 " + (settingsFor === n.id ? "bg-neutral-100 text-neutral-700" : (on ? "text-neutral-400 opacity-100" : "text-neutral-400 opacity-0 group-hover:opacity-100"))}><Settings2 size={14} /></button>
-                </div>
-
-                {hasCl && (
-                  <div className="mt-1 flex items-center gap-1.5 px-2.5">
-                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.round((cdone / n.checklist.length) * 100)}%`, background: done ? "#16a34a" : col }} /></div>
-                    <span className="text-[10px] font-semibold text-neutral-400">{cdone}/{n.checklist.length}</span>
+                <div className="flex items-stretch">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-1.5 px-2.5 pt-2.5">
+                      {cnt && (hasCl ? (
+                        <span title="Прогресс по подзадачам" className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: done ? "#16a34a" : "#fff", border: done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }}>{done ? <Check size={12} strokeWidth={3} /> : (cdone > 0 && <Minus size={12} strokeWidth={3} style={{ color: "#a3a3a3" }} />)}</span>
+                      ) : (
+                        <button onPointerDown={stop} onClick={() => patchNode(n.id, { done: !n.done })} className="mt-0.5 flex shrink-0 items-center justify-center" style={{ width: 18, height: 18, borderRadius: 6, background: n.done ? "#16a34a" : "#fff", border: n.done ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }} title={n.done ? "Выполнено" : "Отметить"}>{n.done && <Check size={12} strokeWidth={3} />}</button>
+                      ))}
+                      <textarea value={n.title} rows={1} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; if (focusRef.current === n.id) { focusRef.current = null; setTimeout(() => el.focus(), 0); } } }} onPointerDown={(e) => { e.stopPropagation(); setSel([n.id]); }} onFocus={pushHist} onChange={(e) => patchLive(n.id, { title: e.target.value })} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} placeholder={isRoot ? "Тема…" : "Блок…"} className="min-w-0 flex-1 resize-none overflow-hidden break-words bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" style={showDone ? { textDecoration: "line-through", color: "#737373" } : undefined} />
+                    </div>
+                    {hasCl && (
+                      <div className="mt-1 flex items-center gap-1.5 px-2.5">
+                        <div className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.round((cdone / n.checklist.length) * 100)}%`, background: done ? "#16a34a" : col }} /></div>
+                        <span className="text-[10px] font-semibold text-neutral-400">{cdone}/{n.checklist.length}</span>
+                      </div>
+                    )}
+                    {settingsFor !== n.id && <div style={{ height: 10 }} />}
                   </div>
-                )}
-
-                {settingsFor !== n.id && <div style={{ height: 10 }} />}
+                  <div className="flex shrink-0 flex-col items-center self-stretch border-l border-neutral-200/80 px-1 py-1">
+                    {kids > 0 && (
+                      <button onPointerDown={stop} onClick={() => toggleCollapse(n.id)} title={n.collapsed ? "Развернуть ветку" : "Свернуть ветку"} className="flex w-7 flex-col items-center justify-center rounded py-0.5 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600">{n.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}<span className="text-[10px] font-bold leading-none">{kids}</span></button>
+                    )}
+                    <button onPointerDown={stop} onClick={() => addChild(n.id)} title="Добавить дочерний блок (Tab)" className="flex h-[26px] w-7 shrink-0 items-center justify-center rounded text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"><Plus size={14} /></button>
+                    <button onPointerDown={stop} onClick={() => { setSel([n.id]); setSettingsFor(settingsFor === n.id ? null : n.id); setTaskFor(null); }} title="Настройки блока" className={"flex h-[26px] w-7 shrink-0 items-center justify-center rounded transition hover:bg-neutral-100 hover:text-neutral-700 " + (settingsFor === n.id ? "bg-neutral-100 text-neutral-700" : "text-neutral-400")}><Settings2 size={14} /></button>
+                  </div>
+                </div>
 
                 {settingsFor === n.id && (
                   <div className="border-t border-neutral-100">
