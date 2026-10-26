@@ -6639,43 +6639,29 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
                 {settingsFor === n.id && (
                   <div className="border-t border-neutral-100">
                     <textarea value={n.note || ""} onPointerDown={stop} onFocus={pushHist} onChange={(e) => patchLive(n.id, { note: e.target.value })} placeholder="заметка…" rows={2} className="w-full resize-none bg-transparent px-2.5 pt-2 pb-1 text-[11px] leading-snug text-neutral-500 focus:outline-none" />
-                    <div className="px-2.5 py-1.5">
-                      {(n.checklist || []).map((c) => (
-                        <div key={c.id} className="flex items-center gap-1.5 py-0.5">
-                          <button onPointerDown={stop} onClick={() => toggleCheck(n.id, c.id)} className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border" style={{ background: c.done ? "#16a34a" : "#fff", borderColor: c.done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{c.done && <Check size={9} strokeWidth={3} />}</button>
-                          <input value={c.text} onPointerDown={stop} onFocus={pushHist} onChange={(e) => setCheckText(n.id, c.id, e.target.value)} placeholder="подзадача…" className="min-w-0 flex-1 bg-transparent text-[11px] text-neutral-700 focus:outline-none" style={c.done ? { textDecoration: "line-through", color: "#a3a3a3" } : undefined} />
-                          <X size={11} className="shrink-0 cursor-pointer text-neutral-300 hover:text-red-500" onPointerDown={stop} onClick={() => removeCheck(n.id, c.id)} />
-                        </div>
-                      ))}
-                      <button onPointerDown={stop} onClick={() => addCheck(n.id)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={11} /> подзадача</button>
-                    </div>
                     <div className="flex flex-wrap items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
                       {SWATCHES.map((c) => (<button key={c} onPointerDown={stop} onClick={() => patchNode(n.id, { color: c })} className="h-4 w-4 rounded-full transition" style={{ background: c, boxShadow: n.color === c ? `0 0 0 2px #fff, 0 0 0 3.5px ${c}` : "none" }} />))}
                     </div>
-                    <div className="border-t border-neutral-100 px-2.5 py-1.5">
-                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Картинка</div>
+                    {/* строка действий: картинка · чекбокс · дубль/удалить */}
+                    <div className="flex items-center gap-1.5 border-t border-neutral-100 px-2.5 py-1.5">
                       {n.image ? (
-                        <div className="flex items-center gap-2">
-                          <img src={n.image} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-neutral-200 object-cover" />
-                          <label onPointerDown={stop} className="cursor-pointer rounded-md border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-600 hover:bg-neutral-50">Заменить<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) attachImage(n.id, f); e.target.value = ""; }} /></label>
-                          <button onPointerDown={stop} onClick={() => patchNode(n.id, { image: null })} className="rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50">Удалить</button>
-                        </div>
+                        <span className="group/im relative inline-flex h-7 w-7 shrink-0 overflow-hidden rounded-md border border-neutral-200" title="Картинка">
+                          <img src={n.image} alt="" className="h-full w-full object-cover" />
+                          <button onPointerDown={stop} onClick={() => patchNode(n.id, { image: null })} className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition group-hover/im:opacity-100" title="Убрать картинку"><X size={12} /></button>
+                        </span>
                       ) : (
-                        <label onPointerDown={stop} className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-neutral-300 py-2 text-[11px] font-medium text-neutral-500 transition hover:border-neutral-400 hover:text-neutral-700"><ImagePlus size={13} /> Прикрепить картинку<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) attachImage(n.id, f); e.target.value = ""; }} /></label>
+                        <label onPointerDown={stop} className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-neutral-200 text-neutral-500 transition hover:bg-neutral-50 hover:text-neutral-700" title="Прикрепить картинку"><ImagePlus size={14} /><input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) attachImage(n.id, f); e.target.value = ""; }} /></label>
+                      )}
+                      <button onPointerDown={stop} onClick={() => patchNode(n.id, { hasCheck: !cnt })} title={cnt ? "Убрать чекбокс выполнения" : "Добавить чекбокс выполнения"} className={"inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition " + (cnt ? "border-green-200 bg-green-50" : "border-neutral-200 hover:bg-neutral-50")}>
+                        <span className="flex h-4 w-4 items-center justify-center rounded" style={{ background: cnt ? "#16a34a" : "#fff", border: cnt ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }}>{cnt && <Check size={10} strokeWidth={3} />}</span>
+                      </button>
+                      {!isRoot && (
+                        <span className="ml-auto flex items-center gap-1">
+                          <button onPointerDown={stop} onClick={() => duplicateNode(n.id)} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Дублировать блок"><Copy size={13} /></button>
+                          <button onPointerDown={stop} onClick={() => removeSubtree(n.id)} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 hover:bg-red-50 hover:text-red-500" title="Удалить блок и ветку"><Trash2 size={13} /></button>
+                        </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 border-t border-neutral-100 px-2.5 py-1.5">
-                      <span className="text-[11px] text-neutral-500">Чекбокс выполнения</span>
-                      <button onPointerDown={stop} onClick={() => patchNode(n.id, { hasCheck: !cnt })} title={cnt ? "Убрать чекбокс" : "Добавить чекбокс"} className="relative ml-auto h-4 w-7 shrink-0 rounded-full transition" style={{ background: cnt ? "#16a34a" : "#d4d4d4" }}>
-                        <span className="absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all" style={{ left: cnt ? 14 : 2 }} />
-                      </button>
-                    </div>
-                    {!isRoot && (
-                      <div className="flex items-center gap-1 border-t border-neutral-100 px-2.5 py-1.5">
-                        <button onPointerDown={stop} onClick={() => duplicateNode(n.id)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Дублировать блок"><Copy size={13} /></button>
-                        <button onPointerDown={stop} onClick={() => removeSubtree(n.id)} className="rounded-md p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500" title="Удалить блок и ветку"><Trash2 size={13} /></button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
