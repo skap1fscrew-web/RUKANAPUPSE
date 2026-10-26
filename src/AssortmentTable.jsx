@@ -1803,7 +1803,14 @@ export default function AssortmentTable() {
           <StrategySection
             strategy={strategy}
             onChange={setStrategy}
-            onCreateTask={(title, date) => upsertJob({ id: uid(), title: (title || "Задача").slice(0, 200), date: date || null, start: null, done: false, labelId: null, productId: null })}
+            onCreateTask={(payload) => {
+              const p = payload || {};
+              const id = uid();
+              const job = { id, title: (p.title || "Задача").slice(0, 200), date: p.date || null, start: null, done: false, labelId: null, productId: null, priority: null, tags: [], stage: "wait", note: p.note || "", checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
+              upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
+              return id;
+            }}
+            onOpenTask={(id) => { const job = jobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
           />
         )}
 
@@ -1877,6 +1884,7 @@ export default function AssortmentTable() {
             product={withConst(cp)}
             defaultTasks={defaultTasks}
             taskLabels={taskLabels}
+            statuses={statuses}
             onSetName={(v) => updateProduct(cp.id, "name", v)}
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
             onSetCompetitors={(c) => setProductCompetitors(cp.id, c)}
@@ -4700,7 +4708,9 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+  const [statusOpen, setStatusOpen] = useState(false);
+  const curStatus = (statuses || []).find((s) => s.name === product.status);
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
   // Любое изменение «материализует» их в собственный список карточки.
   const own = Array.isArray(product.tasks) ? product.tasks : [];
@@ -4934,9 +4944,38 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
             placeholder="Название товара"
             className="w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-0.5 text-xl font-bold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
-          <div className="flex items-center gap-2 pl-1.5">
-            <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Предмет</span>
-            <SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 pl-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Предмет</span>
+              <SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
+            </div>
+            <div className="relative flex items-center gap-2">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Статус</span>
+              <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: curStatus ? curStatus.color : "#e5e5e5" }} />
+                <span className={curStatus ? "" : "text-neutral-400"}>{curStatus ? curStatus.name : "Без статуса"}</span>
+                <ChevronDown size={14} className="text-neutral-400" />
+              </button>
+              {statusOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setStatusOpen(false)} />
+                  <div className="absolute left-16 top-full z-20 mt-1.5 w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
+                    {(statuses || []).map((s) => { const on = s.name === product.status; return (
+                      <button key={s.name} onClick={() => { onSetField("status", s.name); setStatusOpen(false); }} className={"flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition hover:bg-neutral-50 " + (on ? "font-semibold text-neutral-900" : "text-neutral-600")}>
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
+                        {s.name}
+                        {on && <Check size={14} className="ml-auto text-green-600" />}
+                      </button>
+                    ); })}
+                    <button onClick={() => { onSetField("status", ""); setStatusOpen(false); }} className={"flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition hover:bg-neutral-50 " + (!curStatus ? "font-semibold text-neutral-700" : "text-neutral-400")}>
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-neutral-200" />
+                      Без статуса
+                      {!curStatus && <Check size={14} className="ml-auto text-green-600" />}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
         <button onClick={onClose} className="rounded-lg shrink-0 self-start p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
@@ -5066,7 +5105,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, onSetName, onSetTas
               {(() => { const sppMul = (!isNaN(sppVal) && sppVal > 0) ? (1 - sppVal / 100) : null; return (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 text-xs text-neutral-400">Цена для рента:{sppMul != null && <span className="rounded bg-sky-100 px-1.5 text-[9px] font-bold uppercase tracking-wide text-sky-600">с СПП</span>}</span>
-                {[50, 100, 150, 200].map((r) => {
+                {[50, 75, 100, 150, 200].map((r) => {
                   const v = targetPrice(r / 100);
                   return (
                     <button
@@ -5977,14 +6016,16 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
           <p className="px-1 py-6 text-center text-[11px] text-neutral-400">Все задачи на ганте. Перетащите бар сюда, чтобы снять дату.</p>
         ) : unscheduled.map((j) => {
           const pm = PRIORITIES[j.priority];
+          const cl = Array.isArray(j.checklist) ? j.checklist : [];
+          const cdone = cl.filter((c) => c.done).length;
           return (
             <div key={j.id} onPointerDown={(e) => startCardDrag(e, j)} onClick={() => onOpen(j)}
-              className="cursor-grab rounded-lg border border-l-4 bg-white p-2.5 shadow-sm transition hover:shadow-md"
-              style={{ borderLeftColor: prioColor(j), touchAction: "none" }}>
-              <div className="text-[12.5px] font-semibold leading-snug text-neutral-800">{j.title || "Без названия"}</div>
-              <div className="mt-1.5">
-                {pm ? <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: pm.bg, color: pm.color }}>{pm.label}</span>
-                    : <span className="text-[10px] text-neutral-400">без приоритета</span>}
+              className="cursor-grab rounded-xl p-2.5 shadow-sm transition hover:shadow-md"
+              style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}`, touchAction: "none" }}>
+              <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <StageIcon j={j} />
+                {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
               </div>
             </div>
           );
@@ -5995,8 +6036,8 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
 
     {/* Плавающий «призрак» перетаскиваемой карточки */}
     {cardDrag && (
-      <div className="pointer-events-none fixed z-[90] max-w-[220px] truncate rounded-lg border border-l-4 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-neutral-800 shadow-lg"
-        style={{ left: cardDrag.x + 12, top: cardDrag.y + 12, borderLeftColor: cardDrag.color }}>
+      <div className="pointer-events-none fixed z-[90] max-w-[220px] truncate rounded-xl bg-white px-2.5 py-1.5 text-[12px] font-semibold text-neutral-800 shadow-lg"
+        style={{ left: cardDrag.x + 12, top: cardDrag.y + 12, border: `1.5px solid ${cardDrag.color}` }}>
         {cardDrag.title}
       </div>
     )}
@@ -6184,6 +6225,7 @@ function normStrategy(v) {
     checklist: n && Array.isArray(n.checklist)
       ? n.checklist.filter((c) => c && typeof c === "object").map((c) => ({ id: c.id || uid(), text: c.text || "", done: !!c.done }))
       : [],
+    jobId: (n && typeof n.jobId === "string") ? n.jobId : null,
   });
   const normMap = (m, i) => {
     const template = m && STRAT_TPLS[m.template] ? m.template : "mind";
@@ -6261,7 +6303,7 @@ function computeStratLayout(nodes, edges, rootId, template, hOf) {
 function nodeIsDone(n) { return (n.checklist && n.checklist.length) ? n.checklist.every((c) => c.done) : !!n.done; }
 
 // Обёртка: список карт-стратегий + переключатель. Новая карта создаётся по выбранному шаблону.
-function StrategySection({ strategy, onChange, onCreateTask }) {
+function StrategySection({ strategy, onChange, onCreateTask, onOpenTask }) {
   const st = normStrategy(strategy);
   const maps = st.maps;
   const active = maps.find((m) => m.id === st.activeId) || maps[0];
@@ -6360,7 +6402,7 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
           )}
         </div>
       </div>
-      <StrategyBoard key={active.id} template={active.template} rootId={active.rootId} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} onCreateTask={onCreateTask} />
+      <StrategyBoard key={active.id} template={active.template} rootId={active.rootId} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} onCreateTask={onCreateTask} onOpenTask={onOpenTask} />
     </div>
   );
 }
@@ -6368,7 +6410,7 @@ function StrategySection({ strategy, onChange, onCreateTask }) {
 const GROUP_COLORS = ["#6366f1", "#0ea5e9", "#f59e0b", "#ec4899", "#10b981", "#8b5cf6"];
 const TYPE_COLOR = { stage: "#a3a3a3", goal: "#059669", risk: "#d97706", decision: "#7c3aed" };
 
-function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
+function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template, rootId }) {
   const W = 220, GRID = 20, CW = 6000, CH = 4200;
   const tpl = STRAT_TPLS[template] ? template : "mind";
   const nodes = (strategy && strategy.nodes) || [];
@@ -6554,7 +6596,13 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
     if (changed) force((n) => n + 1);
   });
 
-  const createTask = (n, date) => { if (onCreateTask) onCreateTask(n.title || "Задача", date); setTaskFor(null); setToast("Задача создана во вкладке «Задачи»"); };
+  const createTask = (n, date) => { if (onCreateTask) onCreateTask({ title: n.title || "Задача", note: n.note, checklist: n.checklist, date }); setTaskFor(null); setToast("Задача создана во вкладке «Задачи»"); };
+  const sendToTask = (n) => {
+    if (n.jobId && onOpenTask && onOpenTask(n.jobId)) return;
+    if (!onCreateTask) return;
+    const id = onCreateTask({ title: n.title || "Задача", note: n.note, checklist: n.checklist });
+    if (id) { patchNode(n.id, { jobId: id }); setToast("Задача создана во вкладке «Задачи»"); }
+  };
   const stop = (e) => e.stopPropagation();
 
   // ---- стрелки/связи ----
@@ -6685,6 +6733,11 @@ function StrategyBoard({ strategy, onChange, onCreateTask, template, rootId }) {
                       <button onPointerDown={stop} onClick={() => patchNode(n.id, { hasCheck: !cnt })} title={cnt ? "Убрать чекбокс выполнения" : "Добавить чекбокс выполнения"} className={"inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition " + (cnt ? "border-green-200 bg-green-50" : "border-neutral-200 hover:bg-neutral-50")}>
                         <span className="flex h-4 w-4 items-center justify-center rounded" style={{ background: cnt ? "#16a34a" : "#fff", border: cnt ? "2px solid #16a34a" : "2px solid #d4d4d4", color: "#fff" }}>{cnt && <Check size={10} strokeWidth={3} />}</span>
                       </button>
+                      {cnt && (
+                        <button onPointerDown={stop} onClick={() => sendToTask(n)} title={n.jobId ? "Перейти к задаче" : "Перенести в Задачи"} className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-600 transition hover:bg-sky-100">
+                          {n.jobId ? <ExternalLink size={14} /> : (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 12H3" /><path d="M16 6H3" /><path d="M16 18H3" /><path d="m17 10 4 4-4 4" /></svg>)}
+                        </button>
+                      )}
                       {!isRoot && (
                         <span className="ml-auto flex items-center gap-1">
                           <button onPointerDown={stop} onClick={() => duplicateNode(n.id)} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Дублировать блок"><Copy size={13} /></button>
