@@ -1788,13 +1788,14 @@ export default function AssortmentTable() {
             jobs={jobs}
             taskLabels={taskLabels}
             taskTags={taskTags}
+            people={duties.people}
             onUpdateJob={upsertJob}
             products={products}
             opTypes={opTypes}
             opDone={opDone}
             onToggleDone={toggleOpDone}
             onEditOp={(op) => setOpEditor({ ...op })}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
         )}
@@ -1835,6 +1836,7 @@ export default function AssortmentTable() {
           job={jobEditor}
           taskLabels={taskLabels}
           taskTags={taskTags}
+          people={duties.people}
           products={products}
           opTypes={opTypes}
           onChange={(j) => { const { _new, ...rest } = j; if (rest.title.trim()) upsertJob(rest); }}
@@ -2439,6 +2441,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
           <table className="w-full border-collapse">
             <thead><tr className="text-[10px] uppercase tracking-wide text-neutral-400">
               <th className="px-3 py-2 text-left font-semibold">Товар</th>
+              <th className="px-3 py-2 text-left font-semibold">Предмет</th>
               <th className="px-3 py-2 text-left font-semibold">Примечание</th>
               <th className="px-3 py-2 text-right font-semibold">Цена ¥/ед</th>
               <th className="px-3 py-2 text-right font-semibold">Вес, г</th>
@@ -2464,6 +2467,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
                       <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><button onClick={() => onOpenCard && onOpenCard(it.productId)} title="Открыть карточку товара" className="block max-w-full truncate text-left font-medium text-neutral-800 hover:text-orange-700 hover:underline" style={{ maxWidth: 230 }}>{p.name || "Без названия"}</button></div>
                     </div>
                   </td>
+                  <td className="px-3 py-2 text-sm text-neutral-600">{p.subject ? <span className="block max-w-[160px] truncate" title={p.subject}>{p.subject}</span> : <span className="text-neutral-300">—</span>}</td>
                   <td className="px-3 py-2"><input value={it.note || ""} onChange={(e) => setItem(it.id, "note", e.target.value)} placeholder="примечание…" className="w-full min-w-[120px] rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-neutral-700 placeholder:text-neutral-300 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
                   <td className="px-3 py-2 text-right"><input value={it.priceCny} onChange={(e) => setItem(it.id, "priceCny", e.target.value)} inputMode="decimal" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" /></td>
                   <td className="px-3 py-2 text-right text-neutral-500">{isNaN(w) ? "—" : w}</td>
@@ -2481,7 +2485,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
                 </tr>
                 {open && (
                   <tr className="text-sm">
-                    <td colSpan={10} className="bg-neutral-50/70 px-4 py-3" style={{ borderTop: "1px dashed #e5e5e5" }}>
+                    <td colSpan={11} className="bg-neutral-50/70 px-4 py-3" style={{ borderTop: "1px dashed #e5e5e5" }}>
                       {pOne ? (
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="inline-flex items-center gap-1.5 rounded-lg border border-teal-100 bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-700"><Target size={13} /> {p.plan?.oneLabel || "One size"}</span>
@@ -5437,7 +5441,7 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
   );
 }
 
-function TasksView({ jobs, taskLabels, taskTags = [], onUpdateJob, products, opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
+function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, products, opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
@@ -5508,10 +5512,10 @@ function TasksView({ jobs, taskLabels, taskTags = [], onUpdateJob, products, opT
         </div>
       </div>
 
-      {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
-        : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
+      {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
+        : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
         : view === "cal" ? <CalendarGrid jobs={jobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
-        : <GanttBoard jobs={jobs} products={products} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
+        : <GanttBoard jobs={jobs} products={products} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
     </div>
   );
 }
@@ -5529,7 +5533,8 @@ function StageIcon({ j, size = 15 }) {
   return <span title={m.label} className="inline-flex shrink-0 items-center">{svg}</span>;
 }
 
-function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJob, onUpdateJob }) {
+function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, onOpen, onAddJob, onUpdateJob }) {
+  const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const dragRef = useRef(null);
   const [overCol, setOverCol] = useState(null);
   const tagById = Object.fromEntries((tags || []).map((t) => [t.id, t]));
@@ -5581,6 +5586,7 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJ
                   {jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}
                   {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
                   {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
+                  {(() => { const pr = personById[j.assignee]; return pr ? <span title={pr.name} className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span> : null; })()}
                 </div>
               </div>
             ); })}
@@ -5592,9 +5598,10 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJ
   );
 }
 
-function JobsListView({ jobs, tags, taskLabels, products, onOpen, onUpdateJob }) {
+function JobsListView({ jobs, tags, taskLabels, people = [], products, onOpen, onUpdateJob }) {
   const tagById = Object.fromEntries((tags || []).map((t) => [t.id, t]));
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
+  const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const label = (id) => (taskLabels || []).find((l) => l.id === id);
   const fmtD = (d) => d ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}` : "—";
   const sorted = jobs.slice().sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
@@ -5606,19 +5613,21 @@ function JobsListView({ jobs, tags, taskLabels, products, onOpen, onUpdateJob })
           <th className="px-3 py-2 text-left font-semibold">Задача</th>
           <th className="px-3 py-2 text-left font-semibold">Статус</th>
           <th className="px-3 py-2 text-left font-semibold">Приоритет</th>
+          <th className="px-3 py-2 text-left font-semibold">Исполнитель</th>
           <th className="px-3 py-2 text-left font-semibold">Теги</th>
           <th className="px-3 py-2 text-left font-semibold">Метка</th>
           <th className="px-3 py-2 text-left font-semibold">Дедлайн</th>
           <th className="px-3 py-2 text-left font-semibold">Товар</th>
         </tr></thead>
         <tbody>
-          {sorted.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-neutral-400">Задач нет</td></tr>}
+          {sorted.length === 0 && <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-neutral-400">Задач нет</td></tr>}
           {sorted.map((j) => { const lb = label(j.labelId); const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const done = stageOf(j) === "done"; return (
             <tr key={j.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
               <td className="px-2 py-2 text-center"><button onClick={() => onUpdateJob(applyStage(j, done ? "wait" : "done"))} className="flex h-4 w-4 items-center justify-center rounded border" style={{ background: done ? "#16a34a" : "#fff", borderColor: done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{done && <Check size={10} strokeWidth={3} />}</button></td>
               <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</button></td>
               <td className="px-3 py-2"><StageIcon j={j} size={16} /></td>
               <td className="px-3 py-2"><PrioChip p={j.priority} /></td>
+              <td className="px-3 py-2">{(() => { const pr = personById[j.assignee]; return pr ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>{pr.name}</span> : <span className="text-neutral-300">—</span>; })()}</td>
               <td className="px-3 py-2"><div className="flex flex-wrap gap-1">{jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}{jtags.length === 0 && <span className="text-neutral-300">—</span>}</div></td>
               <td className="px-3 py-2">{lb ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600"><span className="h-2 w-2 rounded-full" style={{ background: lb.color }} />{lb.name}</span> : <span className="text-neutral-300">—</span>}</td>
               <td className="px-3 py-2 text-xs text-neutral-600">{fmtD(j.date)}</td>
@@ -5677,7 +5686,8 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
   );
 }
 
-function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob }) {
+function GanttBoard({ jobs, products, people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob }) {
+  const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const LW = 320;      // ширина колонки с подписями
   const DW = 30;       // ширина дня
   const BAR_H = 20;    // высота бара
@@ -6026,6 +6036,7 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
               <div className="flex flex-wrap items-center gap-1.5">
                 <StageIcon j={j} />
                 {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
+                {(() => { const pr = personById[j.assignee]; return pr ? <span title={pr.name} className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span> : null; })()}
               </div>
             </div>
           );
@@ -6045,7 +6056,7 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
   );
 }
 
-function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onChange, onDelete, onClose }) {
+function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTypes, onChange, onDelete, onClose }) {
   const [j, setJ] = useState(job);
   const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
   useEffect(() => { onChange(j); }, [j]); // автосохранение при любом изменении
@@ -6134,6 +6145,17 @@ function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onChange
                   <button key={k} onClick={() => setJ((o) => applyStage(o, k))} className={"flex-1 rounded-md px-2 py-1 text-xs font-semibold " + (on ? "shadow-sm" : "")} style={on ? { background: STAGES[k].bg, color: STAGES[k].color } : { color: "#a3a3a3" }}>{STAGES[k].label}</button>
                 ); })}
               </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={fieldL}>Исполнитель</span>
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ((people || []).find((pp) => pp.id === j.assignee) || {}).color || "#e5e5e5" }} />
+                <select value={j.assignee || ""} onChange={(e) => set("assignee", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+                  <option value="">Не назначен</option>
+                  {(people || []).map((pp) => (<option key={pp.id} value={pp.id}>{pp.name}</option>))}
+                </select>
+              </div>
+              {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Добавьте исполнителей в разделе «Функционал».</span>}
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Приоритет</span>
