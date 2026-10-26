@@ -1794,7 +1794,7 @@ export default function AssortmentTable() {
             opDone={opDone}
             onToggleDone={toggleOpDone}
             onEditOp={(op) => setOpEditor({ ...op })}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: isoYMD(new Date()), done: false, labelId: null, productId: null, priority: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
         )}
@@ -1830,7 +1830,7 @@ export default function AssortmentTable() {
           taskTags={taskTags}
           products={products}
           opTypes={opTypes}
-          onSave={(j) => { const { _new, ...rest } = j; if (rest.title.trim()) upsertJob(rest); setJobEditor(null); }}
+          onChange={(j) => { const { _new, ...rest } = j; if (rest.title.trim()) upsertJob(rest); }}
           onDelete={(id) => { removeJob(id); setJobEditor(null); }}
           onClose={() => setJobEditor(null)}
         />
@@ -5536,7 +5536,6 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, products, onOpen, onAddJ
           <div className="flex min-h-[40px] flex-col gap-2">
             {byCol[col.key].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
               <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
-                {lc && <div className="mb-1.5 h-[3px] rounded-full" style={{ background: lc }} />}
                 <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {groupBy !== "status" && <StageIcon j={j} />}
@@ -6005,9 +6004,10 @@ function GanttBoard({ jobs, products, opTypes, opDone, onToggleDone, onEditOp, y
   );
 }
 
-function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onSave, onDelete, onClose }) {
+function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onChange, onDelete, onClose }) {
   const [j, setJ] = useState(job);
   const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
+  useEffect(() => { onChange(j); }, [j]); // автосохранение при любом изменении
   const jtags = Array.isArray(j.tags) ? j.tags : [];
   const toggleTag = (id) => set("tags", jtags.includes(id) ? jtags.filter((x) => x !== id) : [...jtags, id]);
   const checklist = Array.isArray(j.checklist) ? j.checklist : [];
@@ -6017,13 +6017,17 @@ function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onSave, 
   const setCheckText = (id, text) => setCl(checklist.map((c) => (c.id === id ? { ...c, text } : c)));
   const removeCheck = (id) => setCl(checklist.filter((c) => c.id !== id));
   const cdone = checklist.filter((c) => c.done).length;
+  const datesOn = !!(j.start || j.date);
   const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
       <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
           <h2 className="text-base font-semibold text-neutral-900">{job._new ? "Новая задача" : "Задача"}</h2>
-          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+          <div className="flex items-center gap-1">
+            {!job._new && <button onClick={() => onDelete(j.id)} title="Удалить задачу" className="rounded-md p-1 text-neutral-400 transition hover:bg-red-50 hover:text-red-600"><Trash2 size={18} /></button>}
+            <button onClick={onClose} title="Закрыть" className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+          </div>
         </div>
 
         <div className="grid flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-[1fr_300px]">
@@ -6061,15 +6065,26 @@ function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onSave, 
           {/* ПРАВО: настройки */}
           <div className="flex flex-col gap-4 bg-neutral-50/50 p-5">
             <div className="flex flex-col gap-2">
-              <span className={fieldL}>Даты</span>
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-sm text-neutral-600">Начало</span>
-                <input type="date" value={j.start || ""} onChange={(e) => set("start", e.target.value || null)} max={j.date || undefined} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
-              </label>
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-sm text-neutral-600">Дедлайн</span>
-                <input type="date" value={j.date || ""} onChange={(e) => set("date", e.target.value)} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
-              </label>
+              <div className="flex items-center justify-between">
+                <span className={fieldL}>Даты</span>
+                <button onClick={() => { if (datesOn) setJ((o) => ({ ...o, start: null, date: null })); else set("start", isoYMD(new Date())); }} title={datesOn ? "Убрать даты" : "Задать даты"} className="relative h-[22px] w-[38px] shrink-0 rounded-full transition" style={{ background: datesOn ? "#171717" : "#d4d4d8" }}>
+                  <span className="absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow transition-all" style={{ left: datesOn ? 18 : 2 }} />
+                </button>
+              </div>
+              {datesOn ? (
+                <>
+                  <label className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-neutral-600">Начало</span>
+                    <input type="date" value={j.start || ""} onChange={(e) => set("start", e.target.value || null)} max={j.date || undefined} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-neutral-600">Дедлайн</span>
+                    <input type="date" value={j.date || ""} onChange={(e) => set("date", e.target.value || null)} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
+                  </label>
+                </>
+              ) : (
+                <p className="text-[11px] leading-snug text-neutral-400">Без дат задача попадёт в «Нераспределённые». Включите тумблер, чтобы задать начало и дедлайн.</p>
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Статус</span>
@@ -6114,10 +6129,6 @@ function JobEditor({ job, taskLabels, taskTags = [], products, opTypes, onSave, 
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-neutral-100 px-5 py-3.5">
-          <button onClick={() => onSave(j)} disabled={!j.title.trim()} className="flex-1 rounded-xl bg-neutral-900 px-3 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Сохранить</button>
-          {!job._new && <button onClick={() => onDelete(j.id)} className="rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600">Удалить</button>}
-        </div>
       </div>
     </div>
   );
