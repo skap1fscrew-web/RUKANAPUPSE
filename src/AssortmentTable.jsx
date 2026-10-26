@@ -4955,10 +4955,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
             </div>
             <div className="relative flex items-center gap-2">
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Статус</span>
-              <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: curStatus ? curStatus.color : "#e5e5e5" }} />
-                <span className={curStatus ? "" : "text-neutral-400"}>{curStatus ? curStatus.name : "Без статуса"}</span>
-                <ChevronDown size={14} className="text-neutral-400" />
+              <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium transition hover:brightness-95" style={curStatus ? { background: curStatus.color + "1f", color: curStatus.color } : { background: "#f1f1f3", color: "#9a9a9a" }}>
+                {curStatus ? curStatus.name : "Без статуса"}
+                <ChevronDown size={14} className="opacity-60" />
               </button>
               {statusOpen && (
                 <>
@@ -5156,12 +5155,17 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, promoBudget.allocated > 0 ? (promoBudget.spent / promoBudget.allocated) * 100 : 0))}%`, background: promoBudget.ostatok < 0 ? "#ef4444" : "#f59e0b" }} /></div>
               </button>
 
-              <button onClick={() => setFullBlock("purchase")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-sky-300 hover:shadow-sm">
-                <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-sky-500" />
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-sky-400" /> Закупка</div>
-                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{isNaN(puRubPerUnit) ? "—" : money(puRubPerUnit)}</div>
-                <div className="text-[11px] text-neutral-400">цена за единицу</div>
-              </button>
+              <div className="group relative">
+                <button onClick={() => setFullBlock("purchase")} className="block w-full rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-sky-300 hover:shadow-sm">
+                  <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-sky-500" />
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-sky-400" /> Закупка</div>
+                  <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{isNaN(puRubPerUnit) ? "—" : money(puRubPerUnit)}</div>
+                  <div className="text-[11px] text-neutral-400">цена за единицу</div>
+                </button>
+                {product.purchase?.link && (
+                  <a href={product.purchase.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Открыть ссылку на закупку" className="absolute right-9 top-2.5 flex h-6 w-6 items-center justify-center rounded-md text-neutral-300 transition hover:bg-sky-50 hover:text-sky-600"><ExternalLink size={13} /></a>
+                )}
+              </div>
 
               <button onClick={() => setFullBlock("analytics")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-violet-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-violet-500" />
@@ -5448,6 +5452,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [groupBy, setGroupBy] = useState(() => lsGet("rnp.kanbanGroup", "status")); // status | priority | label
   const [fltPrio, setFltPrio] = useState(null);
   const [fltTag, setFltTag] = useState(null);
+  const [fltAssignee, setFltAssignee] = useState(null);
   const [fltOpen, setFltOpen] = useState(null);
   const todayStr = isoYMD(now);
   useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
@@ -5462,10 +5467,11 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   );
   const isBoard = view === "kanban" || view === "list";
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету", label: "Метке" };
-  const activeFilters = (fltPrio ? 1 : 0) + (fltTag ? 1 : 0);
+  const activeFilters = (fltPrio ? 1 : 0) + (fltTag ? 1 : 0) + (fltAssignee ? 1 : 0);
   const fJobs = jobs.filter((j) => {
     if (fltPrio && (j.priority || null) !== fltPrio) return false;
     if (fltTag && !(Array.isArray(j.tags) && j.tags.includes(fltTag))) return false;
+    if (fltAssignee && (fltAssignee === "__none" ? !!j.assignee : (j.assignee || null) !== fltAssignee)) return false;
     return true;
   });
 
@@ -5498,6 +5504,12 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
               {fltOpen === "filter" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-neutral-200 bg-white p-2.5 shadow-lg">
                 <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Приоритет</span>{fltPrio && <button onClick={() => setFltPrio(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
                 <div className="mb-3 flex flex-wrap gap-1">{Object.keys(PRIORITIES).map((k) => <button key={k} onClick={() => setFltPrio(fltPrio === k ? null : k)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltPrio === k ? { background: PRIORITIES[k].color, color: "#fff" } : { background: PRIORITIES[k].bg, color: PRIORITIES[k].color }}>{PRIORITIES[k].label}</button>)}</div>
+                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Исполнитель</span>{fltAssignee && <button onClick={() => setFltAssignee(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
+                <div className="mb-3 flex max-h-28 flex-wrap gap-1 overflow-auto">
+                  {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Исполнителей нет</span>}
+                  {(people || []).map((pr) => { const on = fltAssignee === pr.id; return <button key={pr.id} onClick={() => setFltAssignee(on ? null : pr.id)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={on ? { background: pr.color, color: "#fff" } : { background: (pr.color || "#999") + "22", color: pr.color || "#737373" }}>{pr.name}</button>; })}
+                  {(people || []).length > 0 && <button onClick={() => setFltAssignee(fltAssignee === "__none" ? null : "__none")} className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + (fltAssignee === "__none" ? "bg-neutral-700 text-white" : "bg-neutral-100 text-neutral-500")}>Не назначен</button>}
+                </div>
                 <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Теги</span>{fltTag && <button onClick={() => setFltTag(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
                 <div className="flex max-h-36 flex-wrap gap-1 overflow-auto">{taskTags.length === 0 && <span className="text-[11px] text-neutral-400">Тегов нет</span>}{taskTags.map((t) => <button key={t.id} onClick={() => setFltTag(fltTag === t.id ? null : t.id)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltTag === t.id ? { background: t.color, color: "#fff" } : { background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</button>)}</div>
               </div></>)}
