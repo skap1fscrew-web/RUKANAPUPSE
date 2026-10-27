@@ -517,6 +517,83 @@ function fileToThumb(file, max = 240) {
 }
 
 /* ----------------------------------------------------------------------------
+   Генератор .xlsx без зависимостей (store-zip + OOXML + встроенные картинки)
+---------------------------------------------------------------------------- */
+const _CRC = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = _CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files) {
+  const enc = new TextEncoder();
+  const u16 = (n) => [n & 0xff, (n >> 8) & 0xff];
+  const u32 = (n) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff];
+  const parts = []; const central = []; let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name);
+    const data = f.data instanceof Uint8Array ? f.data : enc.encode(f.data);
+    const crc = crc32(data), size = data.length;
+    const lh = [0x50, 0x4b, 0x03, 0x04, ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0)];
+    parts.push(new Uint8Array(lh), name, data);
+    central.push(new Uint8Array([0x50, 0x4b, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), name);
+    offset += lh.length + name.length + size;
+  }
+  const cStart = offset; let cLen = 0;
+  for (const c of central) { parts.push(c); cLen += c.length; }
+  parts.push(new Uint8Array([0x50, 0x4b, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cLen), ...u32(cStart), ...u16(0)]));
+  let total = 0; for (const p of parts) total += p.length;
+  const out = new Uint8Array(total); let p = 0; for (const c of parts) { out.set(c, p); p += c.length; }
+  return out;
+}
+function _b64bytes(b64) { const bin = atob(b64); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+const _xe = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function _colRef(n) { let s = ""; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+// header: [строки], rows: [[ячейки]] (число → числовая, иначе текст), images: [{row(0-based data), col, dataUrl}]
+function buildXlsx({ sheetName = "Лист1", header = [], rows = [], images = [], colWidths = [], imgColWidthPx = 64, imgRowHeightPx = 56 }) {
+  const EMU = 9525; // px → EMU
+  const ncols = Math.max(header.length, ...rows.map((r) => r.length), 1);
+  const imgRows = new Set(images.map((im) => im.row));
+  const cell = (r, c, v) => {
+    const ref = _colRef(c) + (r + 1);
+    if (typeof v === "number" && isFinite(v)) return `<c r="${ref}"><v>${v}</v></c>`;
+    const t = v == null ? "" : String(v);
+    if (t === "") return `<c r="${ref}"/>`;
+    return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${_xe(t)}</t></is></c>`;
+  };
+  let sd = `<row r="1">` + header.map((h, c) => cell(0, c, h)).join("") + `</row>`;
+  rows.forEach((row, ri) => {
+    const r = ri + 1;
+    const ht = imgRows.has(ri) ? ` ht="${Math.round(imgRowHeightPx * 0.75)}" customHeight="1"` : "";
+    sd += `<row r="${r + 1}"${ht}>` + row.map((v, c) => cell(r, c, v)).join("") + `</row>`;
+  });
+  const cols = colWidths.length
+    ? `<cols>` + colWidths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("") + `</cols>`
+    : "";
+  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${cols}<sheetData>${sd}</sheetData>${images.length ? '<drawing r:id="rId1"/>' : ""}</worksheet>`;
+
+  const media = images.map((im, i) => ({ name: `xl/media/image${i + 1}.jpeg`, data: _b64bytes(im.dataUrl.slice(im.dataUrl.indexOf(",") + 1)) }));
+  const anchors = images.map((im, i) => {
+    const cx = imgColWidthPx * EMU, cy = imgRowHeightPx * EMU;
+    return `<xdr:oneCellAnchor><xdr:from><xdr:col>${im.col}</xdr:col><xdr:colOff>${Math.round(4 * EMU)}</xdr:colOff><xdr:row>${im.row + 1}</xdr:row><xdr:rowOff>${Math.round(2 * EMU)}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${i + 2}" name="img${i + 1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId${i + 1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
+  }).join("");
+  const drawingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${anchors}</xdr:wsDr>`;
+  const drawingRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${images.map((im, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${i + 1}.jpeg"/>`).join("")}</Relationships>`;
+
+  const files = [
+    { name: "[Content_Types].xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+    { name: "_rels/.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: "xl/workbook.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${_xe(sheetName).slice(0, 31)}" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+    { name: "xl/_rels/workbook.xml.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+    { name: "xl/styles.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>` },
+    { name: "xl/worksheets/sheet1.xml", data: sheetXml },
+  ];
+  if (images.length) {
+    files.push({ name: "xl/worksheets/_rels/sheet1.xml.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>` });
+    files.push({ name: "xl/drawings/drawing1.xml", data: drawingXml });
+    files.push({ name: "xl/drawings/_rels/drawing1.xml.rels", data: drawingRels });
+    media.forEach((m) => files.push(m));
+  }
+  return zipStore(files);
+}
+
+/* ----------------------------------------------------------------------------
    Главный компонент
 ---------------------------------------------------------------------------- */
 
@@ -560,6 +637,7 @@ export default function AssortmentTable() {
   const [opTypes, setOpTypes] = useState([]); // операционные задачи (регулярные строки Ганта) — [{id, name, recur}]
   const [opDone, setOpDone] = useState({}); // отметки выполнения операционных задач — {opId:{"YYYY-MM-DD":true}}
   const [opEditor, setOpEditor] = useState(null); // открытая настройка операционной задачи (из Ганта)
+  const [purchActiveId, setPurchActiveId] = useState(null); // id открытой партии закупки (для экспорта)
   const [ganttModal, setGanttModal] = useState(null);
   const [cardModal, setCardModal] = useState(null); // id товара для окна «Задачи по карточке»
   const [supplyMenu, setSupplyMenu] = useState(null); // выбор партии для добавления товара { productId, x, y }
@@ -1184,24 +1262,52 @@ export default function AssortmentTable() {
   });
 
   /* --- экспорт --- */
+  // Экспорт текущей партии закупки в .xlsx (с картинками и кол-вом по размерам)
+  const exportPurchaseXlsx = () => {
+    const b = (purchaseBatches || []).find((x) => x.id === purchActiveId) || (purchaseBatches || [])[0];
+    if (!b) return;
+    const cny = toNum(b.cny), usd = toNum(b.usd), cargo = toNum(b.cargo);
+    const feeMul = 1 + ((toNum(b.commission) || 0) + (toNum(b.insurance) || 0)) / 100;
+    const items = b.items || [];
+    // размерные колонки — объединение имён размеров по всем позициям
+    const sizeCols = []; const seen = new Set();
+    items.forEach((it) => {
+      const p = products.find((x) => x.id === it.productId) || {}; const pl = p.plan || {};
+      if (pl.oneSize) { const nm = pl.oneLabel || "One size"; if (!seen.has(nm)) { seen.add(nm); sizeCols.push(nm); } }
+      else (pl.sizes || []).forEach((s) => { const nm = s.name || "—"; if (!seen.has(nm)) { seen.add(nm); sizeCols.push(nm); } });
+    });
+    const header = ["Фото", "Код", "Товар", "Предмет", "Примечание", "Цена ¥/ед", "Вес, г", "Цена ₽/ед", ...sizeCols, "Кол-во", "Сумма ¥", "Сумма ₽", "Ссылка"];
+    const rows = []; const images = [];
+    items.forEach((it, ri) => {
+      const p = products.find((x) => x.id === it.productId) || {}; const pl = p.plan || {};
+      const w = toNum(p?.purchase?.weightG), pc = toNum(it.priceCny), q = toNum(it.qty);
+      const rubUnit = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) * feeMul + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
+      const sizeMap = {};
+      if (pl.oneSize) sizeMap[pl.oneLabel || "One size"] = isNaN(q) ? "" : q;
+      else (pl.sizes || []).forEach((s) => { const v = toNum((it.qtyBySize || {})[s.id]); sizeMap[s.name || "—"] = isNaN(v) ? "" : v; });
+      rows.push([
+        "", p.code || "", p.name || "", p.subject || "", it.note || "",
+        isNaN(pc) ? "" : pc, isNaN(w) ? "" : w, isNaN(pc) ? "" : Math.round(rubUnit),
+        ...sizeCols.map((nm) => (nm in sizeMap ? sizeMap[nm] : "")),
+        isNaN(q) ? "" : q,
+        (isNaN(pc) || isNaN(q)) ? "" : pc * q,
+        (isNaN(pc) || isNaN(q)) ? "" : Math.round(rubUnit * q),
+        p?.purchase?.link || "",
+      ]);
+      if (p.image && typeof p.image === "string" && p.image.startsWith("data:image")) images.push({ row: ri, col: 0, dataUrl: p.image });
+    });
+    const colWidths = [10, 10, 34, 16, 22, 10, 8, 10, ...sizeCols.map(() => 6), 8, 10, 11, 26];
+    const bytes = buildXlsx({ sheetName: (b.name || "Заказ").slice(0, 31), header, rows, images, colWidths, imgColWidthPx: 64, imgRowHeightPx: 56 });
+    const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = "zakaz_" + (String(b.name || "").replace(/[^0-9A-Za-zА-Яа-яЁё-]+/g, "_") || "partiya") + ".xlsx";
+    a.click(); URL.revokeObjectURL(a.href);
+  };
+
   const exportCsv = () => {
+    if (activeTab === "purchases") { exportPurchaseXlsx(); return; }
     let head, rows, fname;
-    if (activeTab === "purchases") {
-      head = ["Партия", "Статус", "Код", "Товар", "Цена ¥/ед", "Вес, г", "Цена ₽/ед", "Кол-во", "Сумма ¥", "Сумма ₽"];
-      const ST = { draft: "Черновик", paid: "Оплачено", transit: "В пути", received: "Получено" };
-      rows = (purchaseBatches || []).flatMap((b) => {
-        const cny = toNum(b.cny), usd = toNum(b.usd), cargo = toNum(b.cargo);
-        const bc = toNum(b.commission), bi = toNum(b.insurance);
-        const feeMul = 1 + ((isNaN(bc) ? 0 : bc) + (isNaN(bi) ? 0 : bi)) / 100;
-        return (b.items || []).map((it) => {
-          const pr = products.find((p) => p.id === it.productId) || {};
-          const w = toNum(pr?.purchase?.weightG), pc = toNum(it.priceCny), q = toNum(it.qty);
-          const rub = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) * feeMul + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
-          return [b.name, ST[b.status] || "", pr.code || "", pr.name || "", it.priceCny || "", pr?.purchase?.weightG || "", Math.round(rub), it.qty || "", (isNaN(pc) || isNaN(q) ? "" : pc * q), (isNaN(q) ? "" : Math.round(rub * q))];
-        });
-      });
-      fname = "zakupki";
-    } else if (activeTab === "duties") {
+    if (activeTab === "duties") {
       head = ["Область", "Функция", "Подфункция", "Исполнитель", "Периодичность"];
       const areaName = (id) => (duties.areas.find((a) => a.id === id) || {}).name || "";
       const personName = (id) => (duties.people.find((p) => p.id === id) || {}).name || "Не назначен";
@@ -1780,6 +1886,7 @@ export default function AssortmentTable() {
             products={products}
             defaultRates={{ cny: unitConst.cny, usd: unitConst.usd, cargo: unitConst.cargo }}
             onOpenCard={(id) => setCardModal(id)}
+            onActiveChange={setPurchActiveId}
           />
         )}
 
@@ -2310,7 +2417,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
 const PU_STATUS = { draft: { label: "Черновик", cls: "bg-neutral-100 text-neutral-500" }, paid: { label: "Оплачено", cls: "bg-emerald-50 text-emerald-600" }, transit: { label: "В пути", cls: "bg-amber-50 text-amber-600" }, received: { label: "Получено", cls: "bg-blue-50 text-blue-600" } };
 
 // Блок «Закупки» — партии (как карты в «Стратегии»); внутри партии товары из каталога.
-function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard }) {
+function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange }) {
   const list = Array.isArray(batches) ? batches : [];
   const [activeId, setActiveId] = useState(list[0]?.id || null);
   const [editingId, setEditingId] = useState(null);
@@ -2323,6 +2430,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard 
   const [qtyOpen, setQtyOpen] = useState({}); // раскрытые ячейки «Кол-во» по id позиции
   const toggleQty = (iid) => setQtyOpen((o) => ({ ...o, [iid]: !o[iid] }));
   const active = list.find((b) => b.id === activeId) || list[0] || null;
+  useEffect(() => { onActiveChange && onActiveChange(active ? active.id : null); }, [active && active.id]);
 
   const addBatch = () => { const id = uid(); const b = { id, name: `Партия #${list.length + 1}`, status: "draft", cny: defaultRates.cny || "", usd: defaultRates.usd || "", cargo: defaultRates.cargo || "", commission: "", insurance: "", items: [], payments: [] }; onChange([...list, b]); setActiveId(id); };
   const dupBatch = (id) => { const src = list.find((b) => b.id === id); if (!src) return; const nid = uid(); const copy = JSON.parse(JSON.stringify({ ...src, id: nid, name: `${src.name} (копия)`, items: (src.items || []).map((it) => ({ ...it, id: uid() })) })); const at = list.findIndex((b) => b.id === id); const next = list.slice(); next.splice(at + 1, 0, copy); onChange(next); setActiveId(nid); };
