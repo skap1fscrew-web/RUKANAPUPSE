@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -5914,7 +5914,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
-  const [groupBy, setGroupBy] = useState(() => lsGet("rnp.kanbanGroup", "status")); // status | priority | label
+  const [groupBy, setGroupBy] = useState(() => { const g = lsGet("rnp.kanbanGroup", "status"); return g === "label" ? "status" : g; }); // status | priority
   const [fltPrio, setFltPrio] = useState(null);
   const [fltTag, setFltTag] = useState(null);
   const [fltAssignee, setFltAssignee] = useState(null);
@@ -5931,11 +5931,10 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
     <button onClick={() => setView(id)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{children}</button>
   );
   const isBoard = view === "kanban" || view === "list";
-  const GROUP_LABELS = { status: "Статусу", priority: "Приоритету", label: "Метке" };
-  const activeFilters = (fltPrio ? 1 : 0) + (fltTag ? 1 : 0) + (fltAssignee ? 1 : 0);
+  const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
+  const activeFilters = (fltPrio ? 1 : 0) + (fltAssignee ? 1 : 0);
   const fJobs = jobs.filter((j) => {
     if (fltPrio && (j.priority || null) !== fltPrio) return false;
-    if (fltTag && !(Array.isArray(j.tags) && j.tags.includes(fltTag))) return false;
     if (fltAssignee && (fltAssignee === "__none" ? !!j.assignee : (j.assignee || null) !== fltAssignee)) return false;
     return true;
   });
@@ -5959,7 +5958,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
               <button onClick={() => setFltOpen(fltOpen === "group" ? null : "group")} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" title="Группировка колонок"><Columns3 size={14} className="text-neutral-400" /><span className="font-medium text-neutral-400">по</span> {GROUP_LABELS[groupBy]}<ChevronDown size={13} className="text-neutral-400" /></button>
               {fltOpen === "group" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
                 <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Колонки по</div>
-                {[["status", "Статусу"], ["priority", "Приоритету"], ["label", "Метке"]].map(([k, lbl]) => <button key={k} onClick={() => { setGroupBy(k); setFltOpen(null); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (groupBy === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{groupBy === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}</button>)}
+                {[["status", "Статусу"], ["priority", "Приоритету"]].map(([k, lbl]) => <button key={k} onClick={() => { setGroupBy(k); setFltOpen(null); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (groupBy === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{groupBy === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}</button>)}
               </div></>)}
             </div>
           )}
@@ -5975,8 +5974,6 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
                   {(people || []).map((pr) => { const on = fltAssignee === pr.id; return <button key={pr.id} onClick={() => setFltAssignee(on ? null : pr.id)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={on ? { background: pr.color, color: "#fff" } : { background: (pr.color || "#999") + "22", color: pr.color || "#737373" }}>{pr.name}</button>; })}
                   {(people || []).length > 0 && <button onClick={() => setFltAssignee(fltAssignee === "__none" ? null : "__none")} className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + (fltAssignee === "__none" ? "bg-neutral-700 text-white" : "bg-neutral-100 text-neutral-500")}>Не назначен</button>}
                 </div>
-                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Теги</span>{fltTag && <button onClick={() => setFltTag(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
-                <div className="flex max-h-36 flex-wrap gap-1 overflow-auto">{taskTags.length === 0 && <span className="text-[11px] text-neutral-400">Тегов нет</span>}{taskTags.map((t) => <button key={t.id} onClick={() => setFltTag(fltTag === t.id ? null : t.id)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltTag === t.id ? { background: t.color, color: "#fff" } : { background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</button>)}</div>
               </div></>)}
             </div>
           )}
@@ -6035,11 +6032,10 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
       { key: "high", name: "Высокий", color: PRIORITIES.high.color, match: (j) => j.priority === "high", preset: { priority: "high" } },
       { key: "med", name: "Средний", color: PRIORITIES.med.color, match: (j) => j.priority === "med", preset: { priority: "med" } },
       { key: "low", name: "Низкий", color: PRIORITIES.low.color, match: (j) => j.priority === "low", preset: { priority: "low" } },
-      { key: "__none", name: "Без приоритета", color: "#cbd5e1", match: (j) => !j.priority, preset: { priority: null } },
     ];
   }
   const byCol = Object.fromEntries(columns.map((c) => [c.key, []]));
-  jobs.forEach((j) => { const c = columns.find((c) => c.match(j)) || columns[columns.length - 1]; byCol[c.key].push(j); });
+  jobs.forEach((j) => { const c = columns.find((c) => c.match(j)); if (c) byCol[c.key].push(j); });
   const moveJob = (id, col) => { const j = jobs.find((x) => x.id === id); if (j && !col.match(j)) onUpdateJob({ ...j, ...col.preset }); };
   const [doneOpen, setDoneOpen] = useState({});
   const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
@@ -6047,7 +6043,6 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
       <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {groupBy !== "status" && <StageIcon j={j} />}
-        {jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}
         {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
         {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
         {(() => { const pr = personById[j.assignee]; return pr ? <span title={pr.name} className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span> : null; })()}
@@ -6101,13 +6096,11 @@ function JobsListView({ jobs, tags, taskLabels, people = [], products, onOpen, o
           <th className="px-3 py-2 text-left font-semibold">Статус</th>
           <th className="px-3 py-2 text-left font-semibold">Приоритет</th>
           <th className="px-3 py-2 text-left font-semibold">Исполнитель</th>
-          <th className="px-3 py-2 text-left font-semibold">Теги</th>
-          <th className="px-3 py-2 text-left font-semibold">Метка</th>
           <th className="px-3 py-2 text-left font-semibold">Дедлайн</th>
           <th className="px-3 py-2 text-left font-semibold">Товар</th>
         </tr></thead>
         <tbody>
-          {sorted.length === 0 && <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-neutral-400">Задач нет</td></tr>}
+          {sorted.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-neutral-400">Задач нет</td></tr>}
           {sorted.map((j) => { const lb = label(j.labelId); const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const done = stageOf(j) === "done"; return (
             <tr key={j.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
               <td className="px-2 py-2 text-center"><button onClick={() => onUpdateJob(applyStage(j, done ? "wait" : "done"))} className="flex h-4 w-4 items-center justify-center rounded border" style={{ background: done ? "#16a34a" : "#fff", borderColor: done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{done && <Check size={10} strokeWidth={3} />}</button></td>
@@ -6115,8 +6108,6 @@ function JobsListView({ jobs, tags, taskLabels, people = [], products, onOpen, o
               <td className="px-3 py-2"><StageIcon j={j} size={16} /></td>
               <td className="px-3 py-2"><PrioChip p={j.priority} /></td>
               <td className="px-3 py-2">{(() => { const pr = personById[j.assignee]; return pr ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>{pr.name}</span> : <span className="text-neutral-300">—</span>; })()}</td>
-              <td className="px-3 py-2"><div className="flex flex-wrap gap-1">{jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}{jtags.length === 0 && <span className="text-neutral-300">—</span>}</div></td>
-              <td className="px-3 py-2">{lb ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600"><span className="h-2 w-2 rounded-full" style={{ background: lb.color }} />{lb.name}</span> : <span className="text-neutral-300">—</span>}</td>
               <td className="px-3 py-2 text-xs text-neutral-600">{fmtD(j.date)}</td>
               <td className="px-3 py-2 text-xs text-neutral-500">{prod ? (prod.code || prod.name || "товар") : <span className="text-neutral-300">—</span>}</td>
             </tr>
@@ -6270,6 +6261,9 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
   // свёрнутые секции (сохраняем в localStorage)
   const [collapsed, setCollapsed] = useState(() => { try { return JSON.parse(localStorage.getItem("rnp-gantt-collapsed") || "{}"); } catch { return {}; } });
   const toggleSection = (id) => setCollapsed((c) => { const n = { ...c, [id]: !c[id] }; try { localStorage.setItem("rnp-gantt-collapsed", JSON.stringify(n)); } catch {} return n; });
+  // показ выполненных задач по разделам (по умолчанию скрыты)
+  const [secDone, setSecDone] = useState(() => { try { return JSON.parse(localStorage.getItem("rnp-gantt-showdone") || "{}"); } catch { return {}; } });
+  const toggleSecDone = (id) => setSecDone((c) => { const n = { ...c, [id]: !c[id] }; try { localStorage.setItem("rnp-gantt-showdone", JSON.stringify(n)); } catch {} return n; });
 
   // позиция задачи внутри месяца (или null, если вне диапазона)
   const place = (j) => {
@@ -6366,7 +6360,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
       <div className="flex border-t border-neutral-100">
         <div className="group relative flex shrink-0 items-center gap-1 py-1 pr-2" style={{ width: LW }}>
           {!row.preset && row.items.length === 1 ? (
-            <button onClick={() => onOpen(row.items[0].j)} title="Открыть задачу" className="min-w-0 flex-1 truncate pl-1 text-left text-[12px] text-neutral-700 hover:text-orange-700 hover:underline">{row.label}</button>
+            <button onClick={() => onOpen(row.items[0].j)} title="Открыть задачу" className={"min-w-0 flex-1 truncate pl-1 text-left text-[12px] hover:text-orange-700 hover:underline " + (row.items[0].j.done ? "text-neutral-400 line-through" : "text-neutral-700")}>{row.label}</button>
           ) : (
             <span className="min-w-0 flex-1 truncate pl-1 text-[12px] text-neutral-700" title={row.label}>{row.label}</span>
           )}
@@ -6429,23 +6423,38 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
     );
   };
 
-  const Section = ({ id, title, count, children }) => {
+  const Section = ({ id, title, count, doneCount = 0, children }) => {
     const open = !collapsed[id];
+    const showDone = !!secDone[id];
     return (
       <div className="mt-2 first:mt-0">
-        <button
-          onClick={() => toggleSection(id)}
-          className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1 text-left transition hover:bg-neutral-100"
-          style={{ width: LW + timelineW }}
-        >
-          <ChevronDown size={13} className="shrink-0 text-neutral-400 transition-transform" style={{ transform: open ? "none" : "rotate(-90deg)" }} />
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</span>
-          <span className="rounded-full bg-neutral-200/80 px-1.5 text-[10px] font-semibold leading-[16px] text-neutral-500">{count}</span>
-        </button>
+        <div className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1" style={{ width: LW + timelineW }}>
+          <button onClick={() => toggleSection(id)} className="flex items-center gap-1.5 text-left transition hover:opacity-70">
+            <ChevronDown size={13} className="shrink-0 text-neutral-400 transition-transform" style={{ transform: open ? "none" : "rotate(-90deg)" }} />
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</span>
+            <span className="rounded-full bg-neutral-200/80 px-1.5 text-[10px] font-semibold leading-[16px] text-neutral-500">{count}</span>
+          </button>
+          {doneCount > 0 && (
+            <button onClick={() => toggleSecDone(id)} title={showDone ? "Скрыть выполненные" : "Показать выполненные"} className={"ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-semibold transition " + (showDone ? "text-neutral-600 hover:bg-neutral-200/70" : "text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-600")}>
+              {showDone ? <Eye size={13} /> : <EyeOff size={13} />}{doneCount}
+            </button>
+          )}
+        </div>
         {open && children}
       </div>
     );
   };
+
+  // учёт выполненных по разделам (глаз): скрыть, либо показать внизу
+  const doneCountOf = (rows) => rows.reduce((a, r) => a + r.items.filter((x) => x.j.done).length, 0);
+  const filterRows = (rows, show) => rows.map((r) => ({ ...r, items: show ? [...r.items.filter((x) => !x.j.done), ...r.items.filter((x) => x.j.done)] : r.items.filter((x) => !x.j.done) })).filter((r) => r.items.length > 0);
+  const purDoneCount = doneCountOf(batchRows);
+  const prodDoneCount = doneCountOf(prodRows);
+  const purRowsShown = filterRows(batchRows, !!secDone.pur);
+  const prodRowsShown = filterRows(prodRows, !!secDone.prod);
+  const projActive = projItems.filter((x) => !x.j.done);
+  const projDone = projItems.filter((x) => x.j.done);
+  const projShown = secDone.gen ? [...projActive, ...projDone] : projActive;
 
   return (
     <div className="flex items-stretch">
@@ -6495,22 +6504,26 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
               : (opTypes || []).map((op) => <OpRow key={op.id} op={op} />)}
           </Section>
 
-          <Section id="pur" title="Закупки" count={purCount}>
+          <Section id="pur" title="Закупки" count={purCount} doneCount={purDoneCount}>
             {batchRows.length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет задач по закупкам в этом месяце</div>
-              : batchRows.map((row) => <Row key={row.key} row={row} />)}
+              : purRowsShown.length === 0
+              ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Все задачи по закупкам выполнены — нажмите глаз, чтобы показать</div>
+              : purRowsShown.map((row) => <Row key={row.key} row={row} />)}
           </Section>
 
-          <Section id="gen" title="Проектные" count={projItems.length}>
+          <Section id="gen" title="Проектные" count={projItems.length} doneCount={projDone.length}>
             {projItems.length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет проектных задач в этом месяце</div>
-              : projItems.map((x) => <Row key={x.j.id} row={{ key: x.j.id, label: x.j.title || "—", preset: null, items: [x] }} />)}
+              : projShown.length === 0
+              ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Все проектные задачи выполнены — нажмите глаз, чтобы показать</div>
+              : projShown.map((x) => <Row key={x.j.id} row={{ key: x.j.id, label: x.j.title || "—", preset: null, items: [x] }} />)}
           </Section>
 
-          <Section id="prod" title="Задачи по товарам" count={prodRows.length}>
+          <Section id="prod" title="Задачи по товарам" count={prodRows.length} doneCount={prodDoneCount}>
             {prodRows.length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет задач по товарам в этом месяце</div>
-              : prodRows.map((row) => <Row key={row.key} row={row} />)}
+              : prodRowsShown.map((row) => <Row key={row.key} row={row} />)}
           </Section>
         </div>
       </div>
@@ -6711,22 +6724,6 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
                 {Object.keys(PRIORITIES).map((k) => (
                   <button key={k} onClick={() => set("priority", k)} className={"flex-1 rounded-md px-2 py-1 text-xs font-semibold " + (j.priority === k ? "shadow-sm" : "")} style={j.priority === k ? { background: PRIORITIES[k].bg, color: PRIORITIES[k].color } : { color: "#a3a3a3" }}>{PRIORITIES[k].label}</button>
                 ))}
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={fieldL}>Метка</span>
-              <select value={j.labelId || ""} onChange={(e) => set("labelId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-                <option value="">Без метки</option>
-                {(taskLabels || []).map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={fieldL}>Теги</span>
-              <div className="flex flex-wrap gap-1.5">
-                {taskTags.length === 0 && <span className="text-[11px] text-neutral-400">Тегов пока нет — добавьте в «Настройки → Теги».</span>}
-                {taskTags.map((t) => { const on = jtags.includes(t.id); return (
-                  <button key={t.id} onClick={() => toggleTag(t.id)} className="rounded-full px-2.5 py-1 text-xs font-semibold transition" style={on ? { background: t.color, color: "#fff" } : { background: (t.color || "#999") + "1f", color: t.color || "#737373" }}>{t.name}</button>
-                ); })}
               </div>
             </div>
             {curType === "product" && (
@@ -7476,7 +7473,6 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
           <TabBtn id="statuses">Статусы</TabBtn>
           <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
           <TabBtn id="labels">Метки</TabBtn>
-          <TabBtn id="tags">Теги</TabBtn>
           <TabBtn id="cycle">Произв. цикл</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
@@ -7621,31 +7617,6 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                   {SWATCHES.map((c) => (
                     <button key={c} onClick={() => setLColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: lColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />
                   ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {tab === "tags" && (
-            <>
-              <p className="mb-3 text-xs text-neutral-400">Теги присваиваются задачам (можно несколько). По тегам фильтруются Канбан и Список.</p>
-              <div className="mb-4 space-y-1.5">
-                {(taskTags || []).map((t) => (
-                  <div key={t.id} className="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2">
-                    <span className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700"><span className="h-3 w-3 rounded-full" style={{ background: t.color }} />{t.name}</span>
-                    <button onClick={() => removeTag(t.id)} className="rounded p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить тег"><Trash2 size={15} /></button>
-                  </div>
-                ))}
-                {(!taskTags || taskTags.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Тегов пока нет</p>}
-              </div>
-              <div className="rounded-xl bg-neutral-50 p-3">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Новый тег</p>
-                <div className="flex items-center gap-2">
-                  <input value={tgName} onChange={(e) => setTgName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTag()} placeholder="Например: контент" className="rounded-lg flex-1 border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
-                  <button onClick={addTag} className="rounded-md inline-flex items-center gap-1 bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"><Plus size={15} /> Добавить</button>
-                </div>
-                <div className="mt-2 flex items-center gap-1.5">
-                  {SWATCHES.map((c) => (<button key={c} onClick={() => setTgColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: tgColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />))}
                 </div>
               </div>
             </>
