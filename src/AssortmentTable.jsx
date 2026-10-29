@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -69,6 +69,14 @@ const STAGE_ORDER = ["wait", "progress", "done"];
 const stageOf = (j) => (j && STAGES[j.stage]) ? j.stage : (j && j.done ? "done" : "wait");
 // применить статус к задаче, синхронизируя флаг done (для Ганта/Календаря)
 const applyStage = (j, stage) => ({ ...j, stage, done: stage === "done" });
+// тип задачи-джоба: purchase | project | product (операционные живут отдельно в opTypes).
+// по умолчанию выводим из привязок: партия → закупки, товар → товар, иначе — проектная.
+const JOB_TYPES = {
+  purchase: { label: "Закупки", section: "Закупки" },
+  project: { label: "Проектная", section: "Проектные" },
+  product: { label: "Товар", section: "Задачи по товарам" },
+};
+const jobType = (j) => (j && j.type && JOB_TYPES[j.type]) ? j.type : (j && j.batchId ? "purchase" : (j && j.productId ? "product" : "project"));
 
 // Критерии аналитики карточки (общие для всех карточек, настраиваются)
 const ANALYTICS_CRIT_DEFAULT = [
@@ -2011,6 +2019,10 @@ export default function AssortmentTable() {
             onActiveChange={setPurchActiveId}
             cycleStages={prodCycle.stages}
             onCreateStageTask={createCycleStageTasks}
+            jobs={jobs}
+            people={duties.people}
+            onOpenJob={(job) => setJobEditor({ ...job })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
           />
         )}
 
@@ -2022,10 +2034,11 @@ export default function AssortmentTable() {
             people={duties.people}
             onUpdateJob={upsertJob}
             products={products}
+            batches={purchaseBatches}
             opTypes={opTypes}
             opDone={opDone}
             onToggleDone={toggleOpDone}
-            onEditOp={(op) => setOpEditor({ ...op })}
+            onEditOp={(op) => setJobEditor({ id: op.id, type: "op", title: op.name, recur: op.recur, assignee: op.assignee || null, tags: [], checklist: [], note: "", date: null, start: null, stage: "wait", done: false })}
             onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
@@ -2070,8 +2083,19 @@ export default function AssortmentTable() {
           people={duties.people}
           products={products}
           opTypes={opTypes}
-          onChange={(j) => { const { _new, ...rest } = j; if (rest.title.trim()) upsertJob(rest); }}
-          onDelete={(id) => { removeJob(id); setJobEditor(null); }}
+          batches={purchaseBatches}
+          onChange={(j) => {
+            const { _new, ...rest } = j;
+            if (!rest.title.trim()) return;
+            if (rest.type === "op") {
+              upsertOpType({ id: rest.id, name: rest.title, recur: normRecur(rest.recur), assignee: rest.assignee || null });
+              removeJob(rest.id);
+            } else {
+              upsertJob(rest);
+              removeOpType(rest.id);
+            }
+          }}
+          onDelete={(id) => { removeJob(id); removeOpType(id); setJobEditor(null); }}
           onClose={() => setJobEditor(null)}
         />
       )}
@@ -2546,7 +2570,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
 const PU_STATUS = { draft: { label: "Черновик", cls: "bg-neutral-100 text-neutral-500" }, paid: { label: "Оплачено", cls: "bg-emerald-50 text-emerald-600" }, transit: { label: "В пути", cls: "bg-amber-50 text-amber-600" }, received: { label: "Получено", cls: "bg-blue-50 text-blue-600" } };
 
 // Блок «Закупки» — партии (как карты в «Стратегии»); внутри партии товары из каталога.
-function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], onCreateStageTask }) {
+function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob }) {
   const list = Array.isArray(batches) ? batches : [];
   const [activeId, setActiveId] = useState(list[0]?.id || null);
   const [editingId, setEditingId] = useState(null);
@@ -2852,6 +2876,33 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
               </div>
             </div></>}
         </div>
+
+        {/* Задачи по партии (тип «Закупки») */}
+        {(() => {
+          const batchJobs = (jobs || []).filter((j) => j.batchId === active.id);
+          const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
+          const fmtD = (d) => d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : "";
+          return (
+            <div className="border-t border-neutral-100 px-4 py-3">
+              <div className="mb-2 flex items-center gap-2">
+                <ShoppingCart size={14} className="text-cyan-600" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Задачи по партии</span>
+                <span className="rounded-full bg-neutral-200/70 px-1.5 text-[10px] font-semibold text-neutral-500">{batchJobs.length}</span>
+              </div>
+              <div className="space-y-1.5">
+                {batchJobs.map((j) => { const pr = personById[j.assignee]; const st = STAGES[stageOf(j)]; return (
+                  <button key={j.id} onClick={() => onOpenJob && onOpenJob(j)} className="flex w-full items-center gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 text-left transition hover:border-cyan-300 hover:bg-cyan-50/40">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: st ? st.color : "#d4d4d8" }} />
+                    <span className={"min-w-0 flex-1 truncate text-sm " + (stageOf(j) === "done" ? "text-neutral-400 line-through" : "text-neutral-700")}>{j.title || "Без названия"}</span>
+                    {j.date && <span className="shrink-0 text-[11px] text-neutral-400">{fmtD(j.date)}</span>}
+                    {pr && <span title={pr.name} className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>}
+                  </button>
+                ); })}
+              </div>
+              <button onClick={() => onAddJob && onAddJob({ type: "purchase", batchId: active.id, note: `Партия: «${active.name || ""}»` })} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-cyan-400 hover:text-cyan-700"><Plus size={14} /> Задача по партии</button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -5859,7 +5910,7 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
   );
 }
 
-function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, products, opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
+function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
@@ -5942,7 +5993,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
         {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
           : view === "cal" ? <CalendarGrid jobs={jobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
-          : <GanttBoard jobs={jobs} products={products} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
+          : <GanttBoard jobs={jobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
       </div>
     </div>
   );
@@ -6122,7 +6173,7 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
   );
 }
 
-function GanttBoard({ jobs, products, people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob }) {
+function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob }) {
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const LW = 320;      // ширина колонки с подписями
   const DW = 30;       // ширина дня
@@ -6246,15 +6297,24 @@ function GanttBoard({ jobs, products, people = [], opTypes, opDone, onToggleDone
 
   // раскладка задач по группам (операционные — отдельно, через регулярность)
   const visible = (jobs || []).map((j) => ({ j, pos: place(j) })).filter((x) => x.pos);
-  const genItems = visible.filter((x) => !x.j.productId);
+  // Проектные — тип project (без привязки к товару/партии)
+  const projItems = visible.filter((x) => jobType(x.j) === "project");
+  // Закупки — тип purchase, группировка по партиям
+  const purMap = new Map();
+  visible.forEach((x) => { if (jobType(x.j) !== "purchase") return; const bid = x.j.batchId || "__none"; (purMap.get(bid) || purMap.set(bid, []).get(bid)).push(x); });
+  const batchRows = [];
+  (batches || []).forEach((b) => { if (purMap.has(b.id)) batchRows.push({ key: b.id, label: "«" + (b.name || "Партия") + "»", preset: { type: "purchase", batchId: b.id }, items: purMap.get(b.id) }); });
+  if (purMap.has("__none")) batchRows.push({ key: "__nobatch", label: "Без партии", preset: { type: "purchase" }, items: purMap.get("__none") });
+  const purCount = batchRows.reduce((a, r) => a + r.items.length, 0);
+  // Задачи по товарам — тип product, группировка по товарам
   const prodMap = new Map();
   visible.forEach((x) => {
-    if (!x.j.productId) return;
+    if (jobType(x.j) !== "product") return;
     (prodMap.get(x.j.productId) || prodMap.set(x.j.productId, []).get(x.j.productId)).push(x);
   });
   const prodRows = products
     .filter((p) => prodMap.has(p.id))
-    .map((p) => ({ key: p.id, label: (p.code || "—") + (p.name ? " · " + p.name : ""), preset: { productId: p.id }, items: prodMap.get(p.id) }));
+    .map((p) => ({ key: p.id, label: (p.code || "—") + (p.name ? " · " + p.name : ""), preset: { type: "product", productId: p.id }, items: prodMap.get(p.id) }));
 
   const timelineW = daysInMonth * DW;
   // нераспределённые — задачи без даты и без начала (операционные сюда не входят — они в opTypes)
@@ -6435,10 +6495,16 @@ function GanttBoard({ jobs, products, people = [], opTypes, opDone, onToggleDone
               : (opTypes || []).map((op) => <OpRow key={op.id} op={op} />)}
           </Section>
 
-          <Section id="gen" title="Общие задачи" count={genItems.length}>
-            {genItems.length === 0
-              ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет общих задач в этом месяце</div>
-              : genItems.map((x) => <Row key={x.j.id} row={{ key: x.j.id, label: x.j.title || "—", preset: null, items: [x] }} />)}
+          <Section id="pur" title="Закупки" count={purCount}>
+            {batchRows.length === 0
+              ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет задач по закупкам в этом месяце</div>
+              : batchRows.map((row) => <Row key={row.key} row={row} />)}
+          </Section>
+
+          <Section id="gen" title="Проектные" count={projItems.length}>
+            {projItems.length === 0
+              ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет проектных задач в этом месяце</div>
+              : projItems.map((x) => <Row key={x.j.id} row={{ key: x.j.id, label: x.j.title || "—", preset: null, items: [x] }} />)}
           </Section>
 
           <Section id="prod" title="Задачи по товарам" count={prodRows.length}>
@@ -6492,9 +6558,23 @@ function GanttBoard({ jobs, products, people = [], opTypes, opDone, onToggleDone
   );
 }
 
-function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTypes, onChange, onDelete, onClose }) {
+const TASK_TYPE_META = [
+  { key: "op", label: "Операционная", Icon: Repeat, tint: "#6366f1", bg: "#eef2ff", hint: "раздел «Операционные»" },
+  { key: "purchase", label: "Закупки", Icon: ShoppingCart, tint: "#0891b2", bg: "#ecfeff", hint: "привязка к партии" },
+  { key: "project", label: "Проектная", Icon: FileText, tint: "#7c3aed", bg: "#f5f3ff", hint: "раздел «Проектные»" },
+  { key: "product", label: "Товар", Icon: Box, tint: "#ea580c", bg: "#fff7ed", hint: "раздел «Задачи по товарам»" },
+];
+function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onClose }) {
   const [j, setJ] = useState(job);
   const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
+  const curType = j.type === "op" ? "op" : jobType(j);
+  const setType = (t) => setJ((o) => {
+    const n = { ...o, type: t };
+    if (t === "op") n.recur = normRecur(o.recur);
+    if (t !== "product") n.productId = null;
+    if (t !== "purchase") n.batchId = null;
+    return n;
+  });
   useEffect(() => { onChange(j); }, [j]); // автосохранение при любом изменении
   const jtags = Array.isArray(j.tags) ? j.tags : [];
   const toggleTag = (id) => set("tags", jtags.includes(id) ? jtags.filter((x) => x !== id) : [...jtags, id]);
@@ -6518,6 +6598,37 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
           </div>
         </div>
 
+        {/* Переключатель типа задачи */}
+        <div className="flex shrink-0 flex-wrap gap-2 border-b border-neutral-100 px-5 py-3">
+          {TASK_TYPE_META.map(({ key, label, Icon, tint, bg }) => { const on = curType === key; return (
+            <button key={key} onClick={() => setType(key)} title={label}
+              className={"inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition " + (on ? "shadow-sm" : "border-neutral-200 text-neutral-500 hover:border-neutral-300")}
+              style={on ? { borderColor: tint, background: bg, color: tint } : undefined}>
+              <Icon size={14} />{label}
+            </button>
+          ); })}
+        </div>
+
+        {curType === "op" ? (
+          /* ОПЕРАЦИОННАЯ: название · повтор/дни недели · исполнитель */
+          <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
+            <textarea value={j.title} rows={1} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="Название операционной задачи…" autoFocus
+              className="w-full resize-none break-words border-none bg-transparent text-lg font-bold leading-snug text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
+            <RecurEditor recur={normRecur(j.recur)} onChange={(r) => set("recur", r)} />
+            <div className="flex flex-col gap-1.5">
+              <span className={fieldL}>Исполнитель</span>
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ((people || []).find((pp) => pp.id === j.assignee) || {}).color || "#e5e5e5" }} />
+                <select value={j.assignee || ""} onChange={(e) => set("assignee", e.target.value || null)} className="w-full max-w-xs rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+                  <option value="">Не назначен</option>
+                  {(people || []).map((pp) => (<option key={pp.id} value={pp.id}>{pp.name}</option>))}
+                </select>
+              </div>
+              {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Добавьте исполнителей в разделе «Функционал».</span>}
+            </div>
+            <p className="rounded-xl bg-indigo-50/60 px-3 py-2 text-[11px] leading-snug text-indigo-500">Операционная задача ложится в раздел «Операционные» на Ганте — чекбоксами по дням графика.</p>
+          </div>
+        ) : (
         <div className="grid flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-[1fr_300px]">
           {/* ЛЕВО: название · заметка · подзадачи */}
           <div className="flex flex-col gap-5 border-b border-neutral-100 p-5 sm:border-b-0 sm:border-r">
@@ -6618,15 +6729,28 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
                 ); })}
               </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={fieldL}>Товар</span>
-              <select value={j.productId || ""} onChange={(e) => set("productId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-                <option value="">—</option>
-                {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
-              </select>
-            </div>
+            {curType === "product" && (
+              <div className="flex flex-col gap-1.5">
+                <span className={fieldL}>Товар</span>
+                <select value={j.productId || ""} onChange={(e) => set("productId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+                  <option value="">—</option>
+                  {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
+                </select>
+              </div>
+            )}
+            {curType === "purchase" && (
+              <div className="flex flex-col gap-1.5">
+                <span className={fieldL}>Партия</span>
+                <select value={j.batchId || ""} onChange={(e) => set("batchId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+                  <option value="">— выберите партию —</option>
+                  {(batches || []).map((b) => (<option key={b.id} value={b.id}>{b.name || "Партия"}</option>))}
+                </select>
+                {(batches || []).length === 0 && <span className="text-[11px] text-neutral-400">Партий пока нет — создайте в разделе «Закупки».</span>}
+              </div>
+            )}
           </div>
         </div>
+        )}
 
       </div>
     </div>
