@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -1030,6 +1030,12 @@ export default function AssortmentTable() {
     setToast({ text: `«${prod?.name || "Товар"}» добавлен в «${b.name}»` });
     setSupplyMenu(null);
   };
+  // патч полей товара внутри партии (фонд маркетинга: mktDrr, mktPlanPrice, mktSpent)
+  const setBatchItemFields = (batchId, productId, patch) =>
+    setPurchaseBatches((bs) => bs.map((b) => {
+      if (b.id !== batchId) return b;
+      return { ...b, items: (b.items || []).map((it) => (it.productId === productId ? { ...it, ...patch } : it)) };
+    }));
   const updateProduct = (id, field, value) =>
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
   const setProductTasks = (id, tasks) =>
@@ -2146,6 +2152,8 @@ export default function AssortmentTable() {
             onSetRnpFill={(k, c) => setRnpFill(cp.id, k, c)}
             onSetRnpFlag={(f, v) => setRnpFlag(cp.id, f, v)}
             onSetRnpBudget={(v) => setRnpBudget(cp.id, v)}
+            purchaseBatches={purchaseBatches}
+            onSetBatchItemFields={(batchId, patch) => setBatchItemFields(batchId, cp.id, patch)}
             onOpenPopup={(task, dateKey) => setGanttModal({ productId: cp.id, mode: "popup", task, dateKey })}
             onOpenDB={(task) => setGanttModal({ productId: cp.id, mode: "db", task })}
             wbOrders={wbOrders}
@@ -5018,7 +5026,7 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const curStatus = (statuses || []).find((s) => s.name === product.status);
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
@@ -5066,6 +5074,25 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
   const [mp, setMp] = useState("wb"); // маркетплейс для юнит-экономики: wb | oz
   const promoBudget = rnpBudget(product);
   const done = tasks.filter((t) => t.done).length;
+
+  // ===== Фонд маркетинга (по партиям) =====
+  const [mktBatchId, setMktBatchId] = useState(null);
+  const mktBatches = (purchaseBatches || []).filter((b) => (b.items || []).some((it) => it.productId === product.id));
+  const mktCur = mktBatches.find((b) => b.id === mktBatchId) || mktBatches[0] || null;
+  const mktItem = mktCur ? (mktCur.items || []).find((it) => it.productId === product.id) : null;
+  const mktQty = toNum(mktItem?.qty), mktDrr = toNum(mktItem?.mktDrr), mktPrice = toNum(mktItem?.mktPlanPrice);
+  const fundOfItem = (it) => { const q = toNum(it?.qty), d = toNum(it?.mktDrr), p = toNum(it?.mktPlanPrice); return (!isNaN(q) && !isNaN(d) && !isNaN(p)) ? q * p * d / 100 : 0; };
+  const spentOfItem = (it) => { const s = toNum(it?.mktSpent); return isNaN(s) ? 0 : s; };
+  const mktFund = fundOfItem(mktItem);
+  const mktSpentV = spentOfItem(mktItem);
+  const mktRevenue = (!isNaN(mktQty) && !isNaN(mktPrice)) ? mktQty * mktPrice : NaN;
+  const mktOstatok = mktFund - mktSpentV;
+  const mktPctCur = mktFund > 0 ? Math.round(mktSpentV / mktFund * 100) : 0;
+  // суммарно по всем партиям товара — для превью-плитки
+  const mktTotalFund = mktBatches.reduce((s, b) => s + fundOfItem((b.items || []).find((it) => it.productId === product.id)), 0);
+  const mktTotalSpent = mktBatches.reduce((s, b) => s + spentOfItem((b.items || []).find((it) => it.productId === product.id)), 0);
+  const mktPct = mktTotalFund > 0 ? Math.round(mktTotalSpent / mktTotalFund * 100) : 0;
+  const setMktField = (patch) => { if (mktCur && onSetBatchItemFields) onSetBatchItemFields(mktCur.id, patch); };
 
   // id задач по умолчанию — такие задачи нельзя удалять из карточки
   const defaultIds = new Set((defaultTasks || []).map((t) => t.id));
@@ -5451,8 +5478,8 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
               )}
             </section>
 
-            {/* Блоки-плитки: Продвижение / Закупка / Аналитика / Размеры (раскрываются на весь экран) */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Блоки-плитки: Продвижение / Закупка / Фонд маркетинга / Аналитика / Размеры (раскрываются на весь экран) */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <button onClick={() => setFullBlock("promo")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-orange-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-orange-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-400" /> Продвижение</div>
@@ -5472,6 +5499,21 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                   <a href={product.purchase.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Открыть ссылку на закупку" className="absolute right-9 top-2.5 flex h-6 w-6 items-center justify-center rounded-md text-neutral-300 transition hover:bg-sky-50 hover:text-sky-600"><ExternalLink size={13} /></a>
                 )}
               </div>
+
+              <button onClick={() => setFullBlock("mktfund")} className="group relative rounded-2xl border border-pink-200 bg-gradient-to-b from-white to-pink-50/40 p-4 text-left transition hover:border-pink-300 hover:shadow-sm">
+                <Maximize2 size={13} className="absolute right-3 top-3 text-pink-200 transition group-hover:text-pink-500" />
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-pink-500"><Megaphone size={12} /> Фонд маркетинга</div>
+                {mktBatches.length === 0 ? (
+                  <><div className="mt-3 text-2xl font-bold tabular-nums text-neutral-300">—</div><div className="text-[11px] text-neutral-400">нет партий с товаром</div></>
+                ) : (
+                  <>
+                    <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{mktPct}<span className="text-base font-semibold text-neutral-400">%</span></div>
+                    <div className="text-[11px] text-neutral-400">израсходовано из фонда</div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-pink-100"><div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, mktPct))}%`, background: "linear-gradient(90deg,#ec4899,#db2777)" }} /></div>
+                    <div className="mt-1.5 flex justify-between text-[10px]"><span className="font-semibold text-pink-600">{money(mktTotalSpent)}</span><span className="text-neutral-400">из {money(mktTotalFund)}</span></div>
+                  </>
+                )}
+              </button>
 
               <button onClick={() => setFullBlock("analytics")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-violet-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-violet-500" />
@@ -5503,9 +5545,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
             {/* Полноэкранный просмотр выбранного блока */}
             {fullBlock && (
               <div className="fixed inset-0 z-[70] flex items-start justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={() => setFullBlock(null)}>
-                <div className={"flex max-h-[94vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "analytics" ? "max-w-6xl" : "max-w-5xl")} onClick={(e) => e.stopPropagation()}>
+                <div className={"flex max-h-[94vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "analytics" ? "max-w-6xl" : fullBlock === "mktfund" ? "max-w-2xl" : "max-w-5xl")} onClick={(e) => e.stopPropagation()}>
                   <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
-                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "Продвижение" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : "Аналитика"}</h3>
+                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "Продвижение" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : fullBlock === "mktfund" ? "Фонд маркетинга" : "Аналитика"}</h3>
                     {fullBlock === "sizes" && (
                       <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
                         <button onClick={() => onSetOneSize(false)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (!oneSize ? "bg-white text-teal-700 shadow-sm" : "text-neutral-500")}>Размерный ряд</button>
@@ -5538,6 +5580,72 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                           <PromoCalendar product={product} wbOrders={wbOrders} onOpenDay={(ds) => setPromoDay(ds)} />
                         )}
                       </>
+                    )}
+
+                    {fullBlock === "mktfund" && (
+                      mktBatches.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
+                          <Megaphone size={26} className="text-pink-300" />
+                          <div className="text-sm font-semibold text-neutral-700">Этого товара пока нет ни в одной партии</div>
+                          <div className="max-w-sm text-xs text-neutral-400">Добавьте товар в партию в блоке «Закупки» — и здесь появится фонд маркетинга по каждой партии.</div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Партия <span className="font-normal normal-case text-neutral-400">· только партии с этим товаром</span></div>
+                          <div className="mb-5 flex flex-wrap gap-2">
+                            {mktBatches.map((b) => {
+                              const it = (b.items || []).find((x) => x.productId === product.id);
+                              const sel = mktCur && b.id === mktCur.id;
+                              return (
+                                <button key={b.id} onClick={() => setMktBatchId(b.id)} className={"flex flex-col gap-0.5 rounded-xl border px-3.5 py-2 text-left transition " + (sel ? "border-pink-500 bg-pink-50/70 ring-2 ring-pink-100" : "border-neutral-200 bg-white hover:border-pink-200")}>
+                                  <span className="text-[13px] font-bold text-neutral-800">{b.name || "Партия"}</span>
+                                  <span className={"text-[11px] " + (sel ? "text-pink-600" : "text-neutral-400")}>{toNum(it?.qty) ? `${toNum(it.qty).toLocaleString("ru-RU")} шт` : "кол-во не указано"}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 px-4 py-3">
+                              <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Кол-во <span className="rounded bg-sky-50 px-1.5 py-px text-[8.5px] font-bold text-sky-600">из партии</span></div>
+                              <div className="text-xl font-bold tabular-nums text-neutral-900">{isNaN(mktQty) ? "—" : mktQty.toLocaleString("ru-RU")}<span className="ml-1 text-sm font-semibold text-neutral-400">шт</span></div>
+                            </div>
+                            <label className="rounded-xl border border-neutral-200 bg-white px-4 py-3 focus-within:border-pink-400 focus-within:ring-2 focus-within:ring-pink-100">
+                              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">ДРР, %</div>
+                              <div className="flex items-baseline gap-1"><input value={mktItem?.mktDrr ?? ""} onChange={(e) => setMktField({ mktDrr: e.target.value })} inputMode="decimal" placeholder="0" className="w-full bg-transparent text-xl font-bold tabular-nums text-neutral-900 focus:outline-none" /><span className="text-sm font-semibold text-neutral-400">%</span></div>
+                            </label>
+                            <label className="rounded-xl border border-neutral-200 bg-white px-4 py-3 focus-within:border-pink-400 focus-within:ring-2 focus-within:ring-pink-100">
+                              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Плановая цена</div>
+                              <div className="flex items-baseline gap-1"><input value={mktItem?.mktPlanPrice ?? ""} onChange={(e) => setMktField({ mktPlanPrice: e.target.value })} inputMode="decimal" placeholder="0" className="w-full bg-transparent text-xl font-bold tabular-nums text-neutral-900 focus:outline-none" /><span className="text-sm font-semibold text-neutral-400">₽</span></div>
+                            </label>
+                            <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 px-4 py-3">
+                              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Выручка по плану</div>
+                              <div className="text-xl font-bold tabular-nums text-neutral-900">{isNaN(mktRevenue) ? "—" : money(mktRevenue)}</div>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 rounded-2xl border border-pink-200 bg-gradient-to-b from-pink-50/80 to-pink-100/40 px-5 py-4">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-pink-600">Фонд маркетинга</div>
+                            <div className="text-3xl font-bold tabular-nums text-pink-700">{money(mktFund)}</div>
+                            <div className="mt-0.5 text-[11px] text-pink-500/80">= {isNaN(mktQty) ? "0" : mktQty.toLocaleString("ru-RU")} шт × {isNaN(mktPrice) ? "0" : mktPrice.toLocaleString("ru-RU")} ₽ × {isNaN(mktDrr) ? "0" : mktDrr}%</div>
+                          </div>
+
+                          <div className="mt-3 rounded-2xl border border-neutral-200 px-5 py-4">
+                            <div className="mb-2.5 flex items-center justify-between">
+                              <span className="text-[13px] font-semibold text-neutral-600">Израсходовано из фонда</span>
+                              <span className="text-xl font-bold tabular-nums text-pink-600">{mktPctCur}%</span>
+                            </div>
+                            <div className="h-3 overflow-hidden rounded-full bg-pink-100"><div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, mktPctCur))}%`, background: mktOstatok < 0 ? "#ef4444" : "linear-gradient(90deg,#ec4899,#db2777)" }} /></div>
+                            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+                              <label className="flex items-center gap-2">
+                                <span className="text-[11px] text-neutral-500">Потрачено</span>
+                                <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 focus-within:border-pink-400 focus-within:ring-2 focus-within:ring-pink-100"><input value={mktItem?.mktSpent ?? ""} onChange={(e) => setMktField({ mktSpent: e.target.value })} inputMode="decimal" placeholder="0" className="w-20 bg-transparent text-right text-sm font-bold tabular-nums focus:outline-none" /><span className="text-[11px] text-neutral-400">₽</span></div>
+                              </label>
+                              <span className="text-[12px] text-neutral-500">Остаток <b className="tabular-nums" style={{ color: mktOstatok < 0 ? "#b91c1c" : "#15803d" }}>{money(mktOstatok)}</b></span>
+                            </div>
+                          </div>
+                        </>
+                      )
                     )}
 
                     {fullBlock === "purchase" && (
@@ -5882,6 +5990,19 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
   const byCol = Object.fromEntries(columns.map((c) => [c.key, []]));
   jobs.forEach((j) => { const c = columns.find((c) => c.match(j)) || columns[columns.length - 1]; byCol[c.key].push(j); });
   const moveJob = (id, col) => { const j = jobs.find((x) => x.id === id); if (j && !col.match(j)) onUpdateJob({ ...j, ...col.preset }); };
+  const [doneOpen, setDoneOpen] = useState({});
+  const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
+    <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
+      <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {groupBy !== "status" && <StageIcon j={j} />}
+        {jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}
+        {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
+        {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
+        {(() => { const pr = personById[j.assignee]; return pr ? <span title={pr.name} className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span> : null; })()}
+      </div>
+    </div>
+  ); };
 
   return (
     <div className="flex min-h-full gap-3 pb-1">
@@ -5898,20 +6019,15 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
             <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.key].length}</span>
           </div>
           <div className="flex min-h-[40px] flex-col gap-2">
-            {byCol[col.key].map((j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const lc = labelColor(j.labelId); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
-              <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
-                <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {groupBy !== "status" && <StageIcon j={j} />}
-                  {jtags.map((t) => <span key={t.id} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: (t.color || "#999") + "22", color: t.color || "#737373" }}>{t.name}</span>)}
-                  {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
-                  {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
-                  {(() => { const pr = personById[j.assignee]; return pr ? <span title={pr.name} className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span> : null; })()}
-                </div>
-              </div>
-            ); })}
+            {(groupBy === "status" ? byCol[col.key] : byCol[col.key].filter((j) => stageOf(j) !== "done")).map((j) => jobCard(j))}
           </div>
           <button onClick={() => onAddJob({ ...col.preset })} className="mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"><Plus size={13} /> задача</button>
+          {groupBy !== "status" && (() => { const doneJobs = byCol[col.key].filter((j) => stageOf(j) === "done"); if (!doneJobs.length) return null; const open = !!doneOpen[col.key]; return (
+            <div className="mt-2 border-t border-neutral-200/70 pt-2">
+              <button onClick={() => setDoneOpen((o) => ({ ...o, [col.key]: !o[col.key] }))} className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"><ChevronRight size={13} className={"transition " + (open ? "rotate-90" : "")} /> Выполненные <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{doneJobs.length}</span></button>
+              {open && <div className="mt-2 flex flex-col gap-2">{doneJobs.map((j) => jobCard(j))}</div>}
+            </div>
+          ); })()}
         </div>
       ))}
     </div>
