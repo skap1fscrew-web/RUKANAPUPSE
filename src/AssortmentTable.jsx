@@ -5479,7 +5479,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
             </section>
 
             {/* Блоки-плитки: Продвижение / Закупка / Фонд маркетинга / Аналитика / Размеры (раскрываются на весь экран) */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <button onClick={() => setFullBlock("promo")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-orange-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-orange-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-400" /> Продвижение</div>
@@ -6017,11 +6017,11 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: col.color }} />
             <span className="truncate text-xs font-bold uppercase tracking-wide text-neutral-600">{col.name}</span>
             <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.key].length}</span>
+            <button onClick={() => onAddJob({ ...col.preset })} title="Добавить задачу" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-200/70 hover:text-neutral-700"><Plus size={15} /></button>
           </div>
           <div className="flex min-h-[40px] flex-col gap-2">
             {(groupBy === "status" ? byCol[col.key] : byCol[col.key].filter((j) => stageOf(j) !== "done")).map((j) => jobCard(j))}
           </div>
-          <button onClick={() => onAddJob({ ...col.preset })} className="mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"><Plus size={13} /> задача</button>
           {groupBy !== "status" && (() => { const doneJobs = byCol[col.key].filter((j) => stageOf(j) === "done"); if (!doneJobs.length) return null; const open = !!doneOpen[col.key]; return (
             <div className="mt-2 border-t border-neutral-200/70 pt-2">
               <button onClick={() => setDoneOpen((o) => ({ ...o, [col.key]: !o[col.key] }))} className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"><ChevronRight size={13} className={"transition " + (open ? "rotate-90" : "")} /> Выполненные <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{doneJobs.length}</span></button>
