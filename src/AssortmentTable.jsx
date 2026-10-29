@@ -447,6 +447,8 @@ function normCycle(v) {
         when: t.when === "complete" ? "complete" : "enter",
         priority: (t.priority === "high" || t.priority === "med" || t.priority === "low") ? t.priority : null,
         assignee: t.assignee || null,
+        hasDate: !!t.hasDate,
+        durDays: Math.max(1, parseInt(t.durDays) || 1),
       },
     };
   });
@@ -462,10 +464,19 @@ function cycleStageDates(startISO, stages) {
     const st = new Date(base); st.setDate(st.getDate() + acc);
     const en = new Date(base); en.setDate(en.getDate() + acc + Math.max(0, d - 1));
     const f = (x) => `${String(x.getDate()).padStart(2, "0")}.${String(x.getMonth() + 1).padStart(2, "0")}`;
-    out[s.id] = { start: st, end: en, startStr: f(st), endStr: f(en) };
+    const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    out[s.id] = { start: st, end: en, startStr: f(st), endStr: f(en), startISO: iso(st), endISO: iso(en) };
     acc += d;
   });
   return out;
+}
+// даты задачи этапа: старт = плановое начало этапа, дедлайн = старт + длительность задачи
+function stageTaskDates(bc, stageId, durDays) {
+  const dts = cycleStageDates(bc && bc.startDate, (bc && bc.stages) || []);
+  const sd = dts[stageId]; if (!sd) return { start: null, date: null };
+  const e = new Date(sd.start); e.setDate(e.getDate() + Math.max(1, parseInt(durDays) || 1) - 1);
+  const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  return { start: sd.startISO, date: iso(e) };
 }
 
 const DEFAULT_METRICS_BY_GROUP = Object.fromEntries(
@@ -834,7 +845,8 @@ export default function AssortmentTable() {
         const key = s.id + ":" + (whenComplete ? "c" : "e");
         if (cond && !fired[key]) {
           const title = String(t.text).replace(/\{партия\}/g, b.name || "партия");
-          const base = { date: null, start: null, done: false, labelId: null, priority: t.priority || null, assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
+          const dd = t.hasDate ? stageTaskDates(bc, s.id, t.durDays) : { start: null, date: null };
+          const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: t.priority || null, assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
           if (t.scope === "product") {
             (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
           } else newJobs.push({ id: uid(), title, productId: null, ...base });
@@ -847,6 +859,28 @@ export default function AssortmentTable() {
     if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
     if (batchesChanged) setPurchaseBatches(next);
   }, [purchaseBatches, prodCycle, loaded]);
+
+  // ручное создание задач по этапу (кнопка «→ задача» в цикле) — в обход дедупа
+  const createCycleStageTasks = (batchId, stageId) => {
+    const b = (purchaseBatches || []).find((x) => x.id === batchId); if (!b) return;
+    const rule = (prodCycle.stages || []).find((s) => s.id === stageId); const t = rule && rule.task;
+    if (!t || !t.enabled || !String(t.text || "").trim()) { setToast({ text: "Для этого этапа не настроена автозадача" }); return; }
+    const title = String(t.text).replace(/\{партия\}/g, b.name || "партия");
+    const dd = t.hasDate ? stageTaskDates(b.cycle, stageId, t.durDays) : { start: null, date: null };
+    const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: t.priority || null, assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
+    const newJobs = [];
+    if (t.scope === "product") (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
+    else newJobs.push({ id: uid(), title, productId: null, ...base });
+    if (!newJobs.length) { setToast({ text: "В партии нет товаров для задач" }); return; }
+    const firedKey = stageId + ":" + (t.when === "complete" ? "c" : "e");
+    setJobs((js) => [...js, ...newJobs]);
+    setPurchaseBatches((bs) => bs.map((x) => {
+      if (x.id !== batchId) return x;
+      const cyc0 = x.cycle || {};
+      return { ...x, cycle: { ...cyc0, fired: { ...(cyc0.fired || {}), [firedKey]: true } } };
+    }));
+    setToast({ text: `Создано задач: ${newJobs.length} · во вкладке «Задачи»` });
+  };
 
   // сохранение общих настроек
   useEffect(() => {
@@ -1970,6 +2004,7 @@ export default function AssortmentTable() {
             onOpenCard={(id) => setCardModal(id)}
             onActiveChange={setPurchActiveId}
             cycleStages={prodCycle.stages}
+            onCreateStageTask={createCycleStageTasks}
           />
         )}
 
@@ -2503,7 +2538,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
 const PU_STATUS = { draft: { label: "Черновик", cls: "bg-neutral-100 text-neutral-500" }, paid: { label: "Оплачено", cls: "bg-emerald-50 text-emerald-600" }, transit: { label: "В пути", cls: "bg-amber-50 text-amber-600" }, received: { label: "Получено", cls: "bg-blue-50 text-blue-600" } };
 
 // Блок «Закупки» — партии (как карты в «Стратегии»); внутри партии товары из каталога.
-function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [] }) {
+function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], onCreateStageTask }) {
   const list = Array.isArray(batches) ? batches : [];
   const [activeId, setActiveId] = useState(list[0]?.id || null);
   const [editingId, setEditingId] = useState(null);
@@ -2514,6 +2549,8 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const [stOpen, setStOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [cycOpen, setCycOpen] = useState(false);
+  const [durOpen, setDurOpen] = useState(false);
+  const [ratesOpen, setRatesOpen] = useState(false);
   const [qtyOpen, setQtyOpen] = useState({}); // раскрытые ячейки «Кол-во» по id позиции
   const toggleQty = (iid) => setQtyOpen((o) => ({ ...o, [iid]: !o[iid] }));
   const active = list.find((b) => b.id === activeId) || list[0] || null;
@@ -2536,6 +2573,10 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const patchCyc = (p) => patchBatch({ cycle: { ...(active.cycle || {}), ...p } });
   const toggleCycStage = (id) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, done: !s.done } : s)) });
   const setCycDays = (id, v) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, days: Math.max(0, parseInt(v) || 0) } : s)) });
+  // мультиступенчатый переключатель: клик по этапу i → предыдущие «пройдены», этот текущий
+  const setCycToStage = (i) => patchCyc({ stages: cycSt.map((s, j) => ({ ...s, done: j < i })) });
+  const advanceCyc = () => { if (curIdx < 0) return; patchCyc({ stages: cycSt.map((s, j) => (j === curIdx ? { ...s, done: true } : s)) }); };
+  const regressCyc = () => { const target = curIdx < 0 ? cycSt.length - 1 : curIdx - 1; if (target < 0) return; patchCyc({ stages: cycSt.map((s, j) => (j === target ? { ...s, done: false } : s)) }); };
   const addItem = (productId) => { patchBatch({ items: [...(active.items || []), { id: uid(), productId, priceCny: "", qty: "" }] }); setPicker(false); setPq(""); };
   const setItem = (iid, k, v) => patchBatch({ items: active.items.map((it) => (it.id === iid ? { ...it, [k]: v } : it)) });
   const removeItem = (iid) => patchBatch({ items: active.items.filter((it) => it.id !== iid) });
@@ -2583,9 +2624,11 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const pcands = (products || []).filter((p) => !inBatch.has(p.id)).filter((p) => !q || (p.code || "").toLowerCase().includes(q) || (p.name || "").toLowerCase().includes(q));
   const stCur = PU_STATUS[active.status] || PU_STATUS.draft;
   const rate = (label, k, suffix) => (
-    <label className="flex items-center gap-1.5 text-xs text-neutral-500">{label}
-      <input value={active[k] ?? ""} onChange={(e) => patchBatch({ [k]: e.target.value })} inputMode="decimal" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-right text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" />
-      <span className="text-neutral-400">{suffix}</span>
+    <label className="flex items-center justify-between gap-2 text-xs text-neutral-500">{label}
+      <span className="flex items-center gap-1">
+        <input value={active[k] ?? ""} onChange={(e) => patchBatch({ [k]: e.target.value })} inputMode="decimal" className="w-20 rounded-md border border-neutral-200 px-2 py-1 text-right text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+        <span className="w-6 text-neutral-400">{suffix}</span>
+      </span>
     </label>
   );
 
@@ -2607,16 +2650,22 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
 
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-3 border-b border-neutral-100 px-4 py-3">
-          <div className="relative">
-            <button onClick={() => setStOpen((o) => !o)} className={"inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold " + stCur.cls}>{stCur.label} <ChevronDown size={12} /></button>
-            {stOpen && <><div className="fixed inset-0 z-10" onClick={() => setStOpen(false)} /><div className="absolute left-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">{Object.keys(PU_STATUS).map((k) => <button key={k} onClick={() => { patchBatch({ status: k }); setStOpen(false); }} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50"><span className={"rounded-full px-2 py-0.5 text-[11px] font-bold " + PU_STATUS[k].cls}>{PU_STATUS[k].label}</span></button>)}</div></>}
-          </div>
           <button onClick={() => setCycOpen((o) => !o)} title="Производственный цикл заказа" className={"inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition " + (!cycStarted ? "border-neutral-200 bg-white text-neutral-400 hover:bg-neutral-50" : curStage ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" : "border-emerald-200 bg-emerald-50 text-emerald-700")}>
             <span className="h-2 w-2 rounded-full" style={{ background: !cycStarted ? "#cbd5e1" : curStage ? "#f59e0b" : "#10b981" }} />
             {!cycStarted ? "Цикл не запущен" : curStage ? `Этап: ${curStage.name}` : "Цикл завершён"}
             <ChevronDown size={11} className={"transition " + (cycOpen ? "rotate-180" : "")} />
           </button>
-          <div className="flex flex-wrap items-center gap-3 border-l border-neutral-200 pl-3">{rate("Курс ¥", "cny", "₽")}{rate("Курс $", "usd", "₽")}{rate("Карго", "cargo", "$/кг")}{rate("Комиссия", "commission", "%")}{rate("Страховка", "insurance", "%")}</div>
+          <div className="relative">
+            <button onClick={() => setRatesOpen((o) => !o)} title="Курсы и комиссии партии" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (ratesOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
+              <Settings2 size={14} className={ratesOpen ? "text-white" : "text-neutral-400"} /> Курсы и комиссии
+              <ChevronDown size={12} className={"transition " + (ratesOpen ? "rotate-180" : "")} />
+            </button>
+            {ratesOpen && (<><div className="fixed inset-0 z-10" onClick={() => setRatesOpen(false)} />
+              <div className="absolute left-0 z-20 mt-1.5 w-60 rounded-xl border border-neutral-200 bg-white p-2.5 shadow-xl">
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Курсы и комиссии партии</div>
+                <div className="space-y-1.5">{rate("Курс ¥", "cny", "₽")}{rate("Курс $", "usd", "₽")}{rate("Карго", "cargo", "$/кг")}{rate("Комиссия", "commission", "%")}{rate("Страховка", "insurance", "%")}</div>
+              </div></>)}
+          </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {[["Позиций", rows.length], ["Кол-во", tot.qty.toLocaleString("ru-RU")], ["Вес", (Math.round(tot.wkg * 10) / 10).toLocaleString("ru-RU") + " кг"], ["Сумма ¥", fmtCny(tot.cnySum)], ["Сумма ₽", fmtRub(tot.rubSum)]].map(([k, v]) => (
               <div key={k} className="rounded-lg bg-neutral-50 px-3 py-1.5"><div className="text-[10px] uppercase tracking-wide text-neutral-400">{k}</div><div className="text-sm font-bold text-neutral-800">{v}</div></div>
@@ -2658,29 +2707,37 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
               </div>
             ) : (
               <>
-                <div className="mb-3 flex items-start">
+                {/* мультиступенчатый переключатель этапов (клик = сделать текущим) */}
+                <div className="mb-1 flex items-start">
                   {cycSt.map((s, i) => { const done = s.done; const cur = i === curIdx; const d = cycDates[s.id]; return (
-                    <div key={s.id} className="relative flex-1 text-center">
-                      {i < cycSt.length - 1 && <div className="absolute left-1/2 top-[14px] h-[3px] w-full" style={{ background: done ? "#16a34a" : "#e7e7ec" }} />}
-                      <div className="relative z-10 mx-auto flex h-7 w-7 items-center justify-center rounded-full border-[2.5px] text-[11px] font-bold" style={done ? { background: "#16a34a", borderColor: "#16a34a", color: "#fff" } : cur ? { borderColor: "#f59e0b", color: "#c77d1a", background: "#fff", boxShadow: "0 0 0 4px #fef0d9" } : { borderColor: "#d4d4d8", color: "#b0b0b6", background: "#fff" }}>{done ? <Check size={13} strokeWidth={3} /> : i + 1}</div>
-                      <div className={"mt-1.5 text-[10.5px] font-semibold leading-tight " + (cur ? "text-amber-700" : done ? "text-neutral-600" : "text-neutral-400")}>{s.name}</div>
+                    <button key={s.id} onClick={() => setCycToStage(i)} title="Сделать этот этап текущим" className="group relative flex-1 text-center">
+                      {i < cycSt.length - 1 && <div className="absolute left-1/2 top-[16px] h-[3px] w-full" style={{ background: done ? "#16a34a" : "#e7e7ec" }} />}
+                      <div className="relative z-10 mx-auto flex h-8 w-8 items-center justify-center rounded-full border-[2.5px] text-[12px] font-bold transition group-hover:scale-110" style={done ? { background: "#16a34a", borderColor: "#16a34a", color: "#fff" } : cur ? { borderColor: "#f59e0b", color: "#c77d1a", background: "#fff", boxShadow: "0 0 0 5px #fef0d9" } : { borderColor: "#d4d4d8", color: "#b0b0b6", background: "#fff" }}>{done ? <Check size={14} strokeWidth={3} /> : i + 1}</div>
+                      <div className={"mt-2 text-[11px] font-semibold leading-tight " + (cur ? "text-amber-700" : done ? "text-neutral-600" : "text-neutral-400")}>{s.name}</div>
                       <div className="text-[9.5px] text-neutral-400">{d ? `${d.startStr} – ${d.endStr}` : ""}</div>
-                    </div>
+                    </button>
                   ); })}
                 </div>
-                <div className="mb-2 flex items-center gap-2 text-xs text-neutral-500">старт цикла:<input type="date" value={cyc.startDate || ""} onChange={(e) => patchCyc({ startDate: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-neutral-600 focus:outline-none" /></div>
-                <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-100 bg-white">
-                  {cycSt.map((s, i) => { const done = s.done; const cur = i === curIdx; const d = cycDates[s.id]; const rule = (cycleStages.find((x) => x.id === s.id) || {}).task; return (
-                    <div key={s.id} className={"flex flex-wrap items-center gap-3 px-3 py-2 " + (cur ? "bg-amber-50/50" : "")}>
-                      <button onClick={() => toggleCycStage(s.id)} title={done ? "Снять отметку" : "Отметить пройденным"} className="relative h-[22px] w-[38px] shrink-0 rounded-full transition" style={{ background: done ? "#16a34a" : "#d4d4d8" }}><span className="absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow transition-all" style={{ left: done ? 18 : 2 }} /></button>
-                      <span className="min-w-[150px] text-sm font-semibold text-neutral-800">{s.name}<span className={"ml-2 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase " + (done ? "bg-emerald-50 text-emerald-600" : cur ? "bg-amber-50 text-amber-600" : "bg-neutral-100 text-neutral-400")}>{done ? "Пройден" : cur ? "Текущий" : "Ожидает"}</span></span>
-                      <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">длит.<input value={s.days} onChange={(e) => setCycDays(s.id, e.target.value)} inputMode="numeric" className="w-12 rounded-md border border-neutral-200 px-1.5 py-1 text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200" />дн.</span>
-                      <span className="text-xs text-neutral-400">план: <b className="text-neutral-600">{d ? `${d.startStr} – ${d.endStr}` : "—"}</b></span>
-                      {rule && rule.enabled && String(rule.text || "").trim() && <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600">→ задача</span>}
-                    </div>
-                  ); })}
+                {/* компактная строка управления */}
+                <div className="mt-3 flex flex-wrap items-center gap-2.5 border-t border-neutral-100 pt-3">
+                  <span className="text-sm text-neutral-500">{curStage ? <>Текущий этап: <b className="text-neutral-800">{curStage.name}</b>{cycDates[curStage.id] && <span className="ml-1.5 text-neutral-400">· план {cycDates[curStage.id].startStr} – {cycDates[curStage.id].endStr}</span>}</> : <span className="font-semibold text-emerald-600">Цикл завершён ✓</span>}</span>
+                  {curStage && (() => { const rule = (cycleStages.find((x) => x.id === curStage.id) || {}).task; return rule && rule.enabled && String(rule.text || "").trim() ? <button onClick={() => onCreateStageTask && onCreateStageTask(active.id, curStage.id)} title="Создать задачу(и) по текущему этапу" className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-600 hover:bg-sky-100"><Plus size={11} /> создать задачу</button> : null; })()}
+                  <span className="ml-auto flex items-center gap-2">
+                    <button onClick={regressCyc} disabled={cycSt.every((x) => !x.done)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 transition hover:bg-neutral-50 disabled:opacity-40"><ChevronRight size={13} style={{ transform: "rotate(180deg)" }} /> Вернуть</button>
+                    {curStage && <button onClick={advanceCyc} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700"><Check size={13} /> {curIdx === cycSt.length - 1 ? "Завершить цикл" : "Пройти этап"}</button>}
+                  </span>
                 </div>
-                <div className="mt-2 text-[11px] text-neutral-400">Переключайте тумблер после фактического прохождения этапа — следующий станет текущим, по нему по правилам из «Настроек» создастся задача.</div>
+                {/* длительности и старт — свёрнуто */}
+                <div className="mt-2 border-t border-dashed border-neutral-100 pt-2">
+                  <button onClick={() => setDurOpen((o) => !o)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400 transition hover:text-neutral-600"><Settings2 size={12} /> длительности и старт цикла <ChevronDown size={11} className={"transition " + (durOpen ? "rotate-180" : "")} /></button>
+                  {durOpen && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">старт цикла:<input type="date" value={cyc.startDate || ""} onChange={(e) => patchCyc({ startDate: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-neutral-600 focus:outline-none" /></span>
+                      {cycSt.map((s) => (<span key={s.id} className="inline-flex items-center gap-1.5 text-xs text-neutral-500"><span className="text-neutral-600">{s.name}</span><input value={s.days} onChange={(e) => setCycDays(s.id, e.target.value)} inputMode="numeric" className="w-11 rounded-md border border-neutral-200 px-1.5 py-1 text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200" />дн.</span>))}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 text-[11px] text-neutral-400">Кликни по этапу в линейке или жми «Пройти этап» после фактического прохождения — следующий станет текущим, по нему по правилам из «Настроек» создастся задача.</div>
               </>
             )}
           </div>
@@ -5725,8 +5782,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   });
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+    <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4" style={{ maxHeight: "calc(100vh - 128px)" }}>
+      <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
         {isBoard ? (
           <h2 className="text-base font-semibold text-neutral-900">Задачи</h2>
         ) : (
@@ -5769,14 +5826,16 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
               <button key={id} onClick={() => setView(id)} title={title} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Icon size={16} /></button>
             ))}
           </div>
-          <button onClick={() => onAddJob({ date: todayStr })} title="Новая задача" className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800"><Plus size={17} /></button>
+          <button onClick={() => onAddJob({})} title="Добавить задачу" className="inline-flex h-8 items-center gap-1 rounded-lg bg-neutral-900 px-2.5 text-white hover:bg-neutral-800"><Plus size={16} /><span className="hidden text-sm font-semibold sm:inline">Задача</span></button>
         </div>
       </div>
 
-      {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
-        : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
-        : view === "cal" ? <CalendarGrid jobs={jobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
-        : <GanttBoard jobs={jobs} products={products} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
+      <div className="min-h-0 flex-1 overflow-auto">
+        {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
+          : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
+          : view === "cal" ? <CalendarGrid jobs={jobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
+          : <GanttBoard jobs={jobs} products={products} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
+      </div>
     </div>
   );
 }
@@ -5825,7 +5884,7 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
   const moveJob = (id, col) => { const j = jobs.find((x) => x.id === id); if (j && !col.match(j)) onUpdateJob({ ...j, ...col.preset }); };
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-1">
+    <div className="flex min-h-full gap-3 pb-1">
       {columns.map((col) => (
         <div key={col.key}
           onDragOver={(e) => { e.preventDefault(); setOverCol(col.key); }}
@@ -7390,6 +7449,14 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                           <label className="inline-flex items-center gap-1.5">исполнитель:
                             <select value={s.task.assignee || ""} onChange={(e) => patchCycTask(s.id, { assignee: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{(taskPeople || []).map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}</select>
                           </label>
+                          <label className="inline-flex items-center gap-1.5">дата:
+                            <select value={s.task.hasDate ? "date" : "none"} onChange={(e) => patchCycTask(s.id, { hasDate: e.target.value === "date" })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none" title="Старт задачи = начало этапа (попадёт на гант)"><option value="none">без даты</option><option value="date">от начала этапа</option></select>
+                          </label>
+                          {s.task.hasDate && (
+                            <label className="inline-flex items-center gap-1.5">длительность:
+                              <input value={s.task.durDays} onChange={(e) => patchCycTask(s.id, { durDays: Math.max(1, parseInt(e.target.value) || 1) })} inputMode="numeric" className="w-12 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-center focus:outline-none" /> дн.
+                            </label>
+                          )}
                         </div>
                       </div>
                     )}
