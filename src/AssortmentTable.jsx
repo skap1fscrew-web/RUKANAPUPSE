@@ -6395,13 +6395,13 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
       <div className="flex border-t border-neutral-100">
         <button
           onClick={() => onEditOp(op)}
-          className="group flex shrink-0 items-center py-2 pl-2 pr-2 text-left hover:bg-neutral-50"
+          className="group flex shrink-0 items-center py-1 pl-2 pr-2 text-left hover:bg-neutral-50"
           style={{ width: LW }}
           title="Настроить график"
         >
           <span className="w-full truncate text-[12px] text-neutral-700 group-hover:text-neutral-900">{op.name}</span>
         </button>
-        <div className="relative flex shrink-0 items-center" style={{ width: timelineW, height: 44 }}>
+        <div className="relative flex shrink-0 items-center" style={{ width: timelineW, height: TRACK_H + 6 }}>
           {Array.from({ length: daysInMonth }, (_, i) => {
             const d = i + 1;
             if (!daySet.has(d)) return <div key={i} style={{ width: DW }} />;
