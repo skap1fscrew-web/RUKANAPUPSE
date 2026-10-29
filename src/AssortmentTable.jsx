@@ -685,6 +685,7 @@ export default function AssortmentTable() {
   });
   const [rnpDays, setRnpDays] = useState(28);
   const [hiddenTasks, setHiddenTasks] = useState({});
+  const [rnpOrder, setRnpOrder] = useState([]); // порядок строк РНП (массив id)
   const [hiddenCols, setHiddenCols] = useState({}); // скрытые столбцы юнита: { "unit:spp": true }
   const [colFilterOpen, setColFilterOpen] = useState(false);
   const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170", cny: "", usd: "", cargo: "", commission: "", insurance: "" }); // единые для всех товаров
@@ -761,12 +762,18 @@ export default function AssortmentTable() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("rnp-ui");
-      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); if (ui.productsView) setProductsView(ui.productsView); }
+      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (Array.isArray(ui.rnpOrder)) setRnpOrder(ui.rnpOrder); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); if (ui.productsView) setProductsView(ui.productsView); }
+      // Разовая установка строк РНП по умолчанию: показаны только Кол-во заказов / Блогеры / Раздачи
+      if (!localStorage.getItem("rnp-rows-v2")) {
+        const def = {}; RNP_TASKS.forEach((t) => { if (!["orders", "bloggers", "razdachi"].includes(t.id)) def[t.id] = true; });
+        setHiddenTasks(def);
+        localStorage.setItem("rnp-rows-v2", "1");
+      }
     } catch {}
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks, hiddenCols, productsView })); } catch {}
-  }, [enabled, activeTab, hiddenTasks, hiddenCols, productsView]);
+    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView })); } catch {}
+  }, [enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView]);
 
   // загрузка из Supabase
   useEffect(() => {
@@ -2167,6 +2174,9 @@ export default function AssortmentTable() {
             onCalBuffer={(v) => setCalBuffer(cp.id, v)}
             onCalCopyFrom={(sid) => copyCalendarFrom(cp.id, sid)}
             hiddenTasks={hiddenTasks}
+            onToggleTask={(id) => setHiddenTasks((h) => ({ ...h, [id]: !h[id] }))}
+            rnpOrder={rnpOrder}
+            onSetRnpOrder={setRnpOrder}
             rnpStartDate={rnpStartDate}
             rnpDays={rnpDays}
             onSetRnpStartDate={setRnpStartDate}
@@ -2583,6 +2593,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const [cycOpen, setCycOpen] = useState(false);
   const [durOpen, setDurOpen] = useState(false);
   const [ratesOpen, setRatesOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false); // поповер «Задачи по партии»
   const [qtyOpen, setQtyOpen] = useState({}); // раскрытые ячейки «Кол-во» по id позиции
   const toggleQty = (iid) => setQtyOpen((o) => ({ ...o, [iid]: !o[iid] }));
   const active = list.find((b) => b.id === activeId) || list[0] || null;
@@ -2698,6 +2709,42 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                 <div className="space-y-1.5">{rate("Курс ¥", "cny", "₽")}{rate("Курс $", "usd", "₽")}{rate("Карго", "cargo", "$/кг")}{rate("Комиссия", "commission", "%")}{rate("Страховка", "insurance", "%")}</div>
               </div></>)}
           </div>
+          {(() => {
+            const batchJobs = (jobs || []).filter((j) => j.batchId === active.id);
+            const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
+            const fmtD = (d) => d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : "";
+            return (
+              <div className="relative">
+                <button onClick={() => setTasksOpen((o) => !o)} title="Задачи по партии" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (tasksOpen ? "border-cyan-400 bg-cyan-50 text-cyan-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
+                  <ShoppingCart size={14} className={tasksOpen ? "text-cyan-600" : "text-neutral-400"} /> Задачи
+                  <span className={"inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold " + (batchJobs.length ? "bg-cyan-600 text-white" : "bg-neutral-200 text-neutral-500")}>{batchJobs.length}</span>
+                  <ChevronDown size={12} className={"transition " + (tasksOpen ? "rotate-180" : "")} />
+                </button>
+                {tasksOpen && (<><div className="fixed inset-0 z-10" onClick={() => setTasksOpen(false)} />
+                  <div className="absolute left-0 z-20 mt-1.5 w-[420px] max-w-[88vw] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
+                    <div className="flex items-center gap-2.5 border-b border-neutral-100 px-4 py-3">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600"><ShoppingCart size={15} /></span>
+                      <div className="min-w-0"><div className="text-[13px] font-bold text-neutral-900">Задачи по партии</div><div className="truncate text-[11px] text-neutral-400">{active.name || "Партия"} · {batchJobs.length} {batchJobs.length === 1 ? "задача" : batchJobs.length >= 2 && batchJobs.length <= 4 ? "задачи" : "задач"}</div></div>
+                      <button onClick={() => setTasksOpen(false)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><X size={16} /></button>
+                    </div>
+                    <div className="max-h-[340px] overflow-auto p-2.5">
+                      <div className="space-y-1.5">
+                        {batchJobs.map((j) => { const pr = personById[j.assignee]; const st = STAGES[stageOf(j)]; const done = stageOf(j) === "done"; return (
+                          <button key={j.id} onClick={() => { setTasksOpen(false); onOpenJob && onOpenJob(j); }} className="flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 px-3 py-2 text-left transition hover:border-cyan-300 hover:bg-cyan-50/40">
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: st ? st.color : "#d4d4d8" }} />
+                            <span className={"min-w-0 flex-1 truncate text-[13.5px] " + (done ? "text-neutral-400 line-through" : "text-neutral-700")}>{j.title || "Без названия"}</span>
+                            {j.date && <span className="shrink-0 text-[11px] text-neutral-400">{fmtD(j.date)}</span>}
+                            {pr && <span title={pr.name} className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>}
+                          </button>
+                        ); })}
+                        {batchJobs.length === 0 && <p className="px-1 py-6 text-center text-[12px] text-neutral-400">Задач по этой партии ещё нет</p>}
+                      </div>
+                      <button onClick={() => { setTasksOpen(false); onAddJob && onAddJob({ type: "purchase", batchId: active.id, note: `Партия: «${active.name || ""}»` }); }} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-cyan-400 hover:text-cyan-700"><Plus size={14} /> Задача по партии</button>
+                    </div>
+                  </div></>)}
+              </div>
+            );
+          })()}
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {[["Позиций", rows.length], ["Кол-во", tot.qty.toLocaleString("ru-RU")], ["Вес", (Math.round(tot.wkg * 10) / 10).toLocaleString("ru-RU") + " кг"], ["Сумма ¥", fmtCny(tot.cnySum)], ["Сумма ₽", fmtRub(tot.rubSum)]].map(([k, v]) => (
               <div key={k} className="rounded-lg bg-neutral-50 px-3 py-1.5"><div className="text-[10px] uppercase tracking-wide text-neutral-400">{k}</div><div className="text-sm font-bold text-neutral-800">{v}</div></div>
@@ -2878,31 +2925,6 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
         </div>
 
         {/* Задачи по партии (тип «Закупки») */}
-        {(() => {
-          const batchJobs = (jobs || []).filter((j) => j.batchId === active.id);
-          const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
-          const fmtD = (d) => d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : "";
-          return (
-            <div className="border-t border-neutral-100 px-4 py-3">
-              <div className="mb-2 flex items-center gap-2">
-                <ShoppingCart size={14} className="text-cyan-600" />
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Задачи по партии</span>
-                <span className="rounded-full bg-neutral-200/70 px-1.5 text-[10px] font-semibold text-neutral-500">{batchJobs.length}</span>
-              </div>
-              <div className="space-y-1.5">
-                {batchJobs.map((j) => { const pr = personById[j.assignee]; const st = STAGES[stageOf(j)]; return (
-                  <button key={j.id} onClick={() => onOpenJob && onOpenJob(j)} className="flex w-full items-center gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 text-left transition hover:border-cyan-300 hover:bg-cyan-50/40">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: st ? st.color : "#d4d4d8" }} />
-                    <span className={"min-w-0 flex-1 truncate text-sm " + (stageOf(j) === "done" ? "text-neutral-400 line-through" : "text-neutral-700")}>{j.title || "Без названия"}</span>
-                    {j.date && <span className="shrink-0 text-[11px] text-neutral-400">{fmtD(j.date)}</span>}
-                    {pr && <span title={pr.name} className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>}
-                  </button>
-                ); })}
-              </div>
-              <button onClick={() => onAddJob && onAddJob({ type: "purchase", batchId: active.id, note: `Партия: «${active.name || ""}»` })} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-cyan-400 hover:text-cyan-700"><Plus size={14} /> Задача по партии</button>
-            </div>
-          );
-        })()}
       </div>
     </div>
   );
@@ -3448,24 +3470,44 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStart, onSe
    Блок «РНП» — диаграмма Ганта (задачи × дни) + Фонд маркетинга. Один на товар.
 ---------------------------------------------------------------------------- */
 
-function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, wbProgress, onFetchWb, hideBudget = false }) {
+function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onToggleTask, rnpOrder = [], onSetRnpOrder, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, wbProgress, onFetchWb, hideBudget = false, monthNav = false }) {
   const [fillMode, setFillMode] = useState(false);
   const [fillColor, setFillColor] = useState(FILL_COLORS[0]);
   const [bd, setBd] = useState(null); // позиция окна разбивки затрат
   const bdBtnRef = useRef(null);
+  const nowM = new Date();
+  const [ym, setYm] = useState(() => { const d = startDate ? new Date(startDate + "T00:00:00") : nowM; return { y: isNaN(d.getTime()) ? nowM.getFullYear() : d.getFullYear(), m: isNaN(d.getTime()) ? nowM.getMonth() : d.getMonth() }; });
+  const [rowsOpen, setRowsOpen] = useState(false);
+  const prevMo = () => setYm((s) => { const d = new Date(s.y, s.m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const nextMo = () => setYm((s) => { const d = new Date(s.y, s.m + 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const goThisMo = () => setYm({ y: nowM.getFullYear(), m: nowM.getMonth() });
+  // порядок строк: по rnpOrder, затем по исходному порядку RNP_TASKS
+  const orderIdxOf = (id) => { const i = (rnpOrder || []).indexOf(id); return i === -1 ? 1000 + RNP_TASKS.findIndex((t) => t.id === id) : i; };
+  const orderedAll = [...RNP_TASKS].sort((a, b) => orderIdxOf(a.id) - orderIdxOf(b.id));
+  const moveRow = (id, dir) => {
+    const base = (rnpOrder && rnpOrder.length) ? rnpOrder.filter((x) => RNP_TASKS.some((t) => t.id === x)) : RNP_TASKS.map((t) => t.id);
+    const miss = RNP_TASKS.map((t) => t.id).filter((x) => !base.includes(x));
+    const arr = [...base, ...miss];
+    const i = arr.indexOf(id); const j = i + dir;
+    if (i < 0 || j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    onSetRnpOrder && onSetRnpOrder(arr);
+  };
   const openBd = () => {
     const r = bdBtnRef.current?.getBoundingClientRect();
     if (r) setBd({ x: Math.min(r.left, (typeof window !== "undefined" ? window.innerWidth : 400) - 300), y: r.bottom + 6 });
   };
 
-  const tasks = RNP_TASKS.filter((t) => !hiddenTasks[t.id]);
+  const tasks = orderedAll.filter((t) => !hiddenTasks[t.id]);
 
   const cells = product.rnp.cells || {};
   const entries = product.rnp.entries || {};
   const fills = product.rnp.fills || {};
   const flags = product.rnp.flags || {};
   const budget = product.rnp.budget || { allocated: "" };
-  const dayList = buildDays(startDate, days);
+  const monthFirstISO = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}-01`;
+  const daysInMo = new Date(ym.y, ym.m + 1, 0).getDate();
+  const dayList = monthNav ? buildDays(monthFirstISO, daysInMo) : buildDays(startDate, days);
 
   const LBL_W = 210, TOT_W = 62, SHARE_W = 56, DAY_W = 66;
   const sticky = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
@@ -3615,6 +3657,39 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
   return (
     <div>
       {/* панель управления */}
+      {monthNav ? (
+        <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
+          <button onClick={prevMo} className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /></button>
+          <button onClick={nextMo} className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} /></button>
+          <h3 className="ml-1 text-sm font-semibold capitalize text-neutral-900">{MONTHS_FULL[ym.m]} {ym.y}</h3>
+          <button onClick={goThisMo} className="ml-1 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">Сегодня</button>
+          <div className="relative ml-auto">
+            <button onClick={() => setRowsOpen((o) => !o)} className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (rowsOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
+              <Settings2 size={14} className={rowsOpen ? "text-white" : "text-neutral-400"} /> Строки
+              <ChevronDown size={12} className={"transition " + (rowsOpen ? "rotate-180" : "")} />
+            </button>
+            {rowsOpen && (<><div className="fixed inset-0 z-40" onClick={() => setRowsOpen(false)} />
+              <div className="absolute right-0 z-50 mt-1.5 w-[320px] max-w-[88vw] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
+                <div className="flex items-center gap-2 border-b border-neutral-100 px-4 py-2.5"><span className="text-[13px] font-bold text-neutral-800">Строки РНП</span><button onClick={() => setRowsOpen(false)} className="ml-auto rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100"><X size={15} /></button></div>
+                <div className="max-h-[360px] overflow-auto p-2">
+                  {orderedAll.map((t, i) => { const on = !hiddenTasks[t.id]; return (
+                    <div key={t.id} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-neutral-50">
+                      <span className="flex flex-col text-neutral-300">
+                        <button onClick={() => moveRow(t.id, -1)} disabled={i === 0} className="-my-0.5 flex h-3.5 w-4 items-center justify-center hover:text-neutral-600 disabled:opacity-30"><ChevronUp size={12} /></button>
+                        <button onClick={() => moveRow(t.id, 1)} disabled={i === orderedAll.length - 1} className="-my-0.5 flex h-3.5 w-4 items-center justify-center hover:text-neutral-600 disabled:opacity-30"><ChevronDown size={12} /></button>
+                      </span>
+                      <span className={"flex-1 text-[13px] " + (on ? "text-neutral-700" : "text-neutral-400")}>{t.label}</span>
+                      <button onClick={() => onToggleTask && onToggleTask(t.id)} title={on ? "Скрыть строку" : "Показать строку"} className="relative h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: on ? "#16a34a" : "#d4d4d8" }}>
+                        <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all" style={{ left: on ? 16 : 2 }} />
+                      </button>
+                    </div>
+                  ); })}
+                </div>
+                <div className="border-t border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-200 px-3 py-1.5 text-[12px] font-semibold text-neutral-400"><Plus size={13} /> Строка по товару <span className="text-[10px] font-normal text-neutral-300">скоро</span></span></div>
+              </div></>)}
+          </div>
+        </div>
+      ) : (
       <div className="mb-2 flex flex-wrap items-center gap-3 px-1">
         <div className="text-sm font-semibold text-neutral-900">Дата</div>
         <label className="flex items-center gap-1 text-xs text-neutral-500">
@@ -3648,6 +3723,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
         </div>
         )}
       </div>
+      )}
 
       <div style={{ overflowX: "auto", paddingBottom: 12 }}>
         <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
@@ -5077,7 +5153,7 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const curStatus = (statuses || []).find((s) => s.name === product.status);
   // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
@@ -5533,10 +5609,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <button onClick={() => setFullBlock("promo")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-orange-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-orange-500" />
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-400" /> Продвижение</div>
-                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{promoBudget.allocated > 0 ? Math.round((promoBudget.spent / promoBudget.allocated) * 100) : 0}<span className="text-base font-semibold text-neutral-400">%</span></div>
-                <div className="text-[11px] text-neutral-400">израсходовано фонда</div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, promoBudget.allocated > 0 ? (promoBudget.spent / promoBudget.allocated) * 100 : 0))}%`, background: promoBudget.ostatok < 0 ? "#ef4444" : "#f59e0b" }} /></div>
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-400" /> РНП</div>
+                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{(RNP_TASKS || []).filter((t) => !hiddenTasks[t.id]).length}<span className="ml-1 text-base font-semibold text-neutral-400">строк</span></div>
+                <div className="text-[11px] text-neutral-400">план продвижения</div>
               </button>
 
               <div className="group relative">
@@ -5596,19 +5671,13 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
             {/* Полноэкранный просмотр выбранного блока */}
             {fullBlock && (
               <div className="fixed inset-0 z-[70] flex items-start justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={() => setFullBlock(null)}>
-                <div className={"flex max-h-[94vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "analytics" ? "max-w-6xl" : fullBlock === "mktfund" ? "max-w-2xl" : "max-w-5xl")} onClick={(e) => e.stopPropagation()}>
+                <div className={"flex flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "promo" ? "h-[96vh] max-h-[96vh] w-full max-w-[98vw]" : "max-h-[94vh] w-full " + (fullBlock === "analytics" ? "max-w-6xl" : fullBlock === "mktfund" ? "max-w-2xl" : "max-w-5xl"))} onClick={(e) => e.stopPropagation()}>
                   <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
-                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "Продвижение" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : fullBlock === "mktfund" ? "Фонд маркетинга" : "Аналитика"}</h3>
+                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "РНП" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : fullBlock === "mktfund" ? "Фонд маркетинга" : "Аналитика"}</h3>
                     {fullBlock === "sizes" && (
                       <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
                         <button onClick={() => onSetOneSize(false)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (!oneSize ? "bg-white text-teal-700 shadow-sm" : "text-neutral-500")}>Размерный ряд</button>
                         <button onClick={() => onSetOneSize(true)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (oneSize ? "bg-white text-teal-700 shadow-sm" : "text-neutral-500")}>One size</button>
-                      </div>
-                    )}
-                    {fullBlock === "promo" && (
-                      <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
-                        <button onClick={() => setPromoView("gantt")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "gantt" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Гант</button>
-                        <button onClick={() => setPromoView("cal")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (promoView === "cal" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>Календарь</button>
                       </div>
                     )}
                     <button onClick={() => setFullBlock(null)} className="ml-auto rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Свернуть"><X size={18} /></button>
@@ -5616,21 +5685,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                   <div className="min-w-0 flex-1 overflow-auto p-5">
 
                     {fullBlock === "promo" && (
-                      <>
-                        <div className="mb-4 flex flex-wrap items-center gap-2">
-                          <div className="rounded-xl border border-neutral-200 px-3 py-1">
-                            <div className="text-[10px] text-neutral-500">Фонд маркетинга</div>
-                            <div className="flex items-baseline gap-0.5"><input value={product.rnp?.budget?.allocated ?? ""} onChange={(e) => onSetRnpBudget(e.target.value)} inputMode="decimal" placeholder="0" className="w-24 bg-transparent text-sm font-bold tabular-nums text-neutral-900 focus:outline-none" /><span className="text-xs text-neutral-400">₽</span></div>
-                          </div>
-                          <div className="rounded-xl border border-neutral-200 px-3 py-1"><div className="text-[10px] text-neutral-500">Затраты</div><div className="text-sm font-bold tabular-nums text-neutral-800">{money(promoBudget.spent)}</div></div>
-                          <div className="rounded-xl border px-3 py-1" style={{ background: promoBudget.ostatok < 0 ? "#fef2f2" : "#f0fdf4", borderColor: promoBudget.ostatok < 0 ? "#fecaca" : "#dcfce7" }}><div className="text-[10px] text-neutral-500">Остаток</div><div className="text-sm font-bold tabular-nums" style={{ color: promoBudget.ostatok < 0 ? "#b91c1c" : "#15803d" }}>{money(promoBudget.ostatok)}</div></div>
-                        </div>
-                        {promoView === "gantt" ? (
-                          <GanttBlock product={product} hiddenTasks={hiddenTasks} startDate={rnpStartDate} days={rnpDays} onSetStartDate={onSetRnpStartDate} onSetDays={onSetRnpDays} onSetCell={onSetRnpCell} onSetEntries={onSetRnpEntries} onSetFill={onSetRnpFill} onSetFlag={onSetRnpFlag} onSetBudget={onSetRnpBudget} onOpenPopup={onOpenPopup} onOpenDB={onOpenDB} wbOrders={wbOrders} wbLoading={wbLoading} wbProgress={wbProgress} onFetchWb={onFetchWb} hideBudget />
-                        ) : (
-                          <PromoCalendar product={product} wbOrders={wbOrders} onOpenDay={(ds) => setPromoDay(ds)} />
-                        )}
-                      </>
+                      <GanttBlock product={product} hiddenTasks={hiddenTasks} onToggleTask={onToggleTask} rnpOrder={rnpOrder} onSetRnpOrder={onSetRnpOrder} startDate={rnpStartDate} days={rnpDays} onSetStartDate={onSetRnpStartDate} onSetDays={onSetRnpDays} onSetCell={onSetRnpCell} onSetEntries={onSetRnpEntries} onSetFill={onSetRnpFill} onSetFlag={onSetRnpFlag} onSetBudget={onSetRnpBudget} onOpenPopup={onOpenPopup} onOpenDB={onOpenDB} wbOrders={wbOrders} wbLoading={wbLoading} wbProgress={wbProgress} onFetchWb={onFetchWb} hideBudget monthNav />
                     )}
 
                     {fullBlock === "mktfund" && (
@@ -6720,7 +6775,6 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Приоритет</span>
               <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-                <button onClick={() => set("priority", null)} className={"rounded-md px-2 py-1 text-xs font-semibold " + (!j.priority ? "bg-white text-neutral-800 shadow-sm" : "text-neutral-400")}>—</button>
                 {Object.keys(PRIORITIES).map((k) => (
                   <button key={k} onClick={() => set("priority", k)} className={"flex-1 rounded-md px-2 py-1 text-xs font-semibold " + (j.priority === k ? "shadow-sm" : "")} style={j.priority === k ? { background: PRIORITIES[k].bg, color: PRIORITIES[k].color } : { color: "#a3a3a3" }}>{PRIORITIES[k].label}</button>
                 ))}
