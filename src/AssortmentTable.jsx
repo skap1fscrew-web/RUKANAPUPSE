@@ -421,6 +421,53 @@ const DEFAULT_STATUSES = [
   { name: "Снят", color: "#a3a3a3" },
 ];
 
+// Производственный цикл заказа: этапы по умолчанию + правила автозадач
+const CYCLE_STAGE_COLORS = ["#6366f1", "#f59e0b", "#0ea5e9", "#8b5cf6", "#10b981", "#ef4444", "#84cc16", "#ec4899"];
+const DEFAULT_CYCLE = {
+  stages: [
+    { id: "form", name: "Формирование заказа", days: 2, task: { enabled: true, text: "Формирование фонда маркетинга по партии «{партия}»", scope: "batch", when: "enter", priority: "med", assignee: null } },
+    { id: "prod", name: "Производство", days: 14, task: { enabled: false, text: "", scope: "batch", when: "complete", priority: null, assignee: null } },
+    { id: "qc", name: "Контроль качества", days: 3, task: { enabled: true, text: "Проверить фото/видео брака по партии «{партия}»", scope: "batch", when: "complete", priority: "high", assignee: null } },
+    { id: "ship", name: "Отправка в РФ", days: 15, task: { enabled: false, text: "", scope: "batch", when: "complete", priority: null, assignee: null } },
+    { id: "accept", name: "Приёмка", days: 3, task: { enabled: true, text: "Сверить приёмку с заказом по партии «{партия}»", scope: "product", when: "complete", priority: "med", assignee: null } },
+  ],
+};
+function normCycle(v) {
+  const src = (v && Array.isArray(v.stages) && v.stages.length) ? v.stages : DEFAULT_CYCLE.stages;
+  const stages = src.filter((s) => s && typeof s === "object").map((s) => {
+    const t = (s.task && typeof s.task === "object") ? s.task : {};
+    return {
+      id: s.id || uid(),
+      name: s.name || "Этап",
+      days: Math.max(0, parseInt(s.days) || 0),
+      task: {
+        enabled: !!t.enabled,
+        text: t.text || "",
+        scope: t.scope === "product" ? "product" : "batch",
+        when: t.when === "complete" ? "complete" : "enter",
+        priority: (t.priority === "high" || t.priority === "med" || t.priority === "low") ? t.priority : null,
+        assignee: t.assignee || null,
+      },
+    };
+  });
+  return { stages: stages.length ? stages : DEFAULT_CYCLE.stages.map((s) => ({ ...s, task: { ...s.task } })) };
+}
+// план дат этапов партии из даты старта и длительностей
+function cycleStageDates(startISO, stages) {
+  const out = {}; if (!startISO) return out;
+  const base = new Date(startISO + "T00:00:00"); if (isNaN(base.getTime())) return out;
+  let acc = 0;
+  (stages || []).forEach((s) => {
+    const d = Math.max(0, parseInt(s.days) || 0);
+    const st = new Date(base); st.setDate(st.getDate() + acc);
+    const en = new Date(base); en.setDate(en.getDate() + acc + Math.max(0, d - 1));
+    const f = (x) => `${String(x.getDate()).padStart(2, "0")}.${String(x.getMonth() + 1).padStart(2, "0")}`;
+    out[s.id] = { start: st, end: en, startStr: f(st), endStr: f(en) };
+    acc += d;
+  });
+  return out;
+}
+
 const DEFAULT_METRICS_BY_GROUP = Object.fromEntries(
   MATRIX_GROUPS.map((g) => [g.id, g.metrics.map((label) => ({ id: uid(), label }))])
 );
@@ -671,6 +718,7 @@ export default function AssortmentTable() {
   const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
   const [strategy, setStrategy] = useState(() => normStrategy(null)); // блок «Стратегия» — карты холстов
   const [duties, setDuties] = useState(() => normDuties(null)); // блок «Обязанности» — области/функции/подфункции/исполнители
+  const [prodCycle, setProdCycle] = useState(() => normCycle(null)); // производственный цикл — этапы и правила автозадач по умолчанию
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
@@ -727,6 +775,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
         if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
+        if (settings.prodCycle && typeof settings.prodCycle === "object") { const nc = normCycle(settings.prodCycle); setProdCycle(nc); syncedRef.current.settings.prodCycle = JSON.stringify(nc); }
         if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
@@ -767,10 +816,42 @@ export default function AssortmentTable() {
     return () => clearTimeout(t);
   }, [products, loaded]);
 
+  // авто-создание задач по правилам этапов производственного цикла
+  useEffect(() => {
+    if (!loaded) return;
+    const cyc = prodCycle; if (!cyc || !Array.isArray(cyc.stages)) return;
+    const ruleById = Object.fromEntries(cyc.stages.map((s) => [s.id, s]));
+    let batchesChanged = false; const newJobs = [];
+    const next = (purchaseBatches || []).map((b) => {
+      const bc = b.cycle;
+      if (!bc || !bc.started || !Array.isArray(bc.stages)) return b;
+      const fired = { ...(bc.fired || {}) }; let localChanged = false;
+      bc.stages.forEach((s, idx) => {
+        const rule = ruleById[s.id]; const t = rule && rule.task;
+        if (!t || !t.enabled || !String(t.text || "").trim()) return;
+        const whenComplete = t.when === "complete";
+        const cond = whenComplete ? !!s.done : bc.stages.slice(0, idx).every((x) => x.done);
+        const key = s.id + ":" + (whenComplete ? "c" : "e");
+        if (cond && !fired[key]) {
+          const title = String(t.text).replace(/\{партия\}/g, b.name || "партия");
+          const base = { date: null, start: null, done: false, labelId: null, priority: t.priority || null, assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
+          if (t.scope === "product") {
+            (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
+          } else newJobs.push({ id: uid(), title, productId: null, ...base });
+          fired[key] = true; localChanged = true;
+        }
+      });
+      if (localChanged) { batchesChanged = true; return { ...b, cycle: { ...bc, fired } }; }
+      return b;
+    });
+    if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
+    if (batchesChanged) setPurchaseBatches(next);
+  }, [purchaseBatches, prodCycle, loaded]);
+
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -813,7 +894,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -845,6 +926,7 @@ export default function AssortmentTable() {
         // начинается шторм эха между вкладками — правки лагают и затираются.
         if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = JSON.stringify(ns); setStrategy(ns); } return; }
         if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = JSON.stringify(nd); setDuties(nd); } return; }
+        if (key === "prodCycle") { if (value && typeof value === "object") { const nc = normCycle(value); syncedRef.current.settings.prodCycle = JSON.stringify(nc); setProdCycle(nc); } return; }
         syncedRef.current.settings[key] = js;
         if (key === "statuses") setStatuses(value);
         else if (key === "warehouses") setWarehouses(value);
@@ -1887,6 +1969,7 @@ export default function AssortmentTable() {
             defaultRates={{ cny: unitConst.cny, usd: unitConst.usd, cargo: unitConst.cargo }}
             onOpenCard={(id) => setCardModal(id)}
             onActiveChange={setPurchActiveId}
+            cycleStages={prodCycle.stages}
           />
         )}
 
@@ -1975,6 +2058,9 @@ export default function AssortmentTable() {
           setOpTypes={setOpTypes}
           subjects={subjects}
           setSubjects={setSubjects}
+          prodCycle={prodCycle}
+          setProdCycle={setProdCycle}
+          taskPeople={duties.people}
           unitConst={unitConst}
           setUnitConst={setUnitConst}
           initialTab={settingsTab}
@@ -2417,7 +2503,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
 const PU_STATUS = { draft: { label: "Черновик", cls: "bg-neutral-100 text-neutral-500" }, paid: { label: "Оплачено", cls: "bg-emerald-50 text-emerald-600" }, transit: { label: "В пути", cls: "bg-amber-50 text-amber-600" }, received: { label: "Получено", cls: "bg-blue-50 text-blue-600" } };
 
 // Блок «Закупки» — партии (как карты в «Стратегии»); внутри партии товары из каталога.
-function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange }) {
+function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [] }) {
   const list = Array.isArray(batches) ? batches : [];
   const [activeId, setActiveId] = useState(list[0]?.id || null);
   const [editingId, setEditingId] = useState(null);
@@ -2427,6 +2513,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const [pq, setPq] = useState("");
   const [stOpen, setStOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const [cycOpen, setCycOpen] = useState(false);
   const [qtyOpen, setQtyOpen] = useState({}); // раскрытые ячейки «Кол-во» по id позиции
   const toggleQty = (iid) => setQtyOpen((o) => ({ ...o, [iid]: !o[iid] }));
   const active = list.find((b) => b.id === activeId) || list[0] || null;
@@ -2437,6 +2524,18 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const renameBatch = (id, name) => onChange(list.map((b) => (b.id === id ? { ...b, name: name.trim() || "Партия" } : b)));
   const removeBatch = (id) => { const rest = list.filter((b) => b.id !== id); onChange(rest); if (id === activeId) setActiveId(rest[0]?.id || null); };
   const patchBatch = (p) => onChange(list.map((b) => (b.id === active.id ? { ...b, ...p } : b)));
+  // производственный цикл партии
+  const cyc = active && active.cycle;
+  const cycStarted = !!(cyc && cyc.started && Array.isArray(cyc.stages));
+  const cycSt = cycStarted ? cyc.stages : [];
+  const curIdx = cycSt.findIndex((s) => !s.done);
+  const curStage = curIdx >= 0 ? cycSt[curIdx] : null;
+  const cycDates = cycStarted ? cycleStageDates(cyc.startDate, cycSt) : {};
+  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const startCycle = () => { patchBatch({ cycle: { started: true, startDate: todayISO(), fired: {}, stages: (cycleStages || []).map((s) => ({ id: s.id, name: s.name, days: Math.max(0, parseInt(s.days) || 0), done: false })) } }); setCycOpen(true); };
+  const patchCyc = (p) => patchBatch({ cycle: { ...(active.cycle || {}), ...p } });
+  const toggleCycStage = (id) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, done: !s.done } : s)) });
+  const setCycDays = (id, v) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, days: Math.max(0, parseInt(v) || 0) } : s)) });
   const addItem = (productId) => { patchBatch({ items: [...(active.items || []), { id: uid(), productId, priceCny: "", qty: "" }] }); setPicker(false); setPq(""); };
   const setItem = (iid, k, v) => patchBatch({ items: active.items.map((it) => (it.id === iid ? { ...it, [k]: v } : it)) });
   const removeItem = (iid) => patchBatch({ items: active.items.filter((it) => it.id !== iid) });
@@ -2512,6 +2611,11 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
             <button onClick={() => setStOpen((o) => !o)} className={"inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold " + stCur.cls}>{stCur.label} <ChevronDown size={12} /></button>
             {stOpen && <><div className="fixed inset-0 z-10" onClick={() => setStOpen(false)} /><div className="absolute left-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">{Object.keys(PU_STATUS).map((k) => <button key={k} onClick={() => { patchBatch({ status: k }); setStOpen(false); }} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50"><span className={"rounded-full px-2 py-0.5 text-[11px] font-bold " + PU_STATUS[k].cls}>{PU_STATUS[k].label}</span></button>)}</div></>}
           </div>
+          <button onClick={() => setCycOpen((o) => !o)} title="Производственный цикл заказа" className={"inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition " + (!cycStarted ? "border-neutral-200 bg-white text-neutral-400 hover:bg-neutral-50" : curStage ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" : "border-emerald-200 bg-emerald-50 text-emerald-700")}>
+            <span className="h-2 w-2 rounded-full" style={{ background: !cycStarted ? "#cbd5e1" : curStage ? "#f59e0b" : "#10b981" }} />
+            {!cycStarted ? "Цикл не запущен" : curStage ? `Этап: ${curStage.name}` : "Цикл завершён"}
+            <ChevronDown size={11} className={"transition " + (cycOpen ? "rotate-180" : "")} />
+          </button>
           <div className="flex flex-wrap items-center gap-3 border-l border-neutral-200 pl-3">{rate("Курс ¥", "cny", "₽")}{rate("Курс $", "usd", "₽")}{rate("Карго", "cargo", "$/кг")}{rate("Комиссия", "commission", "%")}{rate("Страховка", "insurance", "%")}</div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {[["Позиций", rows.length], ["Кол-во", tot.qty.toLocaleString("ru-RU")], ["Вес", (Math.round(tot.wkg * 10) / 10).toLocaleString("ru-RU") + " кг"], ["Сумма ¥", fmtCny(tot.cnySum)], ["Сумма ₽", fmtRub(tot.rubSum)]].map(([k, v]) => (
@@ -2542,6 +2646,43 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
               <span className="text-xs text-neutral-500">Всего оплачено: <b className="text-neutral-800">{fmtRub(paidRub)}</b></span>
               {payments.length > 0 && <span className="text-xs text-neutral-400">Транзакций: {payments.length}</span>}
             </div>
+          </div>
+        )}
+
+        {cycOpen && (
+          <div className="border-b border-neutral-100 bg-neutral-50/40 px-4 py-3">
+            {!cycStarted ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <button onClick={startCycle} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Запустить цикл</button>
+                <span className="text-xs text-neutral-500">Этапы и длительности возьмутся из «Настройки → Произв. цикл». Дальше их можно поправить под этот заказ.</span>
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 flex items-start">
+                  {cycSt.map((s, i) => { const done = s.done; const cur = i === curIdx; const d = cycDates[s.id]; return (
+                    <div key={s.id} className="relative flex-1 text-center">
+                      {i < cycSt.length - 1 && <div className="absolute left-1/2 top-[14px] h-[3px] w-full" style={{ background: done ? "#16a34a" : "#e7e7ec" }} />}
+                      <div className="relative z-10 mx-auto flex h-7 w-7 items-center justify-center rounded-full border-[2.5px] text-[11px] font-bold" style={done ? { background: "#16a34a", borderColor: "#16a34a", color: "#fff" } : cur ? { borderColor: "#f59e0b", color: "#c77d1a", background: "#fff", boxShadow: "0 0 0 4px #fef0d9" } : { borderColor: "#d4d4d8", color: "#b0b0b6", background: "#fff" }}>{done ? <Check size={13} strokeWidth={3} /> : i + 1}</div>
+                      <div className={"mt-1.5 text-[10.5px] font-semibold leading-tight " + (cur ? "text-amber-700" : done ? "text-neutral-600" : "text-neutral-400")}>{s.name}</div>
+                      <div className="text-[9.5px] text-neutral-400">{d ? `${d.startStr} – ${d.endStr}` : ""}</div>
+                    </div>
+                  ); })}
+                </div>
+                <div className="mb-2 flex items-center gap-2 text-xs text-neutral-500">старт цикла:<input type="date" value={cyc.startDate || ""} onChange={(e) => patchCyc({ startDate: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-neutral-600 focus:outline-none" /></div>
+                <div className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-100 bg-white">
+                  {cycSt.map((s, i) => { const done = s.done; const cur = i === curIdx; const d = cycDates[s.id]; const rule = (cycleStages.find((x) => x.id === s.id) || {}).task; return (
+                    <div key={s.id} className={"flex flex-wrap items-center gap-3 px-3 py-2 " + (cur ? "bg-amber-50/50" : "")}>
+                      <button onClick={() => toggleCycStage(s.id)} title={done ? "Снять отметку" : "Отметить пройденным"} className="relative h-[22px] w-[38px] shrink-0 rounded-full transition" style={{ background: done ? "#16a34a" : "#d4d4d8" }}><span className="absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow transition-all" style={{ left: done ? 18 : 2 }} /></button>
+                      <span className="min-w-[150px] text-sm font-semibold text-neutral-800">{s.name}<span className={"ml-2 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase " + (done ? "bg-emerald-50 text-emerald-600" : cur ? "bg-amber-50 text-amber-600" : "bg-neutral-100 text-neutral-400")}>{done ? "Пройден" : cur ? "Текущий" : "Ожидает"}</span></span>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">длит.<input value={s.days} onChange={(e) => setCycDays(s.id, e.target.value)} inputMode="numeric" className="w-12 rounded-md border border-neutral-200 px-1.5 py-1 text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200" />дн.</span>
+                      <span className="text-xs text-neutral-400">план: <b className="text-neutral-600">{d ? `${d.startStr} – ${d.endStr}` : "—"}</b></span>
+                      {rule && rule.enabled && String(rule.text || "").trim() && <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600">→ задача</span>}
+                    </div>
+                  ); })}
+                </div>
+                <div className="mt-2 text-[11px] text-neutral-400">Переключайте тумблер после фактического прохождения этапа — следующий станет текущим, по нему по правилам из «Настроек» создастся задача.</div>
+              </>
+            )}
           </div>
         )}
 
@@ -6916,8 +7057,17 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, opTypes, setOpTypes, subjects, setSubjects, unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
+
+  // --- производственный цикл ---
+  const cycStages = (prodCycle && Array.isArray(prodCycle.stages)) ? prodCycle.stages : [];
+  const setCyc = (stages) => setProdCycle({ stages });
+  const patchCycStage = (id, p) => setCyc(cycStages.map((s) => (s.id === id ? { ...s, ...p } : s)));
+  const patchCycTask = (id, p) => setCyc(cycStages.map((s) => (s.id === id ? { ...s, task: { ...s.task, ...p } } : s)));
+  const addCycStage = () => setCyc([...cycStages, { id: uid(), name: "Новый этап", days: 1, task: { enabled: false, text: "", scope: "batch", when: "enter", priority: null, assignee: null } }]);
+  const removeCycStage = (id) => setCyc(cycStages.filter((s) => s.id !== id));
+  const moveCycStage = (id, dir) => { const i = cycStages.findIndex((s) => s.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= cycStages.length) return; const a = cycStages.slice(); const [x] = a.splice(i, 1); a.splice(j, 0, x); setCyc(a); };
 
   // --- предметы и комиссии ВБ (загрузка таблицей, опора на FBW) ---
   const [subjName, setSubjName] = useState("");
@@ -7028,6 +7178,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
           <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
           <TabBtn id="labels">Метки</TabBtn>
           <TabBtn id="tags">Теги</TabBtn>
+          <TabBtn id="cycle">Произв. цикл</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
           <TabBtn id="wbapi">API ВБ</TabBtn>
@@ -7198,6 +7349,54 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                   {SWATCHES.map((c) => (<button key={c} onClick={() => setTgColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: tgColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />))}
                 </div>
               </div>
+            </>
+          )}
+
+          {tab === "cycle" && (
+            <>
+              <p className="mb-3 text-xs text-neutral-500">Этапы и длительности по умолчанию применяются к новым заказам. Для каждого этапа можно включить автозадачу в блоке «Задачи».</p>
+              <div className="space-y-3">
+                {cycStages.map((s, i) => (
+                  <div key={s.id} className="rounded-xl border border-neutral-200 p-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex flex-col">
+                        <button onClick={() => moveCycStage(s.id, -1)} disabled={i === 0} className="text-neutral-300 hover:text-neutral-600 disabled:opacity-30"><ChevronUp size={13} /></button>
+                        <button onClick={() => moveCycStage(s.id, 1)} disabled={i === cycStages.length - 1} className="text-neutral-300 hover:text-neutral-600 disabled:opacity-30"><ChevronDown size={13} /></button>
+                      </div>
+                      <input value={s.name} onChange={(e) => patchCycStage(s.id, { name: e.target.value })} className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-medium focus:border-neutral-400 focus:outline-none" />
+                      <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">по умолч.<input value={s.days} onChange={(e) => patchCycStage(s.id, { days: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" className="w-14 rounded-lg border border-neutral-200 px-2 py-1 text-center text-sm font-semibold focus:border-neutral-400 focus:outline-none" />дн.</span>
+                      <button onClick={() => removeCycStage(s.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить этап"><Trash2 size={14} /></button>
+                    </div>
+                    <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-sm text-neutral-700">
+                      <button onClick={() => patchCycTask(s.id, { enabled: !s.task.enabled })} className="relative h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: s.task.enabled ? "#16a34a" : "#d4d4d8" }}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: s.task.enabled ? 16 : 2 }} /></button>
+                      создавать задачу при этом этапе
+                    </label>
+                    {s.task.enabled && (
+                      <div className="mt-2.5 space-y-2 rounded-lg bg-neutral-50 p-2.5">
+                        <div>
+                          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Текст задачи · {"{партия}"} подставит имя партии</div>
+                          <input value={s.task.text} onChange={(e) => patchCycTask(s.id, { text: e.target.value })} placeholder="Напр.: Формирование фонда маркетинга по партии «{партия}»" className="w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-neutral-600">
+                          <label className="inline-flex items-center gap-1.5">когда:
+                            <select value={s.task.when} onChange={(e) => patchCycTask(s.id, { when: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="enter">при входе в этап</option><option value="complete">по завершении этапа</option></select>
+                          </label>
+                          <label className="inline-flex items-center gap-1.5">для:
+                            <select value={s.task.scope} onChange={(e) => patchCycTask(s.id, { scope: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="batch">одна на партию</option><option value="product">по задаче на каждый товар</option></select>
+                          </label>
+                          <label className="inline-flex items-center gap-1.5">приоритет:
+                            <select value={s.task.priority || ""} onChange={(e) => patchCycTask(s.id, { priority: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{Object.keys(PRIORITIES).map((k) => <option key={k} value={k}>{PRIORITIES[k].label}</option>)}</select>
+                          </label>
+                          <label className="inline-flex items-center gap-1.5">исполнитель:
+                            <select value={s.task.assignee || ""} onChange={(e) => patchCycTask(s.id, { assignee: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{(taskPeople || []).map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}</select>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button onClick={addCycStage} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Добавить этап</button>
             </>
           )}
 
