@@ -581,6 +581,17 @@ function fileToThumb(file, max = 240) {
     img.src = url;
   });
 }
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
+}
+function humanSize(n) {
+  if (!n && n !== 0) return "";
+  if (n < 1024) return n + " Б";
+  if (n < 1024 * 1024) return Math.round(n / 1024) + " КБ";
+  return (Math.round((n / 1024 / 1024) * 10) / 10) + " МБ";
+}
+const FILE_BADGE_COLORS = { PDF: "#ef4444", DOC: "#2563eb", DOCX: "#2563eb", XLS: "#16a34a", XLSX: "#16a34a", CSV: "#16a34a", PPT: "#ea580c", PPTX: "#ea580c", ZIP: "#a16207", RAR: "#a16207", TXT: "#737373" };
+function fileExt(name) { const e = (String(name || "").split(".").pop() || "").toUpperCase(); return e && e.length <= 4 ? e : "ФАЙЛ"; }
 
 /* ----------------------------------------------------------------------------
    Генератор .xlsx без зависимостей (store-zip + OOXML + встроенные картинки)
@@ -861,7 +872,7 @@ export default function AssortmentTable() {
         if (cond && !fired[key]) {
           const title = String(t.text).replace(/\{партия\}/g, b.name || "партия");
           const dd = t.hasDate ? stageTaskDates(bc, s.id, t.durDays) : { start: null, date: null };
-          const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: t.priority || null, assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
+          const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: t.priority || "low", assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
           if (t.scope === "product") {
             (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
           } else newJobs.push({ id: uid(), title, productId: null, ...base });
@@ -882,7 +893,7 @@ export default function AssortmentTable() {
     if (!t || !t.enabled || !String(t.text || "").trim()) { setToast({ text: "Для этого этапа не настроена автозадача" }); return; }
     const title = String(t.text).replace(/\{партия\}/g, b.name || "партия");
     const dd = t.hasDate ? stageTaskDates(b.cycle, stageId, t.durDays) : { start: null, date: null };
-    const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: t.priority || null, assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
+    const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: t.priority || "low", assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
     const newJobs = [];
     if (t.scope === "product") (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
     else newJobs.push({ id: uid(), title, productId: null, ...base });
@@ -2029,7 +2040,7 @@ export default function AssortmentTable() {
             jobs={jobs}
             people={duties.people}
             onOpenJob={(job) => setJobEditor({ ...job })}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
           />
         )}
 
@@ -2046,7 +2057,7 @@ export default function AssortmentTable() {
             opDone={opDone}
             onToggleDone={toggleOpDone}
             onEditOp={(op) => setJobEditor({ id: op.id, type: "op", title: op.name, recur: op.recur, assignee: op.assignee || null, tags: [], checklist: [], note: "", date: null, start: null, stage: "wait", done: false })}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: null, assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
         )}
@@ -2058,7 +2069,7 @@ export default function AssortmentTable() {
             onCreateTask={(payload) => {
               const p = payload || {};
               const id = uid();
-              const job = { id, title: (p.title || "Задача").slice(0, 200), date: p.date || null, start: null, done: false, labelId: null, productId: null, priority: null, tags: [], stage: "wait", note: p.note || "", checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
+              const job = { id, title: (p.title || "Задача").slice(0, 200), date: p.date || null, start: null, done: false, labelId: null, productId: null, priority: "low", tags: [], stage: "wait", note: p.note || "", checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
               upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
               return id;
             }}
@@ -3555,7 +3566,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
     const fillBg = fills[`${task.id}:${d.key}`];
     const baseBg = fillBg || (d.weekend ? "#fafafa" : "#fff");
     const isToday = d.key === today;
-    const base = { width: DAY_W, minWidth: DAY_W, position: "relative", borderTop: "1px solid #f5f5f5", borderLeft: isToday ? "1px solid #ea580c" : "1px solid #f5f5f5", borderRight: isToday ? "1px solid #ea580c" : "none", background: baseBg };
+    const base = { ...(monthNav ? { overflow: "hidden" } : { width: DAY_W, minWidth: DAY_W }), position: "relative", borderTop: "1px solid #f5f5f5", borderLeft: isToday ? "1px solid #ea580c" : "1px solid #f5f5f5", borderRight: isToday ? "1px solid #ea580c" : "none", background: baseBg };
 
     if (task.kind === "wbOrders") {
       const code = product.code || product.wb || "";
@@ -3615,7 +3626,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
       }
       // cost sub-row (only for text-top tasks now)
       return (
-        <td key={d.key} style={{ width: DAY_W, minWidth: DAY_W, borderTop: "1px solid #f5f5f5", borderLeft: "1px solid #f5f5f5", background: "#fff" }}>
+        <td key={d.key} style={{ ...(monthNav ? { overflow: "hidden" } : { width: DAY_W, minWidth: DAY_W }), borderTop: "1px solid #f5f5f5", borderLeft: "1px solid #f5f5f5", background: "#fff" }}>
           <input value={cells[`${task.id}:cost:${d.key}`] ?? ""} onChange={(e) => onSetCell(`${task.id}:cost:${d.key}`, e.target.value)} inputMode="decimal" placeholder="₽" className="w-full bg-transparent px-1 py-0.5 text-center text-xs font-medium text-neutral-600 placeholder:text-neutral-300 focus:bg-white focus:outline-none" style={{ fontVariantNumeric: "tabular-nums" }} />
         </td>
       );
@@ -3726,12 +3737,12 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
       )}
 
       <div style={{ overflowX: "auto", paddingBottom: 12 }}>
-        <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+        <table style={monthNav ? { borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width: "100%", minWidth: LBL_W + dayList.length * 22 } : { borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr>
               <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5" }}></th>
               {dayList.map((d) => (
-                <th key={d.key} style={{ width: DAY_W, minWidth: DAY_W, background: d.weekend ? "#f5f5f5" : "#fafafa", borderLeft: d.key === today ? "1px solid #ea580c" : "1px solid #e5e5e5", borderRight: d.key === today ? "1px solid #ea580c" : "none", borderTop: d.key === today ? "1px solid #ea580c" : "none" }} className="px-0.5 py-1 text-center">
+                <th key={d.key} style={{ ...(monthNav ? {} : { width: DAY_W, minWidth: DAY_W }), background: d.weekend ? "#f5f5f5" : "#fafafa", borderLeft: d.key === today ? "1px solid #ea580c" : "1px solid #e5e5e5", borderRight: d.key === today ? "1px solid #ea580c" : "none", borderTop: d.key === today ? "1px solid #ea580c" : "none" }} className="px-0.5 py-1 text-center">
                   {!monthNav && d.firstOfMonth && <div className="font-bold text-orange-600" style={{ fontSize: 9 }}>{MONTHS[d.month]} {d.key.slice(2, 4)}</div>}
                   <div className="text-xs font-semibold text-neutral-600">{String(d.day).padStart(2, "0")}</div>
                   <div className="text-neutral-400" style={{ fontSize: 9 }}>{d.wd}</div>
@@ -6653,6 +6664,33 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   const setCheckText = (id, text) => setCl(checklist.map((c) => (c.id === id ? { ...c, text } : c)));
   const removeCheck = (id) => setCl(checklist.filter((c) => c.id !== id));
   const cdone = checklist.filter((c) => c.done).length;
+  // вложения (картинки сжимаются до превью, прочие файлы — data URL; лимит 10 МБ)
+  const files = Array.isArray(j.files) ? j.files : [];
+  const fileInputRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [fileMsg, setFileMsg] = useState("");
+  const MAX_FILE = 10 * 1024 * 1024;
+  const addFiles = async (fileList) => {
+    const arr = [...(fileList || [])];
+    const added = []; let skipped = 0;
+    for (const f of arr) {
+      if (f.size > MAX_FILE) { skipped++; continue; }
+      const isImg = /^image\//.test(f.type);
+      try {
+        const dataUrl = isImg ? await fileToThumb(f, 1600) : await fileToDataURL(f);
+        added.push({ id: uid(), name: f.name, type: f.type || "", size: f.size, isImage: isImg, dataUrl });
+      } catch {}
+    }
+    if (added.length) set("files", [...files, ...added]);
+    setFileMsg(skipped ? `Пропущено ${skipped} файл(а) больше 10 МБ` : "");
+  };
+  const removeFile = (id) => set("files", files.filter((x) => x.id !== id));
+  const openFile = (f) => {
+    try {
+      if (f.isImage) { const w = window.open(); if (w) w.document.write(`<img src="${f.dataUrl}" style="max-width:100%">`); }
+      else { const a = document.createElement("a"); a.href = f.dataUrl; a.download = f.name || "file"; a.click(); }
+    } catch {}
+  };
   const datesOn = !!(j.start || j.date);
   const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
   return (
@@ -6726,6 +6764,32 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
                 ))}
               </div>
               <button onClick={addCheck} className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> подзадача</button>
+            </div>
+
+            {/* Вложения */}
+            <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}>
+              <div className={fieldL + " mb-2"}>Вложения</div>
+              <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+              <div className="flex flex-wrap gap-2.5">
+                {files.map((f) => (f.isImage ? (
+                  <div key={f.id} className="group relative h-[84px] w-[84px] overflow-hidden rounded-xl border border-neutral-200">
+                    <button onClick={() => openFile(f)} className="h-full w-full bg-neutral-100 bg-cover bg-center" style={{ backgroundImage: `url(${f.dataUrl})` }} title="Открыть" />
+                    <button onClick={() => removeFile(f.id)} className="absolute right-1 top-1 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75" title="Удалить"><X size={11} /></button>
+                  </div>
+                ) : (
+                  <div key={f.id} className="group relative flex w-[180px] items-center gap-2.5 rounded-xl border border-neutral-200 px-2.5 py-2">
+                    <button onClick={() => openFile(f)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left" title="Скачать">
+                      <span className="flex h-10 w-[34px] shrink-0 items-center justify-center rounded-md text-[9px] font-extrabold text-white" style={{ background: FILE_BADGE_COLORS[fileExt(f.name)] || "#737373" }}>{fileExt(f.name)}</span>
+                      <span className="min-w-0"><span className="block truncate text-[12.5px] font-semibold text-neutral-700">{f.name}</span><span className="block text-[11px] text-neutral-400">{humanSize(f.size)}</span></span>
+                    </button>
+                    <button onClick={() => removeFile(f.id)} className="shrink-0 text-neutral-300 hover:text-red-500" title="Удалить"><X size={14} /></button>
+                  </div>
+                )))}
+                <button onClick={() => fileInputRef.current?.click()} className="flex h-[84px] w-[84px] flex-col items-center justify-center gap-1 rounded-xl border-[1.5px] border-dashed border-neutral-300 text-[11px] font-semibold text-neutral-400 transition hover:border-cyan-400 hover:text-cyan-700"><Plus size={18} /> Файл</button>
+              </div>
+              <div className={"mt-2 rounded-xl border-[1.5px] border-dashed px-3 py-2 text-center text-[12px] transition " + (dragOver ? "border-cyan-400 bg-cyan-50/50 text-cyan-700" : "border-neutral-200 text-neutral-400")}>
+                {fileMsg ? <span className="text-amber-600">{fileMsg}</span> : "Перетащите сюда файлы или нажмите «Файл» · картинки, PDF, документы · до 10 МБ"}
+              </div>
             </div>
           </div>
 
