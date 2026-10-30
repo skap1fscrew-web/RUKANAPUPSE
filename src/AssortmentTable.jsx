@@ -3732,7 +3732,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
               <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5" }}></th>
               {dayList.map((d) => (
                 <th key={d.key} style={{ width: DAY_W, minWidth: DAY_W, background: d.weekend ? "#f5f5f5" : "#fafafa", borderLeft: d.key === today ? "1px solid #ea580c" : "1px solid #e5e5e5", borderRight: d.key === today ? "1px solid #ea580c" : "none", borderTop: d.key === today ? "1px solid #ea580c" : "none" }} className="px-0.5 py-1 text-center">
-                  {d.firstOfMonth && <div className="font-bold text-orange-600" style={{ fontSize: 9 }}>{MONTHS[d.month]} {d.key.slice(2, 4)}</div>}
+                  {!monthNav && d.firstOfMonth && <div className="font-bold text-orange-600" style={{ fontSize: 9 }}>{MONTHS[d.month]} {d.key.slice(2, 4)}</div>}
                   <div className="text-xs font-semibold text-neutral-600">{String(d.day).padStart(2, "0")}</div>
                   <div className="text-neutral-400" style={{ fontSize: 9 }}>{d.wd}</div>
                 </th>
