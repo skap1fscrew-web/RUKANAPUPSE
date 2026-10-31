@@ -3608,7 +3608,7 @@ function CalendarBlock({ product, productList = [], onSetEntry, onSetStart, onSe
    Блок «РНП» — диаграмма Ганта (задачи × дни) + Фонд маркетинга. Один на товар.
 ---------------------------------------------------------------------------- */
 
-function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onToggleTask, rnpOrder = [], onSetRnpOrder, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, wbProgress, onFetchWb, hideBudget = false, monthNav = false }) {
+function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate, onSetDays, onToggleTask, rnpOrder = [], onSetRnpOrder, onSetCell, onSetEntries, onSetFill, onSetFlag, onSetBudget, onSetSaleStart, onOpenPopup, onOpenDB, wbOrders = {}, wbLoading, wbProgress, onFetchWb, hideBudget = false, monthNav = false }) {
   const [fillMode, setFillMode] = useState(false);
   const [fillColor, setFillColor] = useState(FILL_COLORS[0]);
   const [bd, setBd] = useState(null); // позиция окна разбивки затрат
@@ -3646,6 +3646,11 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
   const monthFirstISO = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}-01`;
   const daysInMo = new Date(ym.y, ym.m + 1, 0).getDate();
   const dayList = monthNav ? buildDays(monthFirstISO, daysInMo) : buildDays(startDate, days);
+  // старт продаж = «точка входа» логистического календаря товара
+  const SALE_CLR = "#7c3aed";
+  const saleStart = (product.calendar && product.calendar.entry) || "";
+  const saleInView = !!saleStart && dayList.some((d) => d.key === saleStart);
+  const saleDM = saleStart ? `${saleStart.slice(8, 10)}.${saleStart.slice(5, 7)}` : "";
 
   const LBL_W = 210, TOT_W = 62, SHARE_W = 56, DAY_W = 66;
   const sticky = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
@@ -3693,7 +3698,8 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
     const fillBg = fills[`${task.id}:${d.key}`];
     const baseBg = fillBg || (d.weekend ? "#fafafa" : "#fff");
     const isToday = d.key === today;
-    const base = { ...(monthNav ? { overflow: "hidden" } : { width: DAY_W, minWidth: DAY_W }), position: "relative", borderTop: "1px solid #f5f5f5", borderLeft: isToday ? "1px solid #ea580c" : "1px solid #f5f5f5", borderRight: isToday ? "1px solid #ea580c" : "none", background: baseBg };
+    const isSale = d.key === saleStart;
+    const base = { ...(monthNav ? { overflow: "hidden" } : { width: DAY_W, minWidth: DAY_W }), position: "relative", borderTop: "1px solid #f5f5f5", borderLeft: isToday ? "1px solid #ea580c" : (isSale ? `2px dashed ${SALE_CLR}` : "1px solid #f5f5f5"), borderRight: isToday ? "1px solid #ea580c" : "none", background: baseBg };
 
     if (task.kind === "wbOrders") {
       const code = product.code || product.wb || "";
@@ -3753,7 +3759,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
       }
       // cost sub-row (only for text-top tasks now)
       return (
-        <td key={d.key} style={{ ...(monthNav ? { overflow: "hidden" } : { width: DAY_W, minWidth: DAY_W }), borderTop: "1px solid #f5f5f5", borderLeft: "1px solid #f5f5f5", background: "#fff" }}>
+        <td key={d.key} style={{ ...(monthNav ? { overflow: "hidden" } : { width: DAY_W, minWidth: DAY_W }), borderTop: "1px solid #f5f5f5", borderLeft: d.key === saleStart ? `2px dashed ${SALE_CLR}` : "1px solid #f5f5f5", background: "#fff" }}>
           <input value={cells[`${task.id}:cost:${d.key}`] ?? ""} onChange={(e) => onSetCell(`${task.id}:cost:${d.key}`, e.target.value)} inputMode="decimal" placeholder="₽" className="w-full bg-transparent px-1 py-0.5 text-center text-xs font-medium text-neutral-600 placeholder:text-neutral-300 focus:bg-white focus:outline-none" style={{ fontVariantNumeric: "tabular-nums" }} />
         </td>
       );
@@ -3801,6 +3807,11 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
           <button onClick={nextMo} className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} /></button>
           <h3 className="ml-1 text-sm font-semibold capitalize text-neutral-900">{MONTHS_FULL[ym.m]} {ym.y}</h3>
           <button onClick={goThisMo} className="ml-1 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">Сегодня</button>
+          <label className="ml-1 inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50/60 px-2 py-1 text-xs font-medium text-violet-700" title="Отмечается полоской на ганте (единое поле со «старт продаж / точка входа»)">
+            <Flag size={12} className="text-violet-500" /> Старт продаж
+            <input type="date" value={saleStart} onChange={(e) => onSetSaleStart && onSetSaleStart(e.target.value)} className="rounded-md border border-violet-200 bg-white px-1.5 py-0.5 text-xs text-violet-700 focus:outline-none" />
+            {saleStart && <button onClick={() => onSetSaleStart && onSetSaleStart("")} className="rounded p-0.5 text-violet-300 hover:bg-violet-100 hover:text-violet-600" title="Убрать"><X size={12} /></button>}
+          </label>
           <div className="relative ml-auto">
             <button onClick={() => setRowsOpen((o) => !o)} className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (rowsOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
               <Settings2 size={14} className={rowsOpen ? "text-white" : "text-neutral-400"} /> Строки
@@ -3863,18 +3874,22 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
       </div>
       )}
 
-      <div style={{ overflowX: "auto", paddingBottom: 12 }}>
+      <div style={{ overflowX: "auto", paddingBottom: 12, paddingTop: saleInView ? 22 : 0 }}>
         <table style={monthNav ? { borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width: "100%", minWidth: LBL_W + dayList.length * 22 } : { borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr>
               <th style={{ ...sticky(0, LBL_W, "#fafafa", 4), borderTopLeftRadius: 8, borderBottom: "1px solid #e5e5e5" }}></th>
-              {dayList.map((d) => (
-                <th key={d.key} style={{ ...(monthNav ? {} : { width: DAY_W, minWidth: DAY_W }), background: d.weekend ? "#f5f5f5" : "#fafafa", borderLeft: d.key === today ? "1px solid #ea580c" : "1px solid #e5e5e5", borderRight: d.key === today ? "1px solid #ea580c" : "none", borderTop: d.key === today ? "1px solid #ea580c" : "none" }} className="px-0.5 py-1 text-center">
+              {dayList.map((d) => { const isSale = d.key === saleStart; return (
+                <th key={d.key} style={{ ...(monthNav ? {} : { width: DAY_W, minWidth: DAY_W }), position: "relative", background: d.weekend ? "#f5f5f5" : "#fafafa", borderLeft: d.key === today ? "1px solid #ea580c" : (isSale ? `2px dashed ${SALE_CLR}` : "1px solid #e5e5e5"), borderRight: d.key === today ? "1px solid #ea580c" : "none", borderTop: d.key === today ? "1px solid #ea580c" : "none" }} className="px-0.5 py-1 text-center">
+                  {isSale && (<>
+                    <span style={{ position: "absolute", left: -1, top: -20, transform: "translateX(-50%)", whiteSpace: "nowrap", background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", fontSize: 9.5, fontWeight: 800, borderRadius: 6, padding: "2px 7px", zIndex: 6, pointerEvents: "none" }}>Старт продаж {saleDM}</span>
+                    <span style={{ position: "absolute", left: -1, top: -1, transform: "translateX(-50%)", color: SALE_CLR, fontSize: 11, lineHeight: 1, zIndex: 5, pointerEvents: "none" }}>▼</span>
+                  </>)}
                   {!monthNav && d.firstOfMonth && <div className="font-bold text-orange-600" style={{ fontSize: 9 }}>{MONTHS[d.month]} {d.key.slice(2, 4)}</div>}
                   <div className="text-xs font-semibold text-neutral-600">{String(d.day).padStart(2, "0")}</div>
                   <div className="text-neutral-400" style={{ fontSize: 9 }}>{d.wd}</div>
                 </th>
-              ))}
+              ); })}
             </tr>
           </thead>
           <tbody>
@@ -5780,7 +5795,7 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                   <div className="min-w-0 flex-1 overflow-auto p-5">
 
                     {fullBlock === "promo" && (
-                      <GanttBlock product={product} hiddenTasks={hiddenTasks} onToggleTask={onToggleTask} rnpOrder={rnpOrder} onSetRnpOrder={onSetRnpOrder} startDate={rnpStartDate} days={rnpDays} onSetStartDate={onSetRnpStartDate} onSetDays={onSetRnpDays} onSetCell={onSetRnpCell} onSetEntries={onSetRnpEntries} onSetFill={onSetRnpFill} onSetFlag={onSetRnpFlag} onSetBudget={onSetRnpBudget} onOpenPopup={onOpenPopup} onOpenDB={onOpenDB} wbOrders={wbOrders} wbLoading={wbLoading} wbProgress={wbProgress} onFetchWb={onFetchWb} hideBudget monthNav />
+                      <GanttBlock product={product} hiddenTasks={hiddenTasks} onToggleTask={onToggleTask} rnpOrder={rnpOrder} onSetRnpOrder={onSetRnpOrder} startDate={rnpStartDate} days={rnpDays} onSetStartDate={onSetRnpStartDate} onSetDays={onSetRnpDays} onSetCell={onSetRnpCell} onSetEntries={onSetRnpEntries} onSetFill={onSetRnpFill} onSetFlag={onSetRnpFlag} onSetBudget={onSetRnpBudget} onSetSaleStart={onCalEntry} onOpenPopup={onOpenPopup} onOpenDB={onOpenDB} wbOrders={wbOrders} wbLoading={wbLoading} wbProgress={wbProgress} onFetchWb={onFetchWb} hideBudget monthNav />
                     )}
 
                     {fullBlock === "mktfund" && (
