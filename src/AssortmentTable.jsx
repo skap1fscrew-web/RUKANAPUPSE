@@ -192,6 +192,18 @@ const RNP_TASKS = [
 ];
 const RNP_COST_TASKS = RNP_TASKS.filter((t) => t.cost);
 const RNP_COLORS = { orders: "#16a34a", internal: "#2563eb", vykupy: "#16a34a", bloggers: "#db2777", razdachi: "#d97706", stars: "#7c3aed", wibes: "#0891b2", promo: "#ea580c", ab: "#64748b" };
+// дашборд «Контент» — чек-лист готовности карточки
+const CONTENT_ITEMS = [
+  { id: "main", label: "Главный слайд" },
+  { id: "sizegrid", label: "Размерная сетка" },
+  { id: "extra", label: "Доп. слайды" },
+  { id: "desc", label: "Описание" },
+  { id: "specs", label: "Характеристики" },
+  { id: "rich", label: "Рич-контент" },
+  { id: "variants", label: "Варианты главной" },
+  { id: "video", label: "Видео" },
+  { id: "bundle", label: "Связка" },
+];
 
 // Сумма затрат по строке РНП за весь период (для превью «Фонд / Затраты / Остаток»)
 function rnpTaskTotal(task, product) {
@@ -5233,6 +5245,12 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
   const mktPct = mktTotalFund > 0 ? Math.round(mktTotalSpent / mktTotalFund * 100) : 0;
   const setMktField = (patch) => { if (mktCur && onSetBatchItemFields) onSetBatchItemFields(mktCur.id, patch); };
 
+  // ===== Контент (чек-лист готовности) =====
+  const contentDone = (product.content && typeof product.content === "object") ? product.content : {};
+  const contentCount = CONTENT_ITEMS.filter((i) => contentDone[i.id]).length;
+  const contentPct = Math.round((contentCount / CONTENT_ITEMS.length) * 100);
+  const toggleContent = (id) => onSetField && onSetField("content", { ...contentDone, [id]: !contentDone[id] });
+
   // id задач по умолчанию — такие задачи нельзя удалять из карточки
   const defaultIds = new Set((defaultTasks || []).map((t) => t.id));
   // метка задачи по умолчанию (чтобы подтягивать её в карточку, даже если
@@ -5619,15 +5637,15 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
 
             {/* Блоки-плитки: Продвижение / Закупка / Фонд маркетинга / Аналитика / Размеры (раскрываются на весь экран) */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <button onClick={() => setFullBlock("promo")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-orange-300 hover:shadow-sm">
+              <button onClick={() => setFullBlock("promo")} className="group relative flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-orange-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-orange-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-400" /> РНП</div>
                 <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{(RNP_TASKS || []).filter((t) => !hiddenTasks[t.id]).length}<span className="ml-1 text-base font-semibold text-neutral-400">строк</span></div>
                 <div className="text-[11px] text-neutral-400">план продвижения</div>
               </button>
 
-              <div className="group relative">
-                <button onClick={() => setFullBlock("purchase")} className="block w-full rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-sky-300 hover:shadow-sm">
+              <div className="group relative h-full">
+                <button onClick={() => setFullBlock("purchase")} className="flex h-full w-full flex-col rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-sky-300 hover:shadow-sm">
                   <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-sky-500" />
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-sky-400" /> Закупка</div>
                   <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{isNaN(puRubPerUnit) ? "—" : money(puRubPerUnit)}</div>
@@ -5638,7 +5656,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                 )}
               </div>
 
-              <button onClick={() => setFullBlock("mktfund")} className="group relative rounded-2xl border border-pink-200 bg-gradient-to-b from-white to-pink-50/40 p-4 text-left transition hover:border-pink-300 hover:shadow-sm">
+              <button onClick={() => setFullBlock("mktfund")} className="group relative flex h-full flex-col rounded-2xl border border-pink-200 bg-gradient-to-b from-white to-pink-50/40 p-4 text-left transition hover:border-pink-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-pink-200 transition group-hover:text-pink-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-pink-500"><Megaphone size={12} /> Фонд маркетинга</div>
                 {mktBatches.length === 0 ? (
@@ -5653,7 +5671,16 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                 )}
               </button>
 
-              <button onClick={() => setFullBlock("analytics")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-violet-300 hover:shadow-sm">
+              <button onClick={() => setFullBlock("content")} className="group relative flex h-full flex-col rounded-2xl border border-emerald-200 bg-gradient-to-b from-white to-emerald-50/40 p-4 text-left transition hover:border-emerald-300 hover:shadow-sm">
+                <Maximize2 size={13} className="absolute right-3 top-3 text-emerald-200 transition group-hover:text-emerald-500" />
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-600"><ImagePlus size={12} /> Контент</div>
+                <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{contentPct}<span className="text-base font-semibold text-neutral-400">%</span></div>
+                <div className="text-[11px] text-neutral-400">заполнено</div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full" style={{ width: `${contentPct}%`, background: "linear-gradient(90deg,#34d399,#16a34a)" }} /></div>
+                <div className="mt-1.5 flex justify-between text-[10px]"><span className="font-semibold text-emerald-600">{contentCount} из {CONTENT_ITEMS.length}</span><span className="text-neutral-400">пунктов</span></div>
+              </button>
+
+              <button onClick={() => setFullBlock("analytics")} className="group relative flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-violet-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-violet-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-violet-400" /> Аналитика</div>
                 <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{aScore.rated > 0 ? <>{aScore.score10}<span className="text-base font-semibold text-neutral-400">/10</span></> : "—"}</div>
@@ -5661,7 +5688,7 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                 <div className="mt-2 text-[11px] text-neutral-400">{aScore.rated > 0 ? `оценено: ${aScore.rated}/${aScore.total}` : competitors.length > 0 ? `конкурентов: ${competitors.length}` : "появится после анализа"}</div>
               </button>
 
-              <button onClick={() => setFullBlock("sizes")} className="group relative rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-teal-300 hover:shadow-sm">
+              <button onClick={() => setFullBlock("sizes")} className="group relative flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-teal-300 hover:shadow-sm">
                 <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-teal-500" />
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-teal-500" /> Размеры</div>
                 {oneSize ? (
@@ -5683,9 +5710,9 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
             {/* Полноэкранный просмотр выбранного блока */}
             {fullBlock && (
               <div className="fixed inset-0 z-[70] flex items-start justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={() => setFullBlock(null)}>
-                <div className={"flex flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "promo" ? "h-[96vh] max-h-[96vh] w-full max-w-[98vw]" : "max-h-[94vh] w-full " + (fullBlock === "analytics" ? "max-w-6xl" : fullBlock === "mktfund" ? "max-w-2xl" : "max-w-5xl"))} onClick={(e) => e.stopPropagation()}>
+                <div className={"flex flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "promo" ? "h-[96vh] max-h-[96vh] w-full max-w-[98vw]" : "max-h-[94vh] w-full " + (fullBlock === "analytics" ? "max-w-6xl" : (fullBlock === "mktfund" || fullBlock === "content") ? "max-w-2xl" : "max-w-5xl"))} onClick={(e) => e.stopPropagation()}>
                   <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
-                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "РНП" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : fullBlock === "mktfund" ? "Фонд маркетинга" : "Аналитика"}</h3>
+                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "РНП" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : fullBlock === "mktfund" ? "Фонд маркетинга" : fullBlock === "content" ? "Контент" : "Аналитика"}</h3>
                     {fullBlock === "sizes" && (
                       <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
                         <button onClick={() => onSetOneSize(false)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (!oneSize ? "bg-white text-teal-700 shadow-sm" : "text-neutral-500")}>Размерный ряд</button>
@@ -5806,6 +5833,26 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <div className="space-y-2">{puField("Цена в юанях за ед.", pu.priceCny, (v) => setPu("priceCny", v), "¥")}{puField("Вес, г", pu.weightG, (v) => setPu("weightG", v), "г")}{puField("Кол-во", pu.qty, (v) => setPu("qty", v), "шт")}</div>
                           <div className="flex flex-col justify-center gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">{resRow("Цена в руб за ед.", money(puRubPerUnit))}{resRow("Цена партии в рублях", money(puLotRub))}{resRow("Цена партии в юанях", yuan(puLotCny))}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {fullBlock === "content" && (
+                      <>
+                        <div className="mb-5 flex items-center gap-3">
+                          <div className="text-3xl font-bold tabular-nums text-emerald-600">{contentPct}%</div>
+                          <div className="flex-1">
+                            <div className="h-2.5 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: `${contentPct}%`, background: "linear-gradient(90deg,#34d399,#16a34a)" }} /></div>
+                            <div className="mt-1.5 text-[12px] text-neutral-400">Готово {contentCount} из {CONTENT_ITEMS.length}</div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {CONTENT_ITEMS.map((it) => { const on = !!contentDone[it.id]; return (
+                            <button key={it.id} onClick={() => toggleContent(it.id)} className={"flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm transition " + (on ? "border-emerald-200 bg-emerald-50/50 text-neutral-500" : "border-neutral-200 text-neutral-700 hover:border-emerald-200 hover:bg-emerald-50/40")}>
+                              <span className={"flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 " + (on ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-300")}>{on && <Check size={13} strokeWidth={3} />}</span>
+                              <span className={on ? "line-through" : ""}>{it.label}</span>
+                            </button>
+                          ); })}
                         </div>
                       </>
                     )}
@@ -6709,13 +6756,6 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
             ); })}
           </div>
           <span className="ml-auto flex items-center gap-1">
-            {j.createdAt && <span className="mr-1 hidden text-[11.5px] text-neutral-400 sm:inline">создано {`${j.createdAt.slice(8, 10)}.${j.createdAt.slice(5, 7)}.${j.createdAt.slice(0, 4)}`}</span>}
-            {curType !== "op" && (
-              <button onClick={() => setJ((o) => applyStage(o, stageOf(o) === "done" ? "wait" : "done"))} title={stageOf(j) === "done" ? "Снять «Готово»" : "Отметить выполненной"} className={"rounded-md p-1 transition " + (stageOf(j) === "done" ? "bg-emerald-50 text-emerald-600" : "text-neutral-400 hover:bg-emerald-50 hover:text-emerald-600")}><Check size={18} strokeWidth={2.4} /></button>
-            )}
-            {!job._new && curType !== "op" && onDuplicate && (
-              <button onClick={() => onDuplicate(j)} title="Дублировать задачу" className="rounded-md p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"><Copy size={17} /></button>
-            )}
             {!job._new && <button onClick={() => onDelete(j.id)} title="Удалить задачу" className="rounded-md p-1 text-neutral-400 transition hover:bg-red-50 hover:text-red-600"><Trash2 size={18} /></button>}
             <button onClick={onClose} title="Закрыть" className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
           </span>
