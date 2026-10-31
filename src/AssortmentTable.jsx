@@ -490,6 +490,24 @@ function cycleStageDates(startISO, stages) {
   });
   return out;
 }
+// нормализация правил «Задачи по триггерам» для смены статуса товара
+// миграция старого offsetDays → hasDate + durDays (как у этапов цикла)
+function normTaskTriggers(arr) {
+  return (Array.isArray(arr) ? arr : []).filter((r) => r && typeof r === "object").map((r) => {
+    const hasDate = r.hasDate != null ? !!r.hasDate : (r.offsetDays != null && r.offsetDays !== "");
+    const durDays = r.durDays != null ? Math.max(1, parseInt(r.durDays) || 1) : Math.max(1, parseInt(r.offsetDays) || 1);
+    return {
+      id: r.id || uid(),
+      enabled: r.enabled !== false,
+      statusName: r.statusName || "",
+      text: r.text || "",
+      taskType: r.taskType === "project" ? "project" : "product",
+      assignee: r.assignee || null,
+      priority: (r.priority === "high" || r.priority === "med" || r.priority === "low") ? r.priority : "low",
+      hasDate, durDays,
+    };
+  });
+}
 // нормализация правил «Задачи по триггерам» для этапов цикла (плоский список)
 function normCycleTriggers(arr) {
   return (Array.isArray(arr) ? arr : []).filter((r) => r && typeof r === "object").map((r) => ({
@@ -851,7 +869,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
         if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = JSON.stringify(settings.taskLabels); }
         if (Array.isArray(settings.taskTags)) { setTaskTags(settings.taskTags); syncedRef.current.settings.taskTags = JSON.stringify(settings.taskTags); }
-        if (Array.isArray(settings.taskTriggers)) { setTaskTriggers(settings.taskTriggers); syncedRef.current.settings.taskTriggers = JSON.stringify(settings.taskTriggers); }
+        if (Array.isArray(settings.taskTriggers)) { const tt = normTaskTriggers(settings.taskTriggers); setTaskTriggers(tt); syncedRef.current.settings.taskTriggers = JSON.stringify(tt); }
         if (Array.isArray(settings.analyticsCriteria) && settings.analyticsCriteria.length) { setAnalyticsCriteria(settings.analyticsCriteria); syncedRef.current.settings.analyticsCriteria = JSON.stringify(settings.analyticsCriteria); }
         if (Array.isArray(settings.kanbanCols) && settings.kanbanCols.length) { setKanbanCols(settings.kanbanCols); syncedRef.current.settings.kanbanCols = JSON.stringify(settings.kanbanCols); }
         if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = JSON.stringify(settings.opTypes); }
@@ -967,9 +985,9 @@ export default function AssortmentTable() {
         if (p.status !== r.statusName || fired[r.id]) return;
         const title = String(r.text).replace(/\{товар\}/g, p.name || "товар").replace(/\{статус\}/g, r.statusName);
         let date = null, start = null;
-        if (r.offsetDays != null && r.offsetDays !== "") {
-          const d = new Date(); d.setDate(d.getDate() + (Number(r.offsetDays) || 0));
-          date = isoYMD(d); start = date;
+        if (r.hasDate) {
+          const s0 = new Date(); const e0 = new Date(); e0.setDate(e0.getDate() + Math.max(1, Number(r.durDays) || 1) - 1);
+          start = isoYMD(s0); date = isoYMD(e0);
         }
         const type = r.taskType || "product";
         newJobs.push({ id: uid(), title, type, productId: type === "product" ? p.id : null, date, start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Триггер: статус «${r.statusName}»`, createdAt: isoYMD(new Date()) });
@@ -1097,7 +1115,7 @@ export default function AssortmentTable() {
         else if (key === "defaultTasks") setDefaultTasks(value || []);
         else if (key === "taskLabels") setTaskLabels(value || []);
         else if (key === "taskTags") setTaskTags(value || []);
-        else if (key === "taskTriggers") setTaskTriggers(value || []);
+        else if (key === "taskTriggers") setTaskTriggers(normTaskTriggers(value));
         else if (key === "cycleTriggers") setCycleTriggers(normCycleTriggers(value));
         else if (key === "analyticsCriteria") { if (Array.isArray(value) && value.length) setAnalyticsCriteria(value); }
         else if (key === "kanbanCols") { if (Array.isArray(value) && value.length) setKanbanCols(value); }
@@ -7579,7 +7597,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
   const moveCycStage = (id, dir) => { const i = cycStages.findIndex((s) => s.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= cycStages.length) return; const a = cycStages.slice(); const [x] = a.splice(i, 1); a.splice(j, 0, x); setCyc(a); };
 
   // --- задачи по триггерам (смена статуса товара) ---
-  const addTrigger = () => setTaskTriggers((list) => [...(list || []), { id: uid(), enabled: true, statusName: (statuses[0] && statuses[0].name) || "", text: "", taskType: "product", assignee: null, priority: "low", offsetDays: "" }]);
+  const addTrigger = () => setTaskTriggers((list) => [...(list || []), { id: uid(), enabled: true, statusName: (statuses[0] && statuses[0].name) || "", text: "", taskType: "product", assignee: null, priority: "low", hasDate: false, durDays: 1 }]);
   const patchTrigger = (id, p) => setTaskTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
   const removeTrigger = (id) => setTaskTriggers((list) => (list || []).filter((r) => r.id !== id));
 
@@ -7686,7 +7704,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="rounded-2xl flex w-full max-w-lg flex-col overflow-hidden bg-white shadow-xl" style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + (tab === "triggers" ? "max-w-3xl" : "max-w-lg")} style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
           <h2 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-900"><Settings2 size={18} /> Настройки</h2>
           <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
@@ -7812,12 +7830,14 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                         <label className="inline-flex items-center gap-1.5">исполнитель:
                           <select value={r.assignee || ""} onChange={(e) => patchTrigger(r.id, { assignee: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{(taskPeople || []).map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}</select>
                         </label>
-                        <label className="inline-flex items-center gap-1.5">срок:
-                          <select value={r.offsetDays === "" || r.offsetDays == null ? "none" : "date"} onChange={(e) => patchTrigger(r.id, { offsetDays: e.target.value === "date" ? 0 : "" })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="none">без даты</option><option value="date">от события</option></select>
-                          {r.offsetDays !== "" && r.offsetDays != null && (
-                            <span className="inline-flex items-center gap-1">+<input value={r.offsetDays} onChange={(e) => patchTrigger(r.id, { offsetDays: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" className="w-12 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-center focus:outline-none" />дн.</span>
-                          )}
+                        <label className="inline-flex items-center gap-1.5">дата:
+                          <select value={r.hasDate ? "date" : "none"} onChange={(e) => patchTrigger(r.id, { hasDate: e.target.value === "date" })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none" title="Старт задачи = день смены статуса, дедлайн = старт + длительность"><option value="none">без даты</option><option value="date">от события</option></select>
                         </label>
+                        {r.hasDate && (
+                          <label className="inline-flex items-center gap-1.5">длительность:
+                            <input value={r.durDays} onChange={(e) => patchTrigger(r.id, { durDays: Math.max(1, parseInt(e.target.value) || 1) })} inputMode="numeric" className="w-12 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-center focus:outline-none" /> дн.
+                          </label>
+                        )}
                       </div>
                     </div>
                   </div>
