@@ -490,6 +490,39 @@ function cycleStageDates(startISO, stages) {
   });
   return out;
 }
+// нормализация правил «Задачи по триггерам» для этапов цикла (плоский список)
+function normCycleTriggers(arr) {
+  return (Array.isArray(arr) ? arr : []).filter((r) => r && typeof r === "object").map((r) => ({
+    id: r.id || uid(),
+    enabled: r.enabled !== false,
+    stageId: r.stageId || "",
+    when: r.when === "complete" ? "complete" : "enter",
+    scope: r.scope === "product" ? "product" : "batch",
+    text: r.text || "",
+    priority: (r.priority === "high" || r.priority === "med" || r.priority === "low") ? r.priority : null,
+    assignee: r.assignee || null,
+    hasDate: !!r.hasDate,
+    durDays: Math.max(1, parseInt(r.durDays) || 1),
+  }));
+}
+// миграция старых автозадач этапов (prodCycle.stages[].task) → плоский cycleTriggers
+function cycleTriggersFromCycle(cyc) {
+  const out = [];
+  ((cyc && cyc.stages) || []).forEach((s) => {
+    const t = s && s.task;
+    if (t && t.enabled && String(t.text || "").trim()) {
+      const when = t.when === "complete" ? "complete" : "enter";
+      out.push({
+        id: "cyc_" + s.id + "_" + when, enabled: true, stageId: s.id, when,
+        scope: t.scope === "product" ? "product" : "batch", text: t.text,
+        priority: (t.priority === "high" || t.priority === "med" || t.priority === "low") ? t.priority : null,
+        assignee: t.assignee || null, hasDate: !!t.hasDate, durDays: Math.max(1, parseInt(t.durDays) || 1),
+      });
+    }
+  });
+  return out;
+}
+
 // даты задачи этапа: старт = плановое начало этапа, дедлайн = старт + длительность задачи
 function stageTaskDates(bc, stageId, durDays) {
   const dts = cycleStageDates(bc && bc.startDate, (bc && bc.stages) || []);
@@ -723,6 +756,7 @@ export default function AssortmentTable() {
   const [taskLabels, setTaskLabels] = useState([]); // метки задач (общие) — [{id, name, color}]
   const [taskTags, setTaskTags] = useState([]); // теги задач — [{id, name, color}], несколько на задачу
   const [taskTriggers, setTaskTriggers] = useState([]); // задачи по триггерам (статус товара) — [{id, enabled, statusName, text, taskType, assignee, priority, offsetDays}]
+  const [cycleTriggers, setCycleTriggers] = useState([]); // задачи по триггерам (этап партии) — [{id, enabled, stageId, when, scope, text, priority, assignee, hasDate, durDays}]
   const [analyticsCriteria, setAnalyticsCriteria] = useState(() => ANALYTICS_CRIT_DEFAULT.slice()); // критерии аналитики (общие) — [{id, name}]
   const [kanbanCols, setKanbanCols] = useState(() => KANBAN_DEFAULT.slice()); // колонки Канбана — [{id, name, color}]
   const [opTypes, setOpTypes] = useState([]); // операционные задачи (регулярные строки Ганта) — [{id, name, recur}]
@@ -827,6 +861,26 @@ export default function AssortmentTable() {
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
         if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
         if (settings.prodCycle && typeof settings.prodCycle === "object") { const nc = normCycle(settings.prodCycle); setProdCycle(nc); syncedRef.current.settings.prodCycle = JSON.stringify(nc); }
+        // cycleTriggers: загрузка готового списка либо одноразовая миграция из старых автозадач этапов
+        if (Array.isArray(settings.cycleTriggers)) {
+          const ct = normCycleTriggers(settings.cycleTriggers); setCycleTriggers(ct); syncedRef.current.settings.cycleTriggers = JSON.stringify(ct);
+        } else {
+          const nc = (settings.prodCycle && typeof settings.prodCycle === "object") ? normCycle(settings.prodCycle) : normCycle(null);
+          const ct = cycleTriggersFromCycle(nc); setCycleTriggers(ct);
+          // перенос ключей дедупа в партиях: уже сработавшие этапы не должны создать задачи повторно
+          if (Array.isArray(settings.purchaseBatches)) {
+            let touched = false;
+            const migB = settings.purchaseBatches.map((b) => {
+              const f = b && b.cycle && b.cycle.fired;
+              if (!f || typeof f !== "object") return b;
+              const nf = { ...f }; let ch = false;
+              Object.keys(f).forEach((k) => { const m = /^(.+):(e|c)$/.exec(k); if (m && f[k]) { const nk = "cyc_" + m[1] + "_" + (m[2] === "c" ? "complete" : "enter"); if (!nf[nk]) { nf[nk] = true; ch = true; } } });
+              if (ch) { touched = true; return { ...b, cycle: { ...b.cycle, fired: nf } }; }
+              return b;
+            });
+            if (touched) setPurchaseBatches(migB);
+          }
+        }
         if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
@@ -867,38 +921,38 @@ export default function AssortmentTable() {
     return () => clearTimeout(t);
   }, [products, loaded]);
 
-  // авто-создание задач по правилам этапов производственного цикла
+  // авто-создание задач по триггеру «этап партии» (производственный цикл)
+  // несколько правил на этап; дедуп на партии: batch.cycle.fired[ruleId] = true
   useEffect(() => {
     if (!loaded) return;
-    const cyc = prodCycle; if (!cyc || !Array.isArray(cyc.stages)) return;
-    const ruleById = Object.fromEntries(cyc.stages.map((s) => [s.id, s]));
+    const rules = (cycleTriggers || []).filter((r) => r && r.enabled && String(r.text || "").trim() && r.stageId);
+    if (!rules.length) return;
     let batchesChanged = false; const newJobs = [];
     const next = (purchaseBatches || []).map((b) => {
       const bc = b.cycle;
       if (!bc || !bc.started || !Array.isArray(bc.stages)) return b;
       const fired = { ...(bc.fired || {}) }; let localChanged = false;
-      bc.stages.forEach((s, idx) => {
-        const rule = ruleById[s.id]; const t = rule && rule.task;
-        if (!t || !t.enabled || !String(t.text || "").trim()) return;
-        const whenComplete = t.when === "complete";
+      rules.forEach((r) => {
+        const idx = bc.stages.findIndex((x) => x.id === r.stageId);
+        if (idx < 0 || fired[r.id]) return;
+        const s = bc.stages[idx];
+        const whenComplete = r.when === "complete";
         const cond = whenComplete ? !!s.done : bc.stages.slice(0, idx).every((x) => x.done);
-        const key = s.id + ":" + (whenComplete ? "c" : "e");
-        if (cond && !fired[key]) {
-          const title = String(t.text).replace(/\{партия\}/g, b.name || "партия");
-          const dd = t.hasDate ? stageTaskDates(bc, s.id, t.durDays) : { start: null, date: null };
-          const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: t.priority || "low", assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
-          if (t.scope === "product") {
-            (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
-          } else newJobs.push({ id: uid(), title, productId: null, ...base });
-          fired[key] = true; localChanged = true;
-        }
+        if (!cond) return;
+        const title = String(r.text).replace(/\{партия\}/g, b.name || "партия");
+        const dd = r.hasDate ? stageTaskDates(bc, r.stageId, r.durDays) : { start: null, date: null };
+        const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
+        if (r.scope === "product") {
+          (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
+        } else newJobs.push({ id: uid(), title, productId: null, ...base });
+        fired[r.id] = true; localChanged = true;
       });
       if (localChanged) { batchesChanged = true; return { ...b, cycle: { ...bc, fired } }; }
       return b;
     });
     if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
     if (batchesChanged) setPurchaseBatches(next);
-  }, [purchaseBatches, prodCycle, loaded]);
+  }, [purchaseBatches, cycleTriggers, loaded]);
 
   // авто-создание задач по триггеру «смена статуса товара»
   // дедуп на товаре: product.trgFired[ruleId] = true
@@ -928,24 +982,27 @@ export default function AssortmentTable() {
     if (changed) setProducts(next);
   }, [products, taskTriggers, loaded]);
 
-  // ручное создание задач по этапу (кнопка «→ задача» в цикле) — в обход дедупа
+  // ручное создание задач по этапу (кнопка «создать задачу» в цикле) — в обход дедупа
   const createCycleStageTasks = (batchId, stageId) => {
     const b = (purchaseBatches || []).find((x) => x.id === batchId); if (!b) return;
-    const rule = (prodCycle.stages || []).find((s) => s.id === stageId); const t = rule && rule.task;
-    if (!t || !t.enabled || !String(t.text || "").trim()) { setToast({ text: "Для этого этапа не настроена автозадача" }); return; }
-    const title = String(t.text).replace(/\{партия\}/g, b.name || "партия");
-    const dd = t.hasDate ? stageTaskDates(b.cycle, stageId, t.durDays) : { start: null, date: null };
-    const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: t.priority || "low", assignee: t.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
-    const newJobs = [];
-    if (t.scope === "product") (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
-    else newJobs.push({ id: uid(), title, productId: null, ...base });
+    const rules = (cycleTriggers || []).filter((r) => r.enabled && r.stageId === stageId && String(r.text || "").trim());
+    if (!rules.length) { setToast({ text: "Для этого этапа не настроена автозадача" }); return; }
+    const newJobs = []; const firedKeys = [];
+    rules.forEach((r) => {
+      const title = String(r.text).replace(/\{партия\}/g, b.name || "партия");
+      const dd = r.hasDate ? stageTaskDates(b.cycle, stageId, r.durDays) : { start: null, date: null };
+      const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
+      if (r.scope === "product") (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
+      else newJobs.push({ id: uid(), title, productId: null, ...base });
+      firedKeys.push(r.id);
+    });
     if (!newJobs.length) { setToast({ text: "В партии нет товаров для задач" }); return; }
-    const firedKey = stageId + ":" + (t.when === "complete" ? "c" : "e");
     setJobs((js) => [...js, ...newJobs]);
     setPurchaseBatches((bs) => bs.map((x) => {
       if (x.id !== batchId) return x;
       const cyc0 = x.cycle || {};
-      return { ...x, cycle: { ...cyc0, fired: { ...(cyc0.fired || {}), [firedKey]: true } } };
+      const f = { ...(cyc0.fired || {}) }; firedKeys.forEach((k) => { f[k] = true; });
+      return { ...x, cycle: { ...cyc0, fired: f } };
     }));
     setToast({ text: `Создано задач: ${newJobs.length} · во вкладке «Задачи»` });
   };
@@ -953,7 +1010,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -996,7 +1053,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -1041,6 +1098,7 @@ export default function AssortmentTable() {
         else if (key === "taskLabels") setTaskLabels(value || []);
         else if (key === "taskTags") setTaskTags(value || []);
         else if (key === "taskTriggers") setTaskTriggers(value || []);
+        else if (key === "cycleTriggers") setCycleTriggers(normCycleTriggers(value));
         else if (key === "analyticsCriteria") { if (Array.isArray(value) && value.length) setAnalyticsCriteria(value); }
         else if (key === "kanbanCols") { if (Array.isArray(value) && value.length) setKanbanCols(value); }
         else if (key === "opTypes") setOpTypes(value || []);
@@ -2079,6 +2137,7 @@ export default function AssortmentTable() {
             onOpenCard={(id) => setCardModal(id)}
             onActiveChange={setPurchActiveId}
             cycleStages={prodCycle.stages}
+            cycleTriggers={cycleTriggers}
             onCreateStageTask={createCycleStageTasks}
             jobs={jobs}
             people={duties.people}
@@ -2189,6 +2248,8 @@ export default function AssortmentTable() {
           setProdCycle={setProdCycle}
           taskTriggers={taskTriggers}
           setTaskTriggers={setTaskTriggers}
+          cycleTriggers={cycleTriggers}
+          setCycleTriggers={setCycleTriggers}
           taskPeople={duties.people}
           unitConst={unitConst}
           setUnitConst={setUnitConst}
@@ -2639,7 +2700,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
 const PU_STATUS = { draft: { label: "Черновик", cls: "bg-neutral-100 text-neutral-500" }, paid: { label: "Оплачено", cls: "bg-emerald-50 text-emerald-600" }, transit: { label: "В пути", cls: "bg-amber-50 text-amber-600" }, received: { label: "Получено", cls: "bg-blue-50 text-blue-600" } };
 
 // Блок «Закупки» — партии (как карты в «Стратегии»); внутри партии товары из каталога.
-function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob }) {
+function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], cycleTriggers = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob }) {
   const list = Array.isArray(batches) ? batches : [];
   const [activeId, setActiveId] = useState(list[0]?.id || null);
   const [editingId, setEditingId] = useState(null);
@@ -2859,7 +2920,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                 {/* компактная строка управления */}
                 <div className="mt-3 flex flex-wrap items-center gap-2.5 border-t border-neutral-100 pt-3">
                   <span className="text-sm text-neutral-500">{curStage ? <>Текущий этап: <b className="text-neutral-800">{curStage.name}</b>{cycDates[curStage.id] && <span className="ml-1.5 text-neutral-400">· план {cycDates[curStage.id].startStr} – {cycDates[curStage.id].endStr}</span>}</> : <span className="font-semibold text-emerald-600">Цикл завершён ✓</span>}</span>
-                  {curStage && (() => { const rule = (cycleStages.find((x) => x.id === curStage.id) || {}).task; return rule && rule.enabled && String(rule.text || "").trim() ? <button onClick={() => onCreateStageTask && onCreateStageTask(active.id, curStage.id)} title="Создать задачу(и) по текущему этапу" className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-600 hover:bg-sky-100"><Plus size={11} /> создать задачу</button> : null; })()}
+                  {curStage && (cycleTriggers || []).some((r) => r.stageId === curStage.id && r.enabled && String(r.text || "").trim()) && <button onClick={() => onCreateStageTask && onCreateStageTask(active.id, curStage.id)} title="Создать задачу(и) по текущему этапу" className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-600 hover:bg-sky-100"><Plus size={11} /> создать задачу</button>}
                   <span className="ml-auto flex items-center gap-2">
                     <button onClick={regressCyc} disabled={cycSt.every((x) => !x.done)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 transition hover:bg-neutral-50 disabled:opacity-40"><ChevronRight size={13} style={{ transform: "rotate(180deg)" }} /> Вернуть</button>
                     {curStage && <button onClick={advanceCyc} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700"><Check size={13} /> {curIdx === cycSt.length - 1 ? "Завершить цикл" : "Пройти этап"}</button>}
@@ -7506,14 +7567,13 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
 
   // --- производственный цикл ---
   const cycStages = (prodCycle && Array.isArray(prodCycle.stages)) ? prodCycle.stages : [];
   const setCyc = (stages) => setProdCycle({ stages });
   const patchCycStage = (id, p) => setCyc(cycStages.map((s) => (s.id === id ? { ...s, ...p } : s)));
-  const patchCycTask = (id, p) => setCyc(cycStages.map((s) => (s.id === id ? { ...s, task: { ...s.task, ...p } } : s)));
   const addCycStage = () => setCyc([...cycStages, { id: uid(), name: "Новый этап", days: 1, task: { enabled: false, text: "", scope: "batch", when: "enter", priority: null, assignee: null } }]);
   const removeCycStage = (id) => setCyc(cycStages.filter((s) => s.id !== id));
   const moveCycStage = (id, dir) => { const i = cycStages.findIndex((s) => s.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= cycStages.length) return; const a = cycStages.slice(); const [x] = a.splice(i, 1); a.splice(j, 0, x); setCyc(a); };
@@ -7522,6 +7582,11 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
   const addTrigger = () => setTaskTriggers((list) => [...(list || []), { id: uid(), enabled: true, statusName: (statuses[0] && statuses[0].name) || "", text: "", taskType: "product", assignee: null, priority: "low", offsetDays: "" }]);
   const patchTrigger = (id, p) => setTaskTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
   const removeTrigger = (id) => setTaskTriggers((list) => (list || []).filter((r) => r.id !== id));
+
+  // --- задачи по триггерам (этап партии / произв. цикл) ---
+  const addCycleTrigger = () => setCycleTriggers((list) => [...(list || []), { id: uid(), enabled: true, stageId: (cycStages[0] && cycStages[0].id) || "", when: "enter", scope: "batch", text: "", priority: "low", assignee: null, hasDate: false, durDays: 1 }]);
+  const patchCycleTrigger = (id, p) => setCycleTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
+  const removeCycleTrigger = (id) => setCycleTriggers((list) => (list || []).filter((r) => r.id !== id));
 
   // --- предметы и комиссии ВБ (загрузка таблицей, опора на FBW) ---
   const [subjName, setSubjName] = useState("");
@@ -7761,50 +7826,52 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
               </div>
               <button onClick={addTrigger} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-indigo-400 hover:text-indigo-700"><Plus size={14} /> Добавить правило</button>
 
-              {/* — Триггер: этап производственного цикла — */}
+              {/* — Триггер: этап производственного цикла (плоский список, несколько правил на этап) — */}
               <div className="mb-2 mt-6 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-amber-600"><span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-amber-50 text-amber-600"><Repeat size={12} /></span> Этап партии (произв. цикл)</div>
               <div className="space-y-2.5">
-                {cycStages.map((s) => (
-                  <div key={s.id} className="overflow-hidden rounded-xl border border-neutral-200">
+                {(cycleTriggers || []).map((r) => (
+                  <div key={r.id} className="overflow-hidden rounded-xl border border-neutral-200">
                     <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 bg-neutral-50/70 px-3 py-2.5">
-                      <span className="text-xs font-semibold text-neutral-600">Этап</span>
-                      <span className="rounded-lg bg-white border border-neutral-200 px-2 py-1 text-xs font-semibold text-neutral-700">{s.name}</span>
-                      <button onClick={() => patchCycTask(s.id, { enabled: !(s.task && s.task.enabled) })} className="relative ml-auto h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: s.task && s.task.enabled ? "#16a34a" : "#d4d4d8" }} title={s.task && s.task.enabled ? "Включено" : "Выключено"}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: s.task && s.task.enabled ? 16 : 2 }} /></button>
+                      <span className="text-xs font-semibold text-neutral-600">Когда этап</span>
+                      <select value={r.stageId} onChange={(e) => patchCycleTrigger(r.id, { stageId: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none">
+                        {cycStages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        {!cycStages.some((s) => s.id === r.stageId) && r.stageId && <option value={r.stageId}>этап удалён</option>}
+                      </select>
+                      <select value={r.when} onChange={(e) => patchCycleTrigger(r.id, { when: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"><option value="enter">начат</option><option value="complete">пройден</option></select>
+                      <button onClick={() => patchCycleTrigger(r.id, { enabled: !r.enabled })} className="relative ml-auto h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: r.enabled ? "#16a34a" : "#d4d4d8" }} title={r.enabled ? "Включено" : "Выключено"}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: r.enabled ? 16 : 2 }} /></button>
+                      <button onClick={() => removeCycleTrigger(r.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить правило"><Trash2 size={14} /></button>
                     </div>
-                    {s.task && s.task.enabled && (
-                      <div className="space-y-2 p-3">
-                        <div>
-                          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Текст задачи · {"{партия}"} подставит имя партии</div>
-                          <input value={s.task.text} onChange={(e) => patchCycTask(s.id, { text: e.target.value })} placeholder="Напр.: Формирование фонда маркетинга по партии «{партия}»" className="w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-neutral-600">
-                          <label className="inline-flex items-center gap-1.5">когда:
-                            <select value={s.task.when} onChange={(e) => patchCycTask(s.id, { when: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="enter">при входе в этап</option><option value="complete">по завершении этапа</option></select>
-                          </label>
-                          <label className="inline-flex items-center gap-1.5">для:
-                            <select value={s.task.scope} onChange={(e) => patchCycTask(s.id, { scope: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="batch">одна на партию</option><option value="product">по задаче на каждый товар</option></select>
-                          </label>
-                          <label className="inline-flex items-center gap-1.5">приоритет:
-                            <select value={s.task.priority || ""} onChange={(e) => patchCycTask(s.id, { priority: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{Object.keys(PRIORITIES).map((k) => <option key={k} value={k}>{PRIORITIES[k].label}</option>)}</select>
-                          </label>
-                          <label className="inline-flex items-center gap-1.5">исполнитель:
-                            <select value={s.task.assignee || ""} onChange={(e) => patchCycTask(s.id, { assignee: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{(taskPeople || []).map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}</select>
-                          </label>
-                          <label className="inline-flex items-center gap-1.5">дата:
-                            <select value={s.task.hasDate ? "date" : "none"} onChange={(e) => patchCycTask(s.id, { hasDate: e.target.value === "date" })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none" title="Старт задачи = начало этапа (попадёт на гант)"><option value="none">без даты</option><option value="date">от начала этапа</option></select>
-                          </label>
-                          {s.task.hasDate && (
-                            <label className="inline-flex items-center gap-1.5">длительность:
-                              <input value={s.task.durDays} onChange={(e) => patchCycTask(s.id, { durDays: Math.max(1, parseInt(e.target.value) || 1) })} inputMode="numeric" className="w-12 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-center focus:outline-none" /> дн.
-                            </label>
-                          )}
-                        </div>
+                    <div className="space-y-2 p-3">
+                      <div>
+                        <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Текст задачи · {"{партия}"} подставит имя партии</div>
+                        <input value={r.text} onChange={(e) => patchCycleTrigger(r.id, { text: e.target.value })} placeholder="Напр.: Формирование фонда маркетинга по партии «{партия}»" className="w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
                       </div>
-                    )}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-neutral-600">
+                        <label className="inline-flex items-center gap-1.5">для:
+                          <select value={r.scope} onChange={(e) => patchCycleTrigger(r.id, { scope: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="batch">одна на партию</option><option value="product">по задаче на каждый товар</option></select>
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">приоритет:
+                          <select value={r.priority || ""} onChange={(e) => patchCycleTrigger(r.id, { priority: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{Object.keys(PRIORITIES).map((k) => <option key={k} value={k}>{PRIORITIES[k].label}</option>)}</select>
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">исполнитель:
+                          <select value={r.assignee || ""} onChange={(e) => patchCycleTrigger(r.id, { assignee: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{(taskPeople || []).map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}</select>
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">дата:
+                          <select value={r.hasDate ? "date" : "none"} onChange={(e) => patchCycleTrigger(r.id, { hasDate: e.target.value === "date" })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none" title="Старт задачи = начало этапа (попадёт на гант)"><option value="none">без даты</option><option value="date">от начала этапа</option></select>
+                        </label>
+                        {r.hasDate && (
+                          <label className="inline-flex items-center gap-1.5">длительность:
+                            <input value={r.durDays} onChange={(e) => patchCycleTrigger(r.id, { durDays: Math.max(1, parseInt(e.target.value) || 1) })} inputMode="numeric" className="w-12 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-center focus:outline-none" /> дн.
+                          </label>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
+                {(!cycleTriggers || cycleTriggers.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Правил по этапам пока нет</p>}
                 {cycStages.length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Этапов цикла пока нет — добавьте во вкладке «Произв. цикл»</p>}
               </div>
+              <button onClick={addCycleTrigger} disabled={cycStages.length === 0} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-amber-400 hover:text-amber-700 disabled:opacity-40"><Plus size={14} /> Добавить правило</button>
             </>
           )}
 
@@ -7821,7 +7888,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                       </div>
                       <input value={s.name} onChange={(e) => patchCycStage(s.id, { name: e.target.value })} className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-medium focus:border-neutral-400 focus:outline-none" />
                       <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">по умолч.<input value={s.days} onChange={(e) => patchCycStage(s.id, { days: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" className="w-14 rounded-lg border border-neutral-200 px-2 py-1 text-center text-sm font-semibold focus:border-neutral-400 focus:outline-none" />дн.</span>
-                      {s.task && s.task.enabled && <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title="У этапа настроена автозадача (вкладка «Задачи по триггерам»)"><ListChecks size={11} /> задача</span>}
+                      {(() => { const n = (cycleTriggers || []).filter((r) => r.stageId === s.id && r.enabled).length; return n > 0 ? <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title="Автозадачи этапа настраиваются во вкладке «Задачи по триггерам»"><ListChecks size={11} /> {n > 1 ? `${n} задачи` : "задача"}</span> : null; })()}
                       <button onClick={() => removeCycStage(s.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить этап"><Trash2 size={14} /></button>
                     </div>
                   </div>
