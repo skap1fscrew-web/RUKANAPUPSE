@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment }
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
-  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, Copy, ExternalLink, Paperclip, Pencil,
+  ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
   Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff,
 } from "lucide-react";
 
@@ -722,6 +722,7 @@ export default function AssortmentTable() {
   const [defaultTasks, setDefaultTasks] = useState([]); // задачи по умолчанию (общие) — [{id, text, labelId}]
   const [taskLabels, setTaskLabels] = useState([]); // метки задач (общие) — [{id, name, color}]
   const [taskTags, setTaskTags] = useState([]); // теги задач — [{id, name, color}], несколько на задачу
+  const [taskTriggers, setTaskTriggers] = useState([]); // задачи по триггерам (статус товара) — [{id, enabled, statusName, text, taskType, assignee, priority, offsetDays}]
   const [analyticsCriteria, setAnalyticsCriteria] = useState(() => ANALYTICS_CRIT_DEFAULT.slice()); // критерии аналитики (общие) — [{id, name}]
   const [kanbanCols, setKanbanCols] = useState(() => KANBAN_DEFAULT.slice()); // колонки Канбана — [{id, name, color}]
   const [opTypes, setOpTypes] = useState([]); // операционные задачи (регулярные строки Ганта) — [{id, name, recur}]
@@ -816,6 +817,7 @@ export default function AssortmentTable() {
         if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
         if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = JSON.stringify(settings.taskLabels); }
         if (Array.isArray(settings.taskTags)) { setTaskTags(settings.taskTags); syncedRef.current.settings.taskTags = JSON.stringify(settings.taskTags); }
+        if (Array.isArray(settings.taskTriggers)) { setTaskTriggers(settings.taskTriggers); syncedRef.current.settings.taskTriggers = JSON.stringify(settings.taskTriggers); }
         if (Array.isArray(settings.analyticsCriteria) && settings.analyticsCriteria.length) { setAnalyticsCriteria(settings.analyticsCriteria); syncedRef.current.settings.analyticsCriteria = JSON.stringify(settings.analyticsCriteria); }
         if (Array.isArray(settings.kanbanCols) && settings.kanbanCols.length) { setKanbanCols(settings.kanbanCols); syncedRef.current.settings.kanbanCols = JSON.stringify(settings.kanbanCols); }
         if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = JSON.stringify(settings.opTypes); }
@@ -898,6 +900,34 @@ export default function AssortmentTable() {
     if (batchesChanged) setPurchaseBatches(next);
   }, [purchaseBatches, prodCycle, loaded]);
 
+  // авто-создание задач по триггеру «смена статуса товара»
+  // дедуп на товаре: product.trgFired[ruleId] = true
+  useEffect(() => {
+    if (!loaded) return;
+    const rules = (taskTriggers || []).filter((r) => r && r.enabled && String(r.text || "").trim() && r.statusName);
+    if (!rules.length) return;
+    let changed = false; const newJobs = [];
+    const next = (products || []).map((p) => {
+      const fired = { ...(p.trgFired || {}) }; let local = false;
+      rules.forEach((r) => {
+        if (p.status !== r.statusName || fired[r.id]) return;
+        const title = String(r.text).replace(/\{товар\}/g, p.name || "товар").replace(/\{статус\}/g, r.statusName);
+        let date = null, start = null;
+        if (r.offsetDays != null && r.offsetDays !== "") {
+          const d = new Date(); d.setDate(d.getDate() + (Number(r.offsetDays) || 0));
+          date = isoYMD(d); start = date;
+        }
+        const type = r.taskType || "product";
+        newJobs.push({ id: uid(), title, type, productId: type === "product" ? p.id : null, date, start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Триггер: статус «${r.statusName}»`, createdAt: isoYMD(new Date()) });
+        fired[r.id] = true; local = true;
+      });
+      if (local) { changed = true; return { ...p, trgFired: fired }; }
+      return p;
+    });
+    if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
+    if (changed) setProducts(next);
+  }, [products, taskTriggers, loaded]);
+
   // ручное создание задач по этапу (кнопка «→ задача» в цикле) — в обход дедупа
   const createCycleStageTasks = (batchId, stageId) => {
     const b = (purchaseBatches || []).find((x) => x.id === batchId); if (!b) return;
@@ -923,7 +953,7 @@ export default function AssortmentTable() {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -966,7 +996,7 @@ export default function AssortmentTable() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -1010,6 +1040,7 @@ export default function AssortmentTable() {
         else if (key === "defaultTasks") setDefaultTasks(value || []);
         else if (key === "taskLabels") setTaskLabels(value || []);
         else if (key === "taskTags") setTaskTags(value || []);
+        else if (key === "taskTriggers") setTaskTriggers(value || []);
         else if (key === "analyticsCriteria") { if (Array.isArray(value) && value.length) setAnalyticsCriteria(value); }
         else if (key === "kanbanCols") { if (Array.isArray(value) && value.length) setKanbanCols(value); }
         else if (key === "opTypes") setOpTypes(value || []);
@@ -2156,6 +2187,8 @@ export default function AssortmentTable() {
           setSubjects={setSubjects}
           prodCycle={prodCycle}
           setProdCycle={setProdCycle}
+          taskTriggers={taskTriggers}
+          setTaskTriggers={setTaskTriggers}
           taskPeople={duties.people}
           unitConst={unitConst}
           setUnitConst={setUnitConst}
@@ -2173,11 +2206,13 @@ export default function AssortmentTable() {
         return (
           <CardTasksModal
             product={withConst(cp)}
-            defaultTasks={defaultTasks}
-            taskLabels={taskLabels}
             statuses={statuses}
             onSetName={(v) => updateProduct(cp.id, "name", v)}
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
+            allJobs={jobs}
+            onCardAddTask={(title) => { const t = String(title || "").trim(); if (!t) return; upsertJob({ id: uid(), title: t.slice(0, 200), type: "product", productId: cp.id, date: null, start: null, done: false, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()) }); }}
+            onOpenJob={(job) => setJobEditor({ ...job })}
+            onUpdateJob={upsertJob}
             onSetCompetitors={(c) => setProductCompetitors(cp.id, c)}
             onSetSeasonality={(s) => setProductSeasonality(cp.id, s)}
             analyticsCriteria={analyticsCriteria}
@@ -3500,7 +3535,7 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
   const [bd, setBd] = useState(null); // позиция окна разбивки затрат
   const bdBtnRef = useRef(null);
   const nowM = new Date();
-  const [ym, setYm] = useState(() => { const d = startDate ? new Date(startDate + "T00:00:00") : nowM; return { y: isNaN(d.getTime()) ? nowM.getFullYear() : d.getFullYear(), m: isNaN(d.getTime()) ? nowM.getMonth() : d.getMonth() }; });
+  const [ym, setYm] = useState(() => ({ y: nowM.getFullYear(), m: nowM.getMonth() }));
   const [rowsOpen, setRowsOpen] = useState(false);
   const prevMo = () => setYm((s) => { const d = new Date(s.y, s.m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const nextMo = () => setYm((s) => { const d = new Date(s.y, s.m + 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
@@ -5177,14 +5212,17 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
   );
 }
 
-function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const curStatus = (statuses || []).find((s) => s.name === product.status);
-  // Если у карточки ещё нет своих задач — показываем задачи по умолчанию.
-  // Любое изменение «материализует» их в собственный список карточки.
-  const own = Array.isArray(product.tasks) ? product.tasks : [];
-  const usingDefaults = own.length === 0;
-  const tasks = usingDefaults ? (defaultTasks || []).map((t) => ({ id: t.id, text: t.text, done: false, labelId: t.labelId || null })) : own;
+  // Задачи карточки = задачи типа «Товар» этого товара из общего раздела «Задачи».
+  // Двусторонняя синхронизация: создал/отметил здесь → видно на Ганте/канбане и наоборот.
+  const prodJobs = (allJobs || []).filter((j) => j && jobType(j) === "product" && j.productId === product.id);
+  const activeJobs = prodJobs.filter((j) => stageOf(j) !== "done");
+  const doneJobs = prodJobs.filter((j) => stageOf(j) === "done");
+  const jDone = doneJobs.length, jTotal = prodJobs.length;
+  const jPct = jTotal ? Math.round((jDone / jTotal) * 100) : 0;
+  const toggleJob = (j) => { const d = stageOf(j) === "done"; onUpdateJob && onUpdateJob({ ...j, done: !d, stage: !d ? "done" : "wait" }); };
   const [newText, setNewText] = useState("");
   const [showDone, setShowDone] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
@@ -5224,7 +5262,6 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
   const yuan = (n) => (isNaN(n) ? "—" : Math.round(n * 100) / 100 === Math.round(n) ? Math.round(n).toLocaleString("ru-RU") + " ¥" : (Math.round(n * 100) / 100).toLocaleString("ru-RU") + " ¥");
   const [mp, setMp] = useState("wb"); // маркетплейс для юнит-экономики: wb | oz
   const promoBudget = rnpBudget(product);
-  const done = tasks.filter((t) => t.done).length;
 
   // ===== Фонд маркетинга (по партиям) =====
   const [mktBatchId, setMktBatchId] = useState(null);
@@ -5251,44 +5288,26 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
   const contentPct = Math.round((contentCount / CONTENT_ITEMS.length) * 100);
   const toggleContent = (id) => onSetField && onSetField("content", { ...contentDone, [id]: !contentDone[id] });
 
-  // id задач по умолчанию — такие задачи нельзя удалять из карточки
-  const defaultIds = new Set((defaultTasks || []).map((t) => t.id));
-  // метка задачи по умолчанию (чтобы подтягивать её в карточку, даже если
-  // задача уже «материализована» без метки — например, была добавлена до меток)
-  const defaultLabelMap = new Map((defaultTasks || []).map((t) => [t.id, t.labelId || null]));
-  const effLabel = (t) => (t.labelId != null ? t.labelId : (defaultIds.has(t.id) ? (defaultLabelMap.get(t.id) || null) : null));
-  const active = tasks.filter((t) => !t.done);
-  const completed = tasks.filter((t) => t.done);
-
   const addTask = () => {
     const t = newText.trim();
     if (!t) return;
-    onSetTasks([...tasks, { id: uid(), text: t, done: false, labelId: null }]);
+    onCardAddTask && onCardAddTask(t);
     setNewText("");
   };
-  const toggle = (id) => onSetTasks(tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
-  const setText = (id, text) => onSetTasks(tasks.map((t) => (t.id === id ? { ...t, text } : t)));
-  const setLabel = (id, labelId) => onSetTasks(tasks.map((t) => (t.id === id ? { ...t, labelId } : t)));
-  const remove = (id) => onSetTasks(tasks.filter((t) => t.id !== id));
-
-  const renderRow = (t) => (
-    <div key={t.id} className="group flex items-center gap-1.5 rounded-lg border border-neutral-100 px-1.5 py-1.5 hover:border-neutral-200">
-      <input type="checkbox" checked={!!t.done} onChange={() => toggle(t.id)} className="h-4 w-4 shrink-0 accent-green-600" />
-      {defaultIds.has(t.id) && <Paperclip size={13} className="shrink-0 text-neutral-400" title="Задача по умолчанию" />}
-      <input
-        value={t.text}
-        onChange={(e) => setText(t.id, e.target.value)}
-        className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
-        style={t.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }}
-      />
-      <LabelSelect labels={taskLabels} value={effLabel(t)} onChange={(v) => setLabel(t.id, v)} compact />
-      {defaultIds.has(t.id) ? (
-        <span className="h-5 w-4 shrink-0" title="Задача по умолчанию — её нельзя удалить" />
-      ) : (
-        <button onClick={() => remove(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
-      )}
-    </div>
-  );
+  const fmtDM = (d) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : "");
+  const renderJobRow = (j) => {
+    const isDone = stageOf(j) === "done";
+    const pr = PRIORITIES[j.priority];
+    return (
+      <div key={j.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-1.5 hover:border-neutral-200">
+        <input type="checkbox" checked={isDone} onChange={() => toggleJob(j)} className="h-4 w-4 shrink-0 accent-green-600" />
+        {!isDone && pr && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: pr.color }} title={pr.name} />}
+        {Array.isArray(j.files) && j.files.length > 0 && <Paperclip size={13} className="shrink-0 text-neutral-400" />}
+        <button onClick={() => onOpenJob && onOpenJob(j)} className="min-w-0 flex-1 truncate text-left text-sm hover:underline" style={isDone ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }} title={j.title || "Без названия"}>{j.title || "Без названия"}</button>
+        {j.date && <span className="shrink-0 text-[11px] tabular-nums text-neutral-400">{fmtDM(j.date)}</span>}
+      </div>
+    );
+  };
 
   // --- конкуренты ---
   const competitors = Array.isArray(product.competitors) ? product.competitors : [];
@@ -5348,22 +5367,6 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
     return (cost * (1 + R) + logF) / (1 - kVar);
   };
 
-  // --- дашборды: готовность карточки по меткам ---
-  const readiness = (() => {
-    const map = new Map();
-    tasks.forEach((t) => {
-      const lid = effLabel(t) || "__none";
-      const cur = map.get(lid) || { done: 0, total: 0 };
-      cur.total++; if (t.done) cur.done++;
-      map.set(lid, cur);
-    });
-    return [...map.entries()].map(([lid, v]) => {
-      const lab = (taskLabels || []).find((l) => l.id === lid);
-      return { id: lid, name: lab ? lab.name : "Без метки", color: lab ? lab.color : "#cbd5e1", done: v.done, total: v.total };
-    }).sort((a, b) => b.total - a.total);
-  })();
-  const overallPct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
-  const R = 30, C2 = 2 * Math.PI * R;
 
   const toneColor = (v) => isNaN(v) ? "#0f172a" : (v >= 0 ? "#15803d" : "#dc2626");
   const pct = (v) => isNaN(v) ? "—" : Math.round(v) + "%";
@@ -5478,60 +5481,33 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
       <div className="flex-1 overflow-auto px-4 py-5 sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-col gap-5 lg:flex-row lg:items-start">
 
-          {/* Левая колонка — готовность + компактные задачи */}
+          {/* Левая колонка — задачи товара (синхр. с разделом «Задачи») */}
           <aside className="w-full space-y-3 lg:w-[27rem] lg:shrink-0">
-            {/* Готовность карточки — компактно, над задачами */}
-            <section className="rounded-2xl border border-neutral-200 bg-white p-3">
-              <div className="flex items-center gap-3">
-                <svg width="52" height="52" viewBox="0 0 72 72" className="shrink-0">
-                  <circle cx="36" cy="36" r={R} fill="none" stroke="#f1f5f9" strokeWidth="9" />
-                  <circle cx="36" cy="36" r={R} fill="none" stroke={overallPct === 100 ? "#16a34a" : "#f97316"} strokeWidth="9" strokeLinecap="round" strokeDasharray={C2} strokeDashoffset={C2 * (1 - overallPct / 100)} transform="rotate(-90 36 36)" />
-                  <text x="36" y="42" textAnchor="middle" fontSize="19" fontWeight="700" fill="#0f172a">{overallPct}%</text>
-                </svg>
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  {readiness.map((r) => {
-                    const rp = r.total ? Math.round(r.done / r.total * 100) : 0;
-                    return (
-                      <div key={r.id} className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} />
-                        <span className="w-24 shrink-0 truncate text-[11px] text-neutral-600">{r.name}</span>
-                        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-neutral-100">
-                          <div className="h-full rounded-full" style={{ width: rp + "%", background: r.color }} />
-                        </div>
-                        <span className="shrink-0 text-[11px] tabular-nums text-neutral-400">{r.done}/{r.total}</span>
-                      </div>
-                    );
-                  })}
-                  {readiness.length === 0 && <p className="text-[11px] text-neutral-400">Нет задач.</p>}
-                </div>
-              </div>
-            </section>
-
             {card(
               "Задачи",
               <>
                 <div className="mb-2">
                   <div className="mb-1 flex items-center justify-between text-xs text-neutral-400">
-                    <span>{done} из {tasks.length}</span>
-                    <span>{overallPct}%</span>
+                    <span>{jDone} из {jTotal}</span>
+                    <span>{jPct}%</span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
-                    <div className="h-full rounded-full bg-green-500" style={{ width: overallPct + "%" }} />
+                    <div className="h-full rounded-full bg-green-500" style={{ width: jPct + "%" }} />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  {active.map((t) => renderRow(t))}
-                  {tasks.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач пока нет.</div>}
-                  {tasks.length > 0 && active.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Все задачи выполнены 🎉</div>}
+                  {activeJobs.map((j) => renderJobRow(j))}
+                  {jTotal === 0 && <div className="py-3 text-center text-xs text-neutral-400">Задач по товару пока нет.</div>}
+                  {jTotal > 0 && activeJobs.length === 0 && <div className="py-3 text-center text-xs text-neutral-400">Все задачи выполнены 🎉</div>}
                 </div>
-                {completed.length > 0 && (
+                {doneJobs.length > 0 && (
                   <div className="mt-3 border-t border-neutral-100 pt-2">
                     <button onClick={() => setShowDone((v) => !v)} className="flex w-full items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-neutral-700">
                       {showDone ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       Выполненные
-                      <span className="rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">{completed.length}</span>
+                      <span className="rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">{doneJobs.length}</span>
                     </button>
-                    {showDone && <div className="mt-2 space-y-1">{completed.map((t) => renderRow(t))}</div>}
+                    {showDone && <div className="mt-2 space-y-1">{doneJobs.map((j) => renderJobRow(j))}</div>}
                   </div>
                 )}
                 <div className="mt-3 flex items-center gap-1.5">
@@ -5539,12 +5515,13 @@ function CardTasksModal({ product, defaultTasks, taskLabels, statuses = [], onSe
                     value={newText}
                     onChange={(e) => setNewText(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && addTask()}
-                    placeholder="Новая задача…"
+                    placeholder="Новая задача по товару…"
                     className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
                   />
                   <button onClick={addTask} disabled={!newText.trim()} className="rounded-lg inline-flex shrink-0 items-center bg-neutral-900 p-2 text-white hover:bg-neutral-800 disabled:opacity-40" title="Добавить"><Plus size={15} /></button>
                 </div>
-              </>
+              </>,
+              <span className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700" title="Задачи синхронизированы с разделом «Задачи»"><ArrowLeftRight size={11} /> раздел «Задачи»</span>
             )}
           </aside>
 
@@ -6742,7 +6719,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   const datesOn = !!(j.start || j.date);
   const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
       <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         {/* Шапка: компактный переключатель типа + создано + действия */}
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
@@ -6853,7 +6830,6 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
 
           {/* ПРАВО: настройки */}
           <div className="flex flex-col gap-4 bg-neutral-50/50 p-5">
-            <span className={fieldL + " -mb-2"}>Планирование</span>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-neutral-600">Даты</span>
@@ -6872,9 +6848,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
                     <input type="date" value={j.date || ""} onChange={(e) => set("date", e.target.value || null)} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none" />
                   </label>
                 </>
-              ) : (
-                <p className="text-[11px] leading-snug text-neutral-400">Без дат задача попадёт в «Нераспределённые». Включите тумблер, чтобы задать начало и дедлайн.</p>
-              )}
+              ) : null}
             </div>
             <div className="flex flex-col gap-1.5">
               <span className="text-sm text-neutral-600">Статус</span>
@@ -7532,7 +7506,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
 
   // --- производственный цикл ---
@@ -7543,6 +7517,11 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
   const addCycStage = () => setCyc([...cycStages, { id: uid(), name: "Новый этап", days: 1, task: { enabled: false, text: "", scope: "batch", when: "enter", priority: null, assignee: null } }]);
   const removeCycStage = (id) => setCyc(cycStages.filter((s) => s.id !== id));
   const moveCycStage = (id, dir) => { const i = cycStages.findIndex((s) => s.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= cycStages.length) return; const a = cycStages.slice(); const [x] = a.splice(i, 1); a.splice(j, 0, x); setCyc(a); };
+
+  // --- задачи по триггерам (смена статуса товара) ---
+  const addTrigger = () => setTaskTriggers((list) => [...(list || []), { id: uid(), enabled: true, statusName: (statuses[0] && statuses[0].name) || "", text: "", taskType: "product", assignee: null, priority: "low", offsetDays: "" }]);
+  const patchTrigger = (id, p) => setTaskTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
+  const removeTrigger = (id) => setTaskTriggers((list) => (list || []).filter((r) => r.id !== id));
 
   // --- предметы и комиссии ВБ (загрузка таблицей, опора на FBW) ---
   const [subjName, setSubjName] = useState("");
@@ -7650,9 +7629,8 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
         <div className="flex flex-wrap gap-1.5 border-b border-neutral-100 px-5 py-2.5">
           <TabBtn id="statuses">Статусы</TabBtn>
-          <TabBtn id="tasks">Задачи по умолчанию</TabBtn>
-          <TabBtn id="labels">Метки</TabBtn>
           <TabBtn id="cycle">Произв. цикл</TabBtn>
+          <TabBtn id="triggers">Задачи по триггерам</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
           <TabBtn id="wbapi">API ВБ</TabBtn>
@@ -7685,40 +7663,6 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                     <button key={c} onClick={() => setSColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: sColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />
                   ))}
                 </div>
-              </div>
-            </>
-          )}
-
-          {tab === "tasks" && (
-            <>
-              <p className="mb-3 text-xs text-neutral-400">Эти задачи показываются в карточке, у которой ещё нет своих задач.</p>
-              <div className="mb-4 space-y-1.5">
-                {(defaultTasks || []).map((t) => (
-                  <div key={t.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-2 hover:border-neutral-200">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-300" />
-                    <input
-                      value={t.text}
-                      onChange={(e) => setDefaultText(t.id, e.target.value)}
-                      className="min-w-0 flex-1 bg-transparent text-sm text-neutral-800 focus:outline-none"
-                    />
-                    <LabelSelect labels={taskLabels} value={t.labelId} onChange={(v) => setDefaultLabel(t.id, v)} />
-                    <button onClick={() => removeDefault(t.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
-                  </div>
-                ))}
-                {(!defaultTasks || defaultTasks.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Задач по умолчанию пока нет</p>}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  value={tText}
-                  onChange={(e) => setTText(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addDefault()}
-                  placeholder="Новая задача по умолчанию…"
-                  className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
-                />
-                <button onClick={addDefault} disabled={!tText.trim()} className="rounded-lg inline-flex items-center gap-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">
-                  <Plus size={14} /> Добавить
-                </button>
               </div>
             </>
           )}
@@ -7770,58 +7714,65 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
             </>
           )}
 
-          {tab === "labels" && (
+          {tab === "triggers" && (
             <>
-              <p className="mb-3 text-xs text-neutral-400">Метки можно присваивать задачам в карточке и в задачах по умолчанию.</p>
-              <div className="mb-4 space-y-1.5">
-                {(taskLabels || []).map((l) => (
-                  <div key={l.id} className="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2">
-                    <span className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700">
-                      <span className="rounded-full h-3 w-3" style={{ background: l.color }} />
-                      {l.name}
-                    </span>
-                    <button onClick={() => removeLabel(l.id)} className="rounded p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить метку"><Trash2 size={15} /></button>
+              <p className="mb-3 text-xs text-neutral-500">Когда срабатывает триггер — автоматически создаётся задача в разделе «Задачи». Создаётся один раз на событие.</p>
+
+              {/* — Триггер: смена статуса товара — */}
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-indigo-500"><span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-50 text-indigo-600"><Flag size={12} /></span> Смена статуса товара</div>
+              <div className="space-y-2.5">
+                {(taskTriggers || []).map((r) => (
+                  <div key={r.id} className="overflow-hidden rounded-xl border border-neutral-200">
+                    <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 bg-neutral-50/70 px-3 py-2.5">
+                      <span className="text-xs font-semibold text-neutral-600">Когда статус становится</span>
+                      <select value={r.statusName} onChange={(e) => patchTrigger(r.id, { statusName: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none">
+                        {(statuses || []).map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+                        {!(statuses || []).some((s) => s.name === r.statusName) && r.statusName && <option value={r.statusName}>{r.statusName}</option>}
+                      </select>
+                      <button onClick={() => patchTrigger(r.id, { enabled: !r.enabled })} className="relative ml-auto h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: r.enabled ? "#16a34a" : "#d4d4d8" }} title={r.enabled ? "Включено" : "Выключено"}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: r.enabled ? 16 : 2 }} /></button>
+                      <button onClick={() => removeTrigger(r.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить правило"><Trash2 size={14} /></button>
+                    </div>
+                    <div className="space-y-2 p-3">
+                      <div>
+                        <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Текст задачи · {"{товар}"} подставит название</div>
+                        <input value={r.text} onChange={(e) => patchTrigger(r.id, { text: e.target.value })} placeholder="Напр.: Проверить карточку после запуска · {товар}" className="w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-neutral-600">
+                        <label className="inline-flex items-center gap-1.5">тип:
+                          <select value={r.taskType || "product"} onChange={(e) => patchTrigger(r.id, { taskType: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="product">Товар</option><option value="project">Проектная</option></select>
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">приоритет:
+                          <select value={r.priority || "low"} onChange={(e) => patchTrigger(r.id, { priority: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none">{Object.keys(PRIORITIES).map((k) => <option key={k} value={k}>{PRIORITIES[k].label}</option>)}</select>
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">исполнитель:
+                          <select value={r.assignee || ""} onChange={(e) => patchTrigger(r.id, { assignee: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{(taskPeople || []).map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}</select>
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">срок:
+                          <select value={r.offsetDays === "" || r.offsetDays == null ? "none" : "date"} onChange={(e) => patchTrigger(r.id, { offsetDays: e.target.value === "date" ? 0 : "" })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="none">без даты</option><option value="date">от события</option></select>
+                          {r.offsetDays !== "" && r.offsetDays != null && (
+                            <span className="inline-flex items-center gap-1">+<input value={r.offsetDays} onChange={(e) => patchTrigger(r.id, { offsetDays: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" className="w-12 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-center focus:outline-none" />дн.</span>
+                          )}
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 ))}
-                {(!taskLabels || taskLabels.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Меток пока нет</p>}
+                {(!taskTriggers || taskTriggers.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Правил по статусу пока нет</p>}
               </div>
+              <button onClick={addTrigger} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-indigo-400 hover:text-indigo-700"><Plus size={14} /> Добавить правило</button>
 
-              <div className="rounded-xl bg-neutral-50 p-3">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">Новая метка</p>
-                <div className="flex items-center gap-2">
-                  <input value={lName} onChange={(e) => setLName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLabel()} placeholder="Например: Срочно" className="rounded-lg flex-1 border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
-                  <button onClick={addLabel} className="rounded-md inline-flex items-center gap-1 bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"><Plus size={15} /> Добавить</button>
-                </div>
-                <div className="mt-2 flex items-center gap-1.5">
-                  {SWATCHES.map((c) => (
-                    <button key={c} onClick={() => setLColor(c)} className="h-6 w-6 rounded transition" style={{ background: c, boxShadow: lColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none" }} />
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {tab === "cycle" && (
-            <>
-              <p className="mb-3 text-xs text-neutral-500">Этапы и длительности по умолчанию применяются к новым заказам. Для каждого этапа можно включить автозадачу в блоке «Задачи».</p>
-              <div className="space-y-3">
-                {cycStages.map((s, i) => (
-                  <div key={s.id} className="rounded-xl border border-neutral-200 p-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex flex-col">
-                        <button onClick={() => moveCycStage(s.id, -1)} disabled={i === 0} className="text-neutral-300 hover:text-neutral-600 disabled:opacity-30"><ChevronUp size={13} /></button>
-                        <button onClick={() => moveCycStage(s.id, 1)} disabled={i === cycStages.length - 1} className="text-neutral-300 hover:text-neutral-600 disabled:opacity-30"><ChevronDown size={13} /></button>
-                      </div>
-                      <input value={s.name} onChange={(e) => patchCycStage(s.id, { name: e.target.value })} className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-medium focus:border-neutral-400 focus:outline-none" />
-                      <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">по умолч.<input value={s.days} onChange={(e) => patchCycStage(s.id, { days: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" className="w-14 rounded-lg border border-neutral-200 px-2 py-1 text-center text-sm font-semibold focus:border-neutral-400 focus:outline-none" />дн.</span>
-                      <button onClick={() => removeCycStage(s.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить этап"><Trash2 size={14} /></button>
+              {/* — Триггер: этап производственного цикла — */}
+              <div className="mb-2 mt-6 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-amber-600"><span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-amber-50 text-amber-600"><Repeat size={12} /></span> Этап партии (произв. цикл)</div>
+              <div className="space-y-2.5">
+                {cycStages.map((s) => (
+                  <div key={s.id} className="overflow-hidden rounded-xl border border-neutral-200">
+                    <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 bg-neutral-50/70 px-3 py-2.5">
+                      <span className="text-xs font-semibold text-neutral-600">Этап</span>
+                      <span className="rounded-lg bg-white border border-neutral-200 px-2 py-1 text-xs font-semibold text-neutral-700">{s.name}</span>
+                      <button onClick={() => patchCycTask(s.id, { enabled: !(s.task && s.task.enabled) })} className="relative ml-auto h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: s.task && s.task.enabled ? "#16a34a" : "#d4d4d8" }} title={s.task && s.task.enabled ? "Включено" : "Выключено"}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: s.task && s.task.enabled ? 16 : 2 }} /></button>
                     </div>
-                    <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-sm text-neutral-700">
-                      <button onClick={() => patchCycTask(s.id, { enabled: !s.task.enabled })} className="relative h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: s.task.enabled ? "#16a34a" : "#d4d4d8" }}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: s.task.enabled ? 16 : 2 }} /></button>
-                      создавать задачу при этом этапе
-                    </label>
-                    {s.task.enabled && (
-                      <div className="mt-2.5 space-y-2 rounded-lg bg-neutral-50 p-2.5">
+                    {s.task && s.task.enabled && (
+                      <div className="space-y-2 p-3">
                         <div>
                           <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Текст задачи · {"{партия}"} подставит имя партии</div>
                           <input value={s.task.text} onChange={(e) => patchCycTask(s.id, { text: e.target.value })} placeholder="Напр.: Формирование фонда маркетинга по партии «{партия}»" className="w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
@@ -7850,6 +7801,29 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                         </div>
                       </div>
                     )}
+                  </div>
+                ))}
+                {cycStages.length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Этапов цикла пока нет — добавьте во вкладке «Произв. цикл»</p>}
+              </div>
+            </>
+          )}
+
+          {tab === "cycle" && (
+            <>
+              <p className="mb-3 text-xs text-neutral-500">Этапы и длительности по умолчанию применяются к новым заказам. Автозадачи этапов настраиваются во вкладке <b>«Задачи по триггерам»</b>.</p>
+              <div className="space-y-3">
+                {cycStages.map((s, i) => (
+                  <div key={s.id} className="rounded-xl border border-neutral-200 p-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex flex-col">
+                        <button onClick={() => moveCycStage(s.id, -1)} disabled={i === 0} className="text-neutral-300 hover:text-neutral-600 disabled:opacity-30"><ChevronUp size={13} /></button>
+                        <button onClick={() => moveCycStage(s.id, 1)} disabled={i === cycStages.length - 1} className="text-neutral-300 hover:text-neutral-600 disabled:opacity-30"><ChevronDown size={13} /></button>
+                      </div>
+                      <input value={s.name} onChange={(e) => patchCycStage(s.id, { name: e.target.value })} className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-medium focus:border-neutral-400 focus:outline-none" />
+                      <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">по умолч.<input value={s.days} onChange={(e) => patchCycStage(s.id, { days: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" className="w-14 rounded-lg border border-neutral-200 px-2 py-1 text-center text-sm font-semibold focus:border-neutral-400 focus:outline-none" />дн.</span>
+                      {s.task && s.task.enabled && <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title="У этапа настроена автозадача (вкладка «Задачи по триггерам»)"><ListChecks size={11} /> задача</span>}
+                      <button onClick={() => removeCycStage(s.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить этап"><Trash2 size={14} /></button>
+                    </div>
                   </div>
                 ))}
               </div>
