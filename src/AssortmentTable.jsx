@@ -2040,7 +2040,7 @@ export default function AssortmentTable() {
             jobs={jobs}
             people={duties.people}
             onOpenJob={(job) => setJobEditor({ ...job })}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()), _new: true, ...preset })}
           />
         )}
 
@@ -2057,7 +2057,7 @@ export default function AssortmentTable() {
             opDone={opDone}
             onToggleDone={toggleOpDone}
             onEditOp={(op) => setJobEditor({ id: op.id, type: "op", title: op.name, recur: op.recur, assignee: op.assignee || null, tags: [], checklist: [], note: "", date: null, start: null, stage: "wait", done: false })}
-            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], _new: true, ...preset })}
+            onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()), _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
         )}
@@ -2069,7 +2069,7 @@ export default function AssortmentTable() {
             onCreateTask={(payload) => {
               const p = payload || {};
               const id = uid();
-              const job = { id, title: (p.title || "Задача").slice(0, 200), date: p.date || null, start: null, done: false, labelId: null, productId: null, priority: "low", tags: [], stage: "wait", note: p.note || "", checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
+              const job = { id, title: (p.title || "Задача").slice(0, 200), date: p.date || null, start: null, done: false, labelId: null, productId: null, priority: "low", tags: [], stage: "wait", note: p.note || "", createdAt: isoYMD(new Date()), checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
               upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
               return id;
             }}
@@ -2102,6 +2102,7 @@ export default function AssortmentTable() {
           products={products}
           opTypes={opTypes}
           batches={purchaseBatches}
+          onDuplicate={(src) => { const { _new, ...rest } = src; const copy = { ...rest, id: uid(), title: (src.title || "Задача") + " (копия)", createdAt: isoYMD(new Date()), stage: "wait", done: false, files: Array.isArray(src.files) ? src.files : [] }; if (copy.type === "op") return; upsertJob(copy); removeOpType(copy.id); setJobEditor({ ...copy }); }}
           onChange={(j) => {
             const { _new, ...rest } = j;
             if (!rest.title.trim()) return;
@@ -6638,12 +6639,12 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
 }
 
 const TASK_TYPE_META = [
-  { key: "op", label: "Операционная", Icon: Repeat, tint: "#6366f1", bg: "#eef2ff", hint: "раздел «Операционные»" },
-  { key: "purchase", label: "Закупки", Icon: ShoppingCart, tint: "#0891b2", bg: "#ecfeff", hint: "привязка к партии" },
-  { key: "project", label: "Проектная", Icon: FileText, tint: "#7c3aed", bg: "#f5f3ff", hint: "раздел «Проектные»" },
-  { key: "product", label: "Товар", Icon: Box, tint: "#ea580c", bg: "#fff7ed", hint: "раздел «Задачи по товарам»" },
+  { key: "op", label: "Операционная", short: "Операц.", Icon: Repeat, tint: "#6366f1", bg: "#eef2ff", hint: "раздел «Операционные»" },
+  { key: "purchase", label: "Закупки", short: "Закупки", Icon: ShoppingCart, tint: "#0891b2", bg: "#ecfeff", hint: "привязка к партии" },
+  { key: "project", label: "Проектная", short: "Проектная", Icon: FileText, tint: "#7c3aed", bg: "#f5f3ff", hint: "раздел «Проектные»" },
+  { key: "product", label: "Товар", short: "Товар", Icon: Box, tint: "#ea580c", bg: "#fff7ed", hint: "раздел «Задачи по товарам»" },
 ];
-function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onClose }) {
+function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onClose }) {
   const [j, setJ] = useState(job);
   const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
   const curType = j.type === "op" ? "op" : jobType(j);
@@ -6696,23 +6697,28 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
       <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
-          <h2 className="text-base font-semibold text-neutral-900">{job._new ? "Новая задача" : "Задача"}</h2>
-          <div className="flex items-center gap-1">
+        {/* Шапка: компактный переключатель типа + создано + действия */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
+          <div className="inline-flex rounded-xl bg-neutral-100 p-0.5">
+            {TASK_TYPE_META.map(({ key, label, short, Icon, tint, bg }) => { const on = curType === key; return (
+              <button key={key} onClick={() => setType(key)} title={label}
+                className={"inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition " + (on ? "shadow-sm" : "text-neutral-500 hover:text-neutral-700")}
+                style={on ? { background: bg, color: tint } : undefined}>
+                <Icon size={13} />{short}
+              </button>
+            ); })}
+          </div>
+          <span className="ml-auto flex items-center gap-1">
+            {j.createdAt && <span className="mr-1 hidden text-[11.5px] text-neutral-400 sm:inline">создано {`${j.createdAt.slice(8, 10)}.${j.createdAt.slice(5, 7)}.${j.createdAt.slice(0, 4)}`}</span>}
+            {curType !== "op" && (
+              <button onClick={() => setJ((o) => applyStage(o, stageOf(o) === "done" ? "wait" : "done"))} title={stageOf(j) === "done" ? "Снять «Готово»" : "Отметить выполненной"} className={"rounded-md p-1 transition " + (stageOf(j) === "done" ? "bg-emerald-50 text-emerald-600" : "text-neutral-400 hover:bg-emerald-50 hover:text-emerald-600")}><Check size={18} strokeWidth={2.4} /></button>
+            )}
+            {!job._new && curType !== "op" && onDuplicate && (
+              <button onClick={() => onDuplicate(j)} title="Дублировать задачу" className="rounded-md p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"><Copy size={17} /></button>
+            )}
             {!job._new && <button onClick={() => onDelete(j.id)} title="Удалить задачу" className="rounded-md p-1 text-neutral-400 transition hover:bg-red-50 hover:text-red-600"><Trash2 size={18} /></button>}
             <button onClick={onClose} title="Закрыть" className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
-          </div>
-        </div>
-
-        {/* Переключатель типа задачи */}
-        <div className="flex shrink-0 flex-wrap gap-2 border-b border-neutral-100 px-5 py-3">
-          {TASK_TYPE_META.map(({ key, label, Icon, tint, bg }) => { const on = curType === key; return (
-            <button key={key} onClick={() => setType(key)} title={label}
-              className={"inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition " + (on ? "shadow-sm" : "border-neutral-200 text-neutral-500 hover:border-neutral-300")}
-              style={on ? { borderColor: tint, background: bg, color: tint } : undefined}>
-              <Icon size={14} />{label}
-            </button>
-          ); })}
+          </span>
         </div>
 
         {curType === "op" ? (
@@ -6744,7 +6750,10 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
               className="w-full resize-none break-words border-none bg-transparent text-lg font-bold leading-snug text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
             <div>
               <div className={fieldL + " mb-1.5"}>Заметка</div>
-              <textarea value={j.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Добавьте описание, контекст, ссылки…" rows={4} className="w-full resize-y rounded-xl border border-neutral-200 px-3 py-2 text-sm leading-relaxed text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+              <textarea value={j.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Добавьте описание, контекст, ссылки…" rows={1}
+                ref={(el) => { if (el) { el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; const max = lh * 12; el.style.height = Math.min(Math.max(el.scrollHeight, lh + 18), max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; } }}
+                onInput={(e) => { const el = e.target; el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; const max = lh * 12; el.style.height = Math.min(Math.max(el.scrollHeight, lh + 18), max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; }}
+                className="w-full resize-none rounded-xl border border-neutral-200 px-3 py-2 text-sm leading-relaxed text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
             </div>
             <div>
               <div className={fieldL + " mb-2"}>Подзадачи</div>
@@ -6770,7 +6779,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
             <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}>
               <div className={fieldL + " mb-2"}>Вложения</div>
               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-              <div className="flex flex-wrap gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 {files.map((f) => (f.isImage ? (
                   <div key={f.id} className="group relative h-[84px] w-[84px] overflow-hidden rounded-xl border border-neutral-200">
                     <button onClick={() => openFile(f)} className="h-full w-full bg-neutral-100 bg-cover bg-center" style={{ backgroundImage: `url(${f.dataUrl})` }} title="Открыть" />
@@ -6785,19 +6794,29 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
                     <button onClick={() => removeFile(f.id)} className="shrink-0 text-neutral-300 hover:text-red-500" title="Удалить"><X size={14} /></button>
                   </div>
                 )))}
-                <button onClick={() => fileInputRef.current?.click()} className="flex h-[84px] w-[84px] flex-col items-center justify-center gap-1 rounded-xl border-[1.5px] border-dashed border-neutral-300 text-[11px] font-semibold text-neutral-400 transition hover:border-cyan-400 hover:text-cyan-700"><Plus size={18} /> Файл</button>
+                {files.length > 0 ? (
+                  <button onClick={() => fileInputRef.current?.click()} className="flex h-[84px] w-[84px] flex-col items-center justify-center gap-1 rounded-xl border-[1.5px] border-dashed border-neutral-300 text-[11px] font-semibold text-neutral-400 transition hover:border-cyan-400 hover:text-cyan-700"><Plus size={18} /> Файл</button>
+                ) : (
+                  <>
+                    <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-lg border-[1.5px] border-dashed border-neutral-300 px-3 py-1.5 text-[13px] font-semibold text-neutral-400 transition hover:border-cyan-400 hover:text-cyan-700"><Plus size={15} /> Файл</button>
+                    <span className="text-[12px] text-neutral-300">или перетащите сюда · до 10 МБ</span>
+                  </>
+                )}
               </div>
-              <div className={"mt-2 rounded-xl border-[1.5px] border-dashed px-3 py-2 text-center text-[12px] transition " + (dragOver ? "border-cyan-400 bg-cyan-50/50 text-cyan-700" : "border-neutral-200 text-neutral-400")}>
-                {fileMsg ? <span className="text-amber-600">{fileMsg}</span> : "Перетащите сюда файлы или нажмите «Файл» · картинки, PDF, документы · до 10 МБ"}
-              </div>
+              {(dragOver || fileMsg) && (
+                <div className={"mt-2 rounded-xl border-[1.5px] border-dashed px-3 py-2 text-center text-[12px] transition " + (fileMsg ? "border-amber-200 text-amber-600" : "border-cyan-400 bg-cyan-50/50 text-cyan-700")}>
+                  {fileMsg || "Отпустите файлы, чтобы прикрепить"}
+                </div>
+              )}
             </div>
           </div>
 
           {/* ПРАВО: настройки */}
           <div className="flex flex-col gap-4 bg-neutral-50/50 p-5">
+            <span className={fieldL + " -mb-2"}>Планирование</span>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className={fieldL}>Даты</span>
+                <span className="text-sm text-neutral-600">Даты</span>
                 <button onClick={() => { if (datesOn) setJ((o) => ({ ...o, start: null, date: null })); else set("start", isoYMD(new Date())); }} title={datesOn ? "Убрать даты" : "Задать даты"} className="relative h-[22px] w-[38px] shrink-0 rounded-full transition" style={{ background: datesOn ? "#171717" : "#d4d4d8" }}>
                   <span className="absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow transition-all" style={{ left: datesOn ? 18 : 2 }} />
                 </button>
@@ -6818,13 +6837,42 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <span className={fieldL}>Статус</span>
+              <span className="text-sm text-neutral-600">Статус</span>
               <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
                 {STAGE_ORDER.map((k) => { const on = stageOf(j) === k; return (
-                  <button key={k} onClick={() => setJ((o) => applyStage(o, k))} className={"flex-1 rounded-md px-2 py-1 text-xs font-semibold " + (on ? "shadow-sm" : "")} style={on ? { background: STAGES[k].bg, color: STAGES[k].color } : { color: "#a3a3a3" }}>{STAGES[k].label}</button>
+                  <button key={k} onClick={() => setJ((o) => applyStage(o, k))} className={"flex-1 whitespace-nowrap rounded-md px-1.5 py-1 text-xs font-semibold " + (on ? "shadow-sm" : "")} style={on ? { background: STAGES[k].bg, color: STAGES[k].color } : { color: "#a3a3a3" }}>{STAGES[k].label}</button>
                 ); })}
               </div>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm text-neutral-600">Приоритет</span>
+              <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+                {Object.keys(PRIORITIES).map((k) => (
+                  <button key={k} onClick={() => set("priority", k)} className={"flex-1 rounded-md px-2 py-1 text-xs font-semibold " + (j.priority === k ? "shadow-sm" : "")} style={j.priority === k ? { background: PRIORITIES[k].bg, color: PRIORITIES[k].color } : { color: "#a3a3a3" }}>{PRIORITIES[k].label}</button>
+                ))}
+              </div>
+            </div>
+            {curType === "product" && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm text-neutral-600">Товар</span>
+                <select value={j.productId || ""} onChange={(e) => set("productId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+                  <option value="">—</option>
+                  {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
+                </select>
+              </div>
+            )}
+            {curType === "purchase" && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm text-neutral-600">Партия</span>
+                <select value={j.batchId || ""} onChange={(e) => set("batchId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
+                  <option value="">— выберите партию —</option>
+                  {(batches || []).map((b) => (<option key={b.id} value={b.id}>{b.name || "Партия"}</option>))}
+                </select>
+                {(batches || []).length === 0 && <span className="text-[11px] text-neutral-400">Партий пока нет — создайте в разделе «Закупки».</span>}
+              </div>
+            )}
+
+            <div className="border-t border-neutral-200/70" />
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Исполнитель</span>
               <div className="flex items-center gap-2">
@@ -6836,33 +6884,6 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
               </div>
               {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Добавьте исполнителей в разделе «Функционал».</span>}
             </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={fieldL}>Приоритет</span>
-              <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-                {Object.keys(PRIORITIES).map((k) => (
-                  <button key={k} onClick={() => set("priority", k)} className={"flex-1 rounded-md px-2 py-1 text-xs font-semibold " + (j.priority === k ? "shadow-sm" : "")} style={j.priority === k ? { background: PRIORITIES[k].bg, color: PRIORITIES[k].color } : { color: "#a3a3a3" }}>{PRIORITIES[k].label}</button>
-                ))}
-              </div>
-            </div>
-            {curType === "product" && (
-              <div className="flex flex-col gap-1.5">
-                <span className={fieldL}>Товар</span>
-                <select value={j.productId || ""} onChange={(e) => set("productId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-                  <option value="">—</option>
-                  {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
-                </select>
-              </div>
-            )}
-            {curType === "purchase" && (
-              <div className="flex flex-col gap-1.5">
-                <span className={fieldL}>Партия</span>
-                <select value={j.batchId || ""} onChange={(e) => set("batchId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-                  <option value="">— выберите партию —</option>
-                  {(batches || []).map((b) => (<option key={b.id} value={b.id}>{b.name || "Партия"}</option>))}
-                </select>
-                {(batches || []).length === 0 && <span className="text-[11px] text-neutral-400">Партий пока нет — создайте в разделе «Закупки».</span>}
-              </div>
-            )}
           </div>
         </div>
         )}
