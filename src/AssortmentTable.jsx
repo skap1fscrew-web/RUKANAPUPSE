@@ -973,32 +973,36 @@ export default function AssortmentTable() {
   }, [purchaseBatches, cycleTriggers, loaded]);
 
   // авто-создание задач по триггеру «смена статуса товара»
-  // дедуп на товаре: product.trgFired[ruleId] = true
+  // упрощённый дедуп: создаём задачу, только если у товара её ещё нет
+  // (есть — хоть выполненная — не трогаем; удалил и статус всё ещё подходит — создастся снова)
   useEffect(() => {
     if (!loaded) return;
     const rules = (taskTriggers || []).filter((r) => r && r.enabled && String(r.text || "").trim() && r.statusName);
     if (!rules.length) return;
-    let changed = false; const newJobs = [];
-    const next = (products || []).map((p) => {
-      const fired = { ...(p.trgFired || {}) }; let local = false;
+    const newJobs = [];
+    (products || []).forEach((p) => {
       rules.forEach((r) => {
-        if (p.status !== r.statusName || fired[r.id]) return;
+        if (p.status !== r.statusName) return;
         const title = String(r.text).replace(/\{товар\}/g, p.name || "товар").replace(/\{статус\}/g, r.statusName);
+        const type = r.taskType || "product";
+        const exists = (jobs || []).some((j) => {
+          if (!j) return false;
+          // для задачи по товару — привязка к товару (по trgId правила или по тексту);
+          // для проектной — по тексту (в нём уже подставлено имя товара, т.е. уникален)
+          if (type === "product") return j.productId === p.id && (j.trgId === r.id || j.title === title);
+          return jobType(j) !== "product" && j.title === title;
+        });
+        if (exists) return;
         let date = null, start = null;
         if (r.hasDate) {
           const s0 = new Date(); const e0 = new Date(); e0.setDate(e0.getDate() + Math.max(1, Number(r.durDays) || 1) - 1);
           start = isoYMD(s0); date = isoYMD(e0);
         }
-        const type = r.taskType || "product";
-        newJobs.push({ id: uid(), title, type, productId: type === "product" ? p.id : null, date, start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Триггер: статус «${r.statusName}»`, createdAt: isoYMD(new Date()) });
-        fired[r.id] = true; local = true;
+        newJobs.push({ id: uid(), title, type, productId: type === "product" ? p.id : null, trgId: r.id, date, start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Триггер: статус «${r.statusName}»`, createdAt: isoYMD(new Date()) });
       });
-      if (local) { changed = true; return { ...p, trgFired: fired }; }
-      return p;
     });
     if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
-    if (changed) setProducts(next);
-  }, [products, taskTriggers, loaded]);
+  }, [products, taskTriggers, jobs, loaded]);
 
   // ручное создание задач по этапу (кнопка «создать задачу» в цикле) — в обход дедупа
   const createCycleStageTasks = (batchId, stageId) => {
