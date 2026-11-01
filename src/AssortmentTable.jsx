@@ -959,10 +959,14 @@ export default function AssortmentTable() {
         if (!cond) return;
         const title = String(r.text).replace(/\{партия\}/g, b.name || "партия");
         const dd = r.hasDate ? stageTaskDates(bc, r.stageId, r.durDays) : { start: null, date: null };
-        const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
+        const common = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Партия: «${b.name || ""}»`, createdAt: isoYMD(new Date()) };
         if (r.scope === "product") {
-          (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
-        } else newJobs.push({ id: uid(), title, productId: null, ...base });
+          // на каждый товар партии — задача типа «Товар»
+          (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), type: "product", productId: it.productId || null, ...common }));
+        } else {
+          // на партию — задача типа «Закупки»
+          newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common });
+        }
         fired[r.id] = true; localChanged = true;
       });
       if (localChanged) { batchesChanged = true; return { ...b, cycle: { ...bc, fired } }; }
@@ -973,36 +977,40 @@ export default function AssortmentTable() {
   }, [purchaseBatches, cycleTriggers, loaded]);
 
   // авто-создание задач по триггеру «смена статуса товара»
-  // упрощённый дедуп: создаём задачу, только если у товара её ещё нет
-  // (есть — хоть выполненная — не трогаем; удалил и статус всё ещё подходит — создастся снова)
+  // создаётся ОДИН раз при входе в статус (флаг product.trgDone[ruleId]);
+  // удаление задачи её не воскрешает; флаг сбрасывается, когда товар выходит
+  // из статуса → при повторном входе задача создаётся снова
   useEffect(() => {
     if (!loaded) return;
     const rules = (taskTriggers || []).filter((r) => r && r.enabled && String(r.text || "").trim() && r.statusName);
     if (!rules.length) return;
-    const newJobs = [];
-    (products || []).forEach((p) => {
+    let changed = false; const newJobs = [];
+    const next = (products || []).map((p) => {
+      // учитываем и старый флаг trgFired (миграция), и новый trgDone
+      const done = { ...(p.trgFired || {}), ...(p.trgDone || {}) }; let local = false;
       rules.forEach((r) => {
-        if (p.status !== r.statusName) return;
+        if (p.status !== r.statusName) { if (done[r.id]) { delete done[r.id]; local = true; } return; }
+        if (done[r.id]) return; // этот заход в статус уже обработан
         const title = String(r.text).replace(/\{товар\}/g, p.name || "товар").replace(/\{статус\}/g, r.statusName);
         const type = r.taskType || "product";
         const exists = (jobs || []).some((j) => {
           if (!j) return false;
-          // для задачи по товару — привязка к товару (по trgId правила или по тексту);
-          // для проектной — по тексту (в нём уже подставлено имя товара, т.е. уникален)
           if (type === "product") return j.productId === p.id && (j.trgId === r.id || j.title === title);
           return jobType(j) !== "product" && j.title === title;
         });
-        if (exists) return;
-        let date = null, start = null;
-        if (r.hasDate) {
-          const s0 = new Date(); const e0 = new Date(); e0.setDate(e0.getDate() + Math.max(1, Number(r.durDays) || 1) - 1);
-          start = isoYMD(s0); date = isoYMD(e0);
+        if (!exists) {
+          let date = null, start = null;
+          if (r.hasDate) { const s0 = new Date(); const e0 = new Date(); e0.setDate(e0.getDate() + Math.max(1, Number(r.durDays) || 1) - 1); start = isoYMD(s0); date = isoYMD(e0); }
+          newJobs.push({ id: uid(), title, type, productId: type === "product" ? p.id : null, trgId: r.id, date, start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Триггер: статус «${r.statusName}»`, createdAt: isoYMD(new Date()) });
         }
-        newJobs.push({ id: uid(), title, type, productId: type === "product" ? p.id : null, trgId: r.id, date, start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Триггер: статус «${r.statusName}»`, createdAt: isoYMD(new Date()) });
+        done[r.id] = true; local = true; // помечаем заход обработанным (создали или задача уже была)
       });
+      if (local) { changed = true; const { trgFired, ...rest } = p; return { ...rest, trgDone: done }; }
+      return p;
     });
     if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
-  }, [products, taskTriggers, jobs, loaded]);
+    if (changed) setProducts(next);
+  }, [products, taskTriggers, loaded]);
 
   // ручное создание задач по этапу (кнопка «создать задачу» в цикле) — в обход дедупа
   const createCycleStageTasks = (batchId, stageId) => {
@@ -1013,9 +1021,9 @@ export default function AssortmentTable() {
     rules.forEach((r) => {
       const title = String(r.text).replace(/\{партия\}/g, b.name || "партия");
       const dd = r.hasDate ? stageTaskDates(b.cycle, stageId, r.durDays) : { start: null, date: null };
-      const base = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], batchId: b.id, note: `Партия: «${b.name || ""}»` };
-      if (r.scope === "product") (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), productId: it.productId || null, ...base }));
-      else newJobs.push({ id: uid(), title, productId: null, ...base });
+      const common = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Партия: «${b.name || ""}»`, createdAt: isoYMD(new Date()) };
+      if (r.scope === "product") (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), type: "product", productId: it.productId || null, ...common }));
+      else newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common });
       firedKeys.push(r.id);
     });
     if (!newJobs.length) { setToast({ text: "В партии нет товаров для задач" }); return; }
@@ -6234,7 +6242,15 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
     ];
   }
   const byCol = Object.fromEntries(columns.map((c) => [c.key, []]));
-  jobs.forEach((j) => { const c = columns.find((c) => c.match(j)); if (c) byCol[c.key].push(j); });
+  // по умолчанию новые задачи сверху: сортировка по дате создания (убыв.),
+  // при равной дате — позже добавленные выше (стабильно по исходному индексу)
+  const jobIdx = new Map(jobs.map((j, i) => [j.id, i]));
+  const sortedByNew = jobs.slice().sort((a, b) => {
+    const ca = a.createdAt || "", cb = b.createdAt || "";
+    if (ca !== cb) return cb.localeCompare(ca);
+    return (jobIdx.get(b.id) ?? 0) - (jobIdx.get(a.id) ?? 0);
+  });
+  sortedByNew.forEach((j) => { const c = columns.find((c) => c.match(j)); if (c) byCol[c.key].push(j); });
   const moveJob = (id, col) => { const j = jobs.find((x) => x.id === id); if (j && !col.match(j)) onUpdateJob({ ...j, ...col.preset }); };
   const [doneOpen, setDoneOpen] = useState({});
   const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
