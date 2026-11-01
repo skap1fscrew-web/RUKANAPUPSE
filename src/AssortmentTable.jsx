@@ -6107,6 +6107,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [fltPrio, setFltPrio] = useState(null);
   const [fltTag, setFltTag] = useState(null);
   const [fltAssignee, setFltAssignee] = useState(null);
+  const [fltType, setFltType] = useState(null); // быстрый фильтр по типу задачи: op|purchase|project|product
   const [fltOpen, setFltOpen] = useState(null);
   const todayStr = isoYMD(now);
   useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
@@ -6122,7 +6123,11 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const isBoard = view === "kanban" || view === "list";
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
   const activeFilters = (fltPrio ? 1 : 0) + (fltAssignee ? 1 : 0);
+  const typeOf = (j) => (j && j.type === "op") ? "op" : jobType(j);
+  const matchType = (j) => !fltType || typeOf(j) === fltType;
+  const typedJobs = jobs.filter(matchType); // для календаря/ганта (там без приоритет/исполнитель)
   const fJobs = jobs.filter((j) => {
+    if (!matchType(j)) return false;
     if (fltPrio && (j.priority || null) !== fltPrio) return false;
     if (fltAssignee && (fltAssignee === "__none" ? !!j.assignee : (j.assignee || null) !== fltAssignee)) return false;
     return true;
@@ -6141,6 +6146,11 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
             <button onClick={goToday} className="rounded-lg ml-1 border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">Сегодня</button>
           </>
         )}
+        <div className="ml-3 inline-flex rounded-lg bg-neutral-100 p-0.5" title="Быстрый фильтр по типу задачи">
+          {TASK_TYPE_META.map(({ key, label, Icon, tint }) => { const on = fltType === key; return (
+            <button key={key} title={on ? label + " · показать все" : label} onClick={() => setFltType(on ? null : key)} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
+          ); })}
+        </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {view === "kanban" && (
             <div className="relative">
@@ -6178,8 +6188,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
       <div className="min-h-0 flex-1 overflow-auto">
         {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
-          : view === "cal" ? <CalendarGrid jobs={jobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
-          : <GanttBoard jobs={jobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
+          : view === "cal" ? <CalendarGrid jobs={typedJobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
+          : <GanttBoard jobs={typedJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
       </div>
     </div>
   );
