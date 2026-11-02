@@ -961,11 +961,15 @@ export default function AssortmentTable() {
         const dd = r.hasDate ? stageTaskDates(bc, r.stageId, r.durDays) : { start: null, date: null };
         const common = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Партия: «${b.name || ""}»`, createdAt: isoYMD(new Date()) };
         if (r.scope === "product") {
-          // на каждый товар партии — задача типа «Товар»
-          (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), type: "product", productId: it.productId || null, ...common }));
+          // на каждый товар партии — задача типа «Товар»; не дублируем, если такая уже есть у товара (выполнена или нет)
+          (b.items || []).forEach((it) => {
+            const jt = `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
+            if ((jobs || []).some((j) => j && j.productId === it.productId && j.title === jt)) return;
+            newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
+          });
         } else {
-          // на партию — задача типа «Закупки»
-          newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common });
+          // на партию — задача типа «Закупки»; не дублируем, если такая уже есть у партии
+          if (!(jobs || []).some((j) => j && j.batchId === b.id && j.title === title)) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common });
         }
         fired[r.id] = true; localChanged = true;
       });
