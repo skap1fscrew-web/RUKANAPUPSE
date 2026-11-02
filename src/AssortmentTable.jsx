@@ -961,15 +961,20 @@ export default function AssortmentTable() {
         const dd = r.hasDate ? stageTaskDates(bc, r.stageId, r.durDays) : { start: null, date: null };
         const common = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Партия: «${b.name || ""}»`, createdAt: isoYMD(new Date()) };
         if (r.scope === "product") {
-          // на каждый товар партии — задача типа «Товар»; не дублируем, если такая уже есть у товара (выполнена или нет)
+          // на каждый товар партии — задача типа «Товар»; не дублируем, если такая уже есть
+          // (проверяем и сохранённые задачи, и созданные в этом же проходе — товар мог быть в нескольких партиях)
           (b.items || []).forEach((it) => {
             const jt = `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
-            if ((jobs || []).some((j) => j && j.productId === it.productId && j.title === jt)) return;
+            const dup = (jobs || []).some((j) => j && j.productId === it.productId && j.title === jt)
+              || newJobs.some((j) => j.productId === it.productId && j.title === jt);
+            if (dup) return;
             newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
           });
         } else {
           // на партию — задача типа «Закупки»; не дублируем, если такая уже есть у партии
-          if (!(jobs || []).some((j) => j && j.batchId === b.id && j.title === title)) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common });
+          const dup = (jobs || []).some((j) => j && j.batchId === b.id && j.title === title)
+            || newJobs.some((j) => j.batchId === b.id && j.title === title);
+          if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common });
         }
         fired[r.id] = true; localChanged = true;
       });
@@ -978,7 +983,7 @@ export default function AssortmentTable() {
     });
     if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
     if (batchesChanged) setPurchaseBatches(next);
-  }, [purchaseBatches, cycleTriggers, loaded]);
+  }, [purchaseBatches, cycleTriggers, jobs, loaded]);
 
   // авто-создание задач по триггеру «смена статуса товара»
   // создаётся ОДИН раз при входе в статус (флаг product.trgDone[ruleId]);
@@ -1026,11 +1031,15 @@ export default function AssortmentTable() {
       const title = String(r.text).replace(/\{партия\}/g, b.name || "партия");
       const dd = r.hasDate ? stageTaskDates(b.cycle, stageId, r.durDays) : { start: null, date: null };
       const common = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Партия: «${b.name || ""}»`, createdAt: isoYMD(new Date()) };
-      if (r.scope === "product") (b.items || []).forEach((it) => newJobs.push({ id: uid(), title: `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(), type: "product", productId: it.productId || null, ...common }));
-      else newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common });
+      if (r.scope === "product") (b.items || []).forEach((it) => {
+        const jt = `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
+        const dup = (jobs || []).some((j) => j && j.productId === it.productId && j.title === jt) || newJobs.some((j) => j.productId === it.productId && j.title === jt);
+        if (!dup) newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
+      });
+      else { const dup = (jobs || []).some((j) => j && j.batchId === b.id && j.title === title) || newJobs.some((j) => j.batchId === b.id && j.title === title); if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common }); }
       firedKeys.push(r.id);
     });
-    if (!newJobs.length) { setToast({ text: "В партии нет товаров для задач" }); return; }
+    if (!newJobs.length) { setToast({ text: "Задачи этого этапа уже созданы" }); return; }
     setJobs((js) => [...js, ...newJobs]);
     setPurchaseBatches((bs) => bs.map((x) => {
       if (x.id !== batchId) return x;
