@@ -7655,12 +7655,14 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
   const moveCycStage = (id, dir) => { const i = cycStages.findIndex((s) => s.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= cycStages.length) return; const a = cycStages.slice(); const [x] = a.splice(i, 1); a.splice(j, 0, x); setCyc(a); };
 
   // --- задачи по триггерам (смена статуса товара) ---
-  const addTrigger = () => setTaskTriggers((list) => [...(list || []), { id: uid(), enabled: true, statusName: (statuses[0] && statuses[0].name) || "", text: "", taskType: "product", assignee: null, priority: "low", hasDate: false, durDays: 1 }]);
+  // новое правило создаётся ВЫКЛЮЧЕННЫМ — сначала настроить, потом включить тумблер (иначе срабатывает на дефолтах)
+  const addTrigger = () => setTaskTriggers((list) => [...(list || []), { id: uid(), enabled: false, statusName: (statuses[0] && statuses[0].name) || "", text: "", taskType: "product", assignee: null, priority: "low", hasDate: false, durDays: 1 }]);
   const patchTrigger = (id, p) => setTaskTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
   const removeTrigger = (id) => setTaskTriggers((list) => (list || []).filter((r) => r.id !== id));
 
   // --- задачи по триггерам (этап партии / произв. цикл) ---
-  const addCycleTrigger = () => setCycleTriggers((list) => [...(list || []), { id: uid(), enabled: true, stageId: (cycStages[0] && cycStages[0].id) || "", when: "enter", scope: "batch", text: "", priority: "low", assignee: null, hasDate: false, durDays: 1 }]);
+  // новое правило создаётся ВЫКЛЮЧЕННЫМ — сначала настроить «для»/текст, потом включить тумблер
+  const addCycleTrigger = () => setCycleTriggers((list) => [...(list || []), { id: uid(), enabled: false, stageId: (cycStages[0] && cycStages[0].id) || "", when: "enter", scope: "product", text: "", priority: "low", assignee: null, hasDate: false, durDays: 1 }]);
   const patchCycleTrigger = (id, p) => setCycleTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
   const removeCycleTrigger = (id) => setCycleTriggers((list) => (list || []).filter((r) => r.id !== id));
 
