@@ -7645,6 +7645,8 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
 
 function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
+  const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
+  const toggleTrgOpen = (id) => setTrgOpen((o) => ({ ...o, [id]: !o[id] }));
 
   // --- производственный цикл ---
   const cycStages = (prodCycle && Array.isArray(prodCycle.stages)) ? prodCycle.stages : [];
@@ -7655,16 +7657,23 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
   const moveCycStage = (id, dir) => { const i = cycStages.findIndex((s) => s.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= cycStages.length) return; const a = cycStages.slice(); const [x] = a.splice(i, 1); a.splice(j, 0, x); setCyc(a); };
 
   // --- задачи по триггерам (смена статуса товара) ---
-  // новое правило создаётся ВЫКЛЮЧЕННЫМ — сначала настроить, потом включить тумблер (иначе срабатывает на дефолтах)
-  const addTrigger = () => setTaskTriggers((list) => [...(list || []), { id: uid(), enabled: false, statusName: (statuses[0] && statuses[0].name) || "", text: "", taskType: "product", assignee: null, priority: "low", hasDate: false, durDays: 1 }]);
+  // новое правило создаётся ВЫКЛЮЧЕННЫМ и РАСКРЫТЫМ — сначала настроить, потом включить тумблер (иначе срабатывает на дефолтах)
+  const addTrigger = () => { const id = uid(); setTaskTriggers((list) => [...(list || []), { id, enabled: false, statusName: (statuses[0] && statuses[0].name) || "", text: "", taskType: "product", assignee: null, priority: "low", hasDate: false, durDays: 1 }]); setTrgOpen((o) => ({ ...o, [id]: true })); };
   const patchTrigger = (id, p) => setTaskTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
   const removeTrigger = (id) => setTaskTriggers((list) => (list || []).filter((r) => r.id !== id));
 
   // --- задачи по триггерам (этап партии / произв. цикл) ---
-  // новое правило создаётся ВЫКЛЮЧЕННЫМ — сначала настроить «для»/текст, потом включить тумблер
-  const addCycleTrigger = () => setCycleTriggers((list) => [...(list || []), { id: uid(), enabled: false, stageId: (cycStages[0] && cycStages[0].id) || "", when: "enter", scope: "product", text: "", priority: "low", assignee: null, hasDate: false, durDays: 1 }]);
+  // новое правило создаётся ВЫКЛЮЧЕННЫМ и РАСКРЫТЫМ
+  const addCycleTrigger = () => { const id = uid(); setCycleTriggers((list) => [...(list || []), { id, enabled: false, stageId: (cycStages[0] && cycStages[0].id) || "", when: "enter", scope: "product", text: "", priority: "low", assignee: null, hasDate: false, durDays: 1 }]); setTrgOpen((o) => ({ ...o, [id]: true })); };
   const patchCycleTrigger = (id, p) => setCycleTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
   const removeCycleTrigger = (id) => setCycleTriggers((list) => (list || []).filter((r) => r.id !== id));
+  // сводка-чип и имена для свёрнутых строк правил
+  const trgChip = (txt, bg, color) => <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: bg, color }}>{txt}</span>;
+  const personName = (id) => (taskPeople || []).find((p) => p.id === id)?.name;
+  const stageName = (id) => (cycStages.find((s) => s.id === id) || {}).name || "этап";
+  const allRuleIds = [...(taskTriggers || []).map((r) => r.id), ...(cycleTriggers || []).map((r) => r.id)];
+  const anyTrgOpen = allRuleIds.some((id) => trgOpen[id]);
+  const toggleAllTrg = () => { if (anyTrgOpen) setTrgOpen({}); else setTrgOpen(Object.fromEntries(allRuleIds.map((id) => [id, true]))); };
 
   // --- предметы и комиссии ВБ (загрузка таблицей, опора на FBW) ---
   const [subjName, setSubjName] = useState("");
@@ -7764,7 +7773,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + (tab === "triggers" ? "max-w-3xl" : "max-w-lg")} style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + (tab === "triggers" ? "max-w-4xl" : "max-w-lg")} style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
           <h2 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-900"><Settings2 size={18} /> Настройки</h2>
           <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
@@ -7859,23 +7868,42 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
           {tab === "triggers" && (
             <>
-              <p className="mb-3 text-xs text-neutral-500">Когда срабатывает триггер — автоматически создаётся задача в разделе «Задачи». Создаётся один раз на событие.</p>
+              <div className="mb-3 flex items-center gap-2">
+                <p className="text-xs text-neutral-500">Когда срабатывает триггер — автоматически создаётся задача в разделе «Задачи». Создаётся один раз на событие.</p>
+                {allRuleIds.length > 0 && <button onClick={toggleAllTrg} className="ml-auto shrink-0 inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1 text-[11px] font-semibold text-neutral-500 hover:bg-neutral-50">{anyTrgOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}{anyTrgOpen ? "Свернуть все" : "Развернуть все"}</button>}
+              </div>
 
               {/* — Триггер: смена статуса товара — */}
               <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-indigo-500"><span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-50 text-indigo-600"><Flag size={12} /></span> Смена статуса товара</div>
               <div className="space-y-2.5">
-                {(taskTriggers || []).map((r) => (
-                  <div key={r.id} className="overflow-hidden rounded-xl border border-neutral-200">
-                    <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 bg-neutral-50/70 px-3 py-2.5">
-                      <span className="text-xs font-semibold text-neutral-600">Когда статус становится</span>
-                      <select value={r.statusName} onChange={(e) => patchTrigger(r.id, { statusName: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none">
-                        {(statuses || []).map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-                        {!(statuses || []).some((s) => s.name === r.statusName) && r.statusName && <option value={r.statusName}>{r.statusName}</option>}
-                      </select>
-                      <button onClick={() => patchTrigger(r.id, { enabled: !r.enabled })} className="relative ml-auto h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: r.enabled ? "#16a34a" : "#d4d4d8" }} title={r.enabled ? "Включено" : "Выключено"}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: r.enabled ? 16 : 2 }} /></button>
-                      <button onClick={() => removeTrigger(r.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить правило"><Trash2 size={14} /></button>
+                {(taskTriggers || []).map((r) => { const open = !!trgOpen[r.id]; const pr = PRIORITIES[r.priority]; const asg = personName(r.assignee); return (
+                  <div key={r.id} className={"overflow-hidden rounded-xl border " + (open ? "border-neutral-300" : "border-neutral-200")}>
+                    {/* свёрнутая строка */}
+                    <div className={"flex items-center gap-2.5 px-3 py-2.5 " + (open ? "border-b border-neutral-100 bg-neutral-50/70" : "")}>
+                      <button onClick={() => toggleTrgOpen(r.id)} className="shrink-0 text-neutral-300 hover:text-neutral-600" title={open ? "Свернуть" : "Настроить"}><ChevronRight size={14} className={"transition " + (open ? "rotate-90" : "")} /></button>
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.enabled ? "#6366f1" : "#cbd5e1" }} />
+                      <button onClick={() => toggleTrgOpen(r.id)} className="min-w-0 flex-1 text-left">
+                        <div className={"truncate text-sm font-medium " + (r.text ? "text-neutral-800" : "text-neutral-400")}>{r.text || "Новое правило"}</div>
+                        <div className="truncate text-[11px] text-neutral-400">когда статус → <b className="font-semibold text-neutral-500">«{r.statusName || "—"}»</b></div>
+                      </button>
+                      <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+                        {trgChip(r.taskType === "project" ? "проектная" : "по товару", r.taskType === "project" ? "#f5f3ff" : "#fff7ed", r.taskType === "project" ? "#6d28d9" : "#c2410c")}
+                        {pr && trgChip(pr.label, pr.bg, pr.color)}
+                        {asg && trgChip(asg, "#eef2ff", "#4f46e5")}
+                      </div>
+                      <button onClick={() => patchTrigger(r.id, { enabled: !r.enabled })} className="relative h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: r.enabled ? "#16a34a" : "#d4d4d8" }} title={r.enabled ? "Включено" : "Выключено"}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: r.enabled ? 16 : 2 }} /></button>
+                      <button onClick={() => removeTrigger(r.id)} className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить правило"><Trash2 size={14} /></button>
                     </div>
-                    <div className="space-y-2 p-3">
+                    {/* раскрытые настройки */}
+                    {open && (
+                    <div className="space-y-2.5 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold text-neutral-600">Когда статус становится</span>
+                        <select value={r.statusName} onChange={(e) => patchTrigger(r.id, { statusName: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none">
+                          {(statuses || []).map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+                          {!(statuses || []).some((s) => s.name === r.statusName) && r.statusName && <option value={r.statusName}>{r.statusName}</option>}
+                        </select>
+                      </div>
                       <div>
                         <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Текст задачи · {"{товар}"} подставит название</div>
                         <input value={r.text} onChange={(e) => patchTrigger(r.id, { text: e.target.value })} placeholder="Напр.: Проверить карточку после запуска · {товар}" className="w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
@@ -7900,8 +7928,9 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
-                ))}
+                ); })}
                 {(!taskTriggers || taskTriggers.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Правил по статусу пока нет</p>}
               </div>
               <button onClick={addTrigger} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-indigo-400 hover:text-indigo-700"><Plus size={14} /> Добавить правило</button>
@@ -7909,19 +7938,35 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
               {/* — Триггер: этап производственного цикла (плоский список, несколько правил на этап) — */}
               <div className="mb-2 mt-6 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-amber-600"><span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-amber-50 text-amber-600"><Repeat size={12} /></span> Этап партии (произв. цикл)</div>
               <div className="space-y-2.5">
-                {(cycleTriggers || []).map((r) => (
-                  <div key={r.id} className="overflow-hidden rounded-xl border border-neutral-200">
-                    <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 bg-neutral-50/70 px-3 py-2.5">
-                      <span className="text-xs font-semibold text-neutral-600">Когда этап</span>
-                      <select value={r.stageId} onChange={(e) => patchCycleTrigger(r.id, { stageId: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none">
-                        {cycStages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        {!cycStages.some((s) => s.id === r.stageId) && r.stageId && <option value={r.stageId}>этап удалён</option>}
-                      </select>
-                      <select value={r.when} onChange={(e) => patchCycleTrigger(r.id, { when: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"><option value="enter">начат</option><option value="complete">пройден</option></select>
-                      <button onClick={() => patchCycleTrigger(r.id, { enabled: !r.enabled })} className="relative ml-auto h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: r.enabled ? "#16a34a" : "#d4d4d8" }} title={r.enabled ? "Включено" : "Выключено"}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: r.enabled ? 16 : 2 }} /></button>
-                      <button onClick={() => removeCycleTrigger(r.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить правило"><Trash2 size={14} /></button>
+                {(cycleTriggers || []).map((r) => { const open = !!trgOpen[r.id]; const pr = PRIORITIES[r.priority]; const asg = personName(r.assignee); return (
+                  <div key={r.id} className={"overflow-hidden rounded-xl border " + (open ? "border-neutral-300" : "border-neutral-200")}>
+                    {/* свёрнутая строка */}
+                    <div className={"flex items-center gap-2.5 px-3 py-2.5 " + (open ? "border-b border-neutral-100 bg-neutral-50/70" : "")}>
+                      <button onClick={() => toggleTrgOpen(r.id)} className="shrink-0 text-neutral-300 hover:text-neutral-600" title={open ? "Свернуть" : "Настроить"}><ChevronRight size={14} className={"transition " + (open ? "rotate-90" : "")} /></button>
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.enabled ? "#f59e0b" : "#cbd5e1" }} />
+                      <button onClick={() => toggleTrgOpen(r.id)} className="min-w-0 flex-1 text-left">
+                        <div className={"truncate text-sm font-medium " + (r.text ? "text-neutral-800" : "text-neutral-400")}>{r.text || "Новое правило"}</div>
+                        <div className="truncate text-[11px] text-neutral-400">когда <b className="font-semibold text-neutral-500">«{stageName(r.stageId)}»</b> {r.when === "complete" ? "пройден" : "начат"}</div>
+                      </button>
+                      <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+                        {trgChip(r.scope === "product" ? "по товару" : "на партию", r.scope === "product" ? "#fff7ed" : "#ecfeff", r.scope === "product" ? "#c2410c" : "#0e7490")}
+                        {pr && trgChip(pr.label, pr.bg, pr.color)}
+                        {asg && trgChip(asg, "#eef2ff", "#4f46e5")}
+                      </div>
+                      <button onClick={() => patchCycleTrigger(r.id, { enabled: !r.enabled })} className="relative h-[20px] w-[34px] shrink-0 rounded-full transition" style={{ background: r.enabled ? "#16a34a" : "#d4d4d8" }} title={r.enabled ? "Включено" : "Выключено"}><span className="absolute top-0.5 h-[16px] w-[16px] rounded-full bg-white shadow transition-all" style={{ left: r.enabled ? 16 : 2 }} /></button>
+                      <button onClick={() => removeCycleTrigger(r.id)} className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить правило"><Trash2 size={14} /></button>
                     </div>
-                    <div className="space-y-2 p-3">
+                    {/* раскрытые настройки */}
+                    {open && (
+                    <div className="space-y-2.5 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold text-neutral-600">Когда этап</span>
+                        <select value={r.stageId} onChange={(e) => patchCycleTrigger(r.id, { stageId: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none">
+                          {cycStages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          {!cycStages.some((s) => s.id === r.stageId) && r.stageId && <option value={r.stageId}>этап удалён</option>}
+                        </select>
+                        <select value={r.when} onChange={(e) => patchCycleTrigger(r.id, { when: e.target.value })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"><option value="enter">начат</option><option value="complete">пройден</option></select>
+                      </div>
                       <div>
                         <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Текст задачи · {"{партия}"} подставит имя партии</div>
                         <input value={r.text} onChange={(e) => patchCycleTrigger(r.id, { text: e.target.value })} placeholder="Напр.: Формирование фонда маркетинга по партии «{партия}»" className="w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm focus:border-neutral-400 focus:outline-none" />
@@ -7946,8 +7991,9 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
-                ))}
+                ); })}
                 {(!cycleTriggers || cycleTriggers.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Правил по этапам пока нет</p>}
                 {cycStages.length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Этапов цикла пока нет — добавьте во вкладке «Произв. цикл»</p>}
               </div>
