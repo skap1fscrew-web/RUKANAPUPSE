@@ -6297,7 +6297,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", tags, taskLabels, peop
           onDragOver={(e) => { e.preventDefault(); setOverCol(col.key); }}
           onDragLeave={() => setOverCol((o) => (o === col.key ? null : o))}
           onDrop={(e) => { e.preventDefault(); moveJob(dragRef.current, col); dragRef.current = null; setOverCol(null); }}
-          className={"flex shrink-0 flex-col rounded-2xl border p-2.5 transition " + (collapsed ? "w-auto" : "w-72")}
+          className={"flex shrink-0 flex-col rounded-2xl border p-2.5 transition " + (collapsed ? "w-auto self-start" : "w-72")}
           style={{ borderColor: overCol === col.key ? "#fdba74" : "#ececef", background: overCol === col.key ? "#fff7ed" : "#fafafa" }}>
           <div className={"flex items-center gap-2 px-1 " + (collapsed ? "" : "mb-2")}>
             {isDoneCol && <button onClick={() => setDoneCollapsed((v) => !v)} title={collapsed ? "Раскрыть" : "Свернуть"} className="-ml-0.5 shrink-0 text-neutral-400 transition hover:text-neutral-700"><ChevronRight size={15} className={"transition " + (collapsed ? "" : "rotate-90")} /></button>}
@@ -6824,6 +6824,11 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   useEffect(() => lsSet("rnp.taskExpanded", expanded), [expanded]);
   const checkRefs = useRef({});          // ref на поля подзадач — для фокуса новой
   const [focusCheckId, setFocusCheckId] = useState(null);
+  const noteRef = useRef(null);
+  // авто-высота полей считается ТОЛЬКО при изменении контента/раскрытия,
+  // а не на каждом ре-рендере — иначе layout дёргается и скролл прыгает наверх
+  const sizeNote = () => { const el = noteRef.current; if (!el) return; el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; const max = lh * 12; el.style.height = Math.min(Math.max(el.scrollHeight, lh + 18), max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; };
+  const sizeCheck = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; };
   const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
   const curType = j.type === "op" ? "op" : jobType(j);
   const setType = (t) => setJ((o) => {
@@ -6841,6 +6846,9 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
     if (el) { el.focus(); el.scrollIntoView({ block: "nearest" }); }
     setFocusCheckId(null);
   }, [focusCheckId, (j.checklist || []).length]);
+  // пересчёт высоты заметки и подзадач по изменению их текста / раскрытия окна
+  useLayoutEffect(() => { sizeNote(); }, [j.note, expanded]);
+  useLayoutEffect(() => { Object.values(checkRefs.current).forEach(sizeCheck); }, [j.checklist, expanded]);
   const jtags = Array.isArray(j.tags) ? j.tags : [];
   const toggleTag = (id) => set("tags", jtags.includes(id) ? jtags.filter((x) => x !== id) : [...jtags, id]);
   const checklist = Array.isArray(j.checklist) ? j.checklist : [];
@@ -6930,8 +6938,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
             <div>
               <div className={fieldL + " mb-1.5"}>Заметка</div>
               <textarea value={j.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Добавьте описание, контекст, ссылки…" rows={1}
-                ref={(el) => { if (el) { el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; const max = lh * 12; el.style.height = Math.min(Math.max(el.scrollHeight, lh + 18), max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; } }}
-                onInput={(e) => { const el = e.target; el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; const max = lh * 12; el.style.height = Math.min(Math.max(el.scrollHeight, lh + 18), max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; }}
+                ref={noteRef} onInput={sizeNote}
                 className="w-full resize-none rounded-xl border border-neutral-200 px-3 py-2 text-sm leading-relaxed text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
             </div>
             <div>
@@ -6947,9 +6954,9 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
                   <div key={c.id} className="group flex items-start gap-2.5 py-1">
                     <button onClick={() => toggleCheck(c.id)} className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border" style={{ background: c.done ? "#16a34a" : "#fff", borderColor: c.done ? "#16a34a" : "#d4d4d8", color: "#fff" }}>{c.done && <Check size={10} strokeWidth={3} />}</button>
                     <textarea value={c.text} rows={1}
-                      ref={(el) => { checkRefs.current[c.id] = el; if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                      ref={(el) => { checkRefs.current[c.id] = el; }}
                       onChange={(e) => setCheckText(c.id, e.target.value)}
-                      onInput={(e) => { const el = e.target; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }}
+                      onInput={(e) => sizeCheck(e.target)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addCheck(); } }}
                       placeholder="Подзадача…"
                       className="min-w-0 flex-1 resize-none break-words border-none bg-transparent text-sm leading-snug text-neutral-700 focus:outline-none"
