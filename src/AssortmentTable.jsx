@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -6820,6 +6820,10 @@ const TASK_TYPE_META = [
 ];
 function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onClose }) {
   const [j, setJ] = useState(job);
+  const [expanded, setExpanded] = useState(() => lsGet("rnp.taskExpanded", false)); // раскрытое окно задачи
+  useEffect(() => lsSet("rnp.taskExpanded", expanded), [expanded]);
+  const checkRefs = useRef({});          // ref на поля подзадач — для фокуса новой
+  const [focusCheckId, setFocusCheckId] = useState(null);
   const set = (k, v) => setJ((o) => ({ ...o, [k]: v }));
   const curType = j.type === "op" ? "op" : jobType(j);
   const setType = (t) => setJ((o) => {
@@ -6830,11 +6834,18 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
     return n;
   });
   useEffect(() => { onChange(j); }, [j]); // автосохранение при любом изменении
+  // после добавления подзадачи — фокус на новое поле (без «прыжка» наверх)
+  useEffect(() => {
+    if (!focusCheckId) return;
+    const el = checkRefs.current[focusCheckId];
+    if (el) { el.focus(); el.scrollIntoView({ block: "nearest" }); }
+    setFocusCheckId(null);
+  }, [focusCheckId, (j.checklist || []).length]);
   const jtags = Array.isArray(j.tags) ? j.tags : [];
   const toggleTag = (id) => set("tags", jtags.includes(id) ? jtags.filter((x) => x !== id) : [...jtags, id]);
   const checklist = Array.isArray(j.checklist) ? j.checklist : [];
   const setCl = (cl) => set("checklist", cl);
-  const addCheck = () => setCl([...checklist, { id: uid(), text: "", done: false }]);
+  const addCheck = () => { const id = uid(); setCl([...checklist, { id, text: "", done: false }]); setFocusCheckId(id); };
   const toggleCheck = (id) => setCl(checklist.map((c) => (c.id === id ? { ...c, done: !c.done } : c)));
   const setCheckText = (id, text) => setCl(checklist.map((c) => (c.id === id ? { ...c, text } : c)));
   const removeCheck = (id) => setCl(checklist.filter((c) => c.id !== id));
@@ -6870,7 +6881,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl transition-[max-width,max-height] " + (expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
         {/* Шапка: компактный переключатель типа + создано + действия */}
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
           <div className="inline-flex rounded-xl bg-neutral-100 p-0.5">
@@ -6883,6 +6894,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
             ); })}
           </div>
           <span className="ml-auto flex items-center gap-1">
+            <button onClick={() => setExpanded((v) => !v)} title={expanded ? "Свернуть" : "Раскрыть"} className="rounded-md p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700">{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
             {!job._new && <button onClick={() => onDelete(j.id)} title="Удалить задачу" className="rounded-md p-1 text-neutral-400 transition hover:bg-red-50 hover:text-red-600"><Trash2 size={18} /></button>}
             <button onClick={onClose} title="Закрыть" className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
           </span>
@@ -6932,10 +6944,17 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
               )}
               <div className="flex flex-col">
                 {checklist.map((c) => (
-                  <div key={c.id} className="group flex items-center gap-2.5 py-1">
-                    <button onClick={() => toggleCheck(c.id)} className="flex h-4 w-4 shrink-0 items-center justify-center rounded border" style={{ background: c.done ? "#16a34a" : "#fff", borderColor: c.done ? "#16a34a" : "#d4d4d8", color: "#fff" }}>{c.done && <Check size={10} strokeWidth={3} />}</button>
-                    <input value={c.text} onChange={(e) => setCheckText(c.id, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCheck(); } }} placeholder="Подзадача…" className="min-w-0 flex-1 border-none bg-transparent text-sm text-neutral-700 focus:outline-none" style={c.done ? { textDecoration: "line-through", color: "#a3a3a3" } : undefined} />
-                    <button onClick={() => removeCheck(c.id)} className="shrink-0 text-neutral-300 opacity-0 transition hover:text-red-500 group-hover:opacity-100"><X size={13} /></button>
+                  <div key={c.id} className="group flex items-start gap-2.5 py-1">
+                    <button onClick={() => toggleCheck(c.id)} className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border" style={{ background: c.done ? "#16a34a" : "#fff", borderColor: c.done ? "#16a34a" : "#d4d4d8", color: "#fff" }}>{c.done && <Check size={10} strokeWidth={3} />}</button>
+                    <textarea value={c.text} rows={1}
+                      ref={(el) => { checkRefs.current[c.id] = el; if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                      onChange={(e) => setCheckText(c.id, e.target.value)}
+                      onInput={(e) => { const el = e.target; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addCheck(); } }}
+                      placeholder="Подзадача…"
+                      className="min-w-0 flex-1 resize-none break-words border-none bg-transparent text-sm leading-snug text-neutral-700 focus:outline-none"
+                      style={c.done ? { textDecoration: "line-through", color: "#a3a3a3" } : undefined} />
+                    <button onClick={() => removeCheck(c.id)} className="mt-0.5 shrink-0 text-neutral-300 opacity-0 transition hover:text-red-500 group-hover:opacity-100"><X size={13} /></button>
                   </div>
                 ))}
               </div>
