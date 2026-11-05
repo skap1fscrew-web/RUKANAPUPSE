@@ -7242,6 +7242,8 @@ function StrategySection({ strategy, onChange, onCreateTask, onOpenTask }) {
   const [editingId, setEditingId] = useState(null);
   const [tplOpen, setTplOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [docView, setDocView] = useState(() => lsGet("rnp.stratView", "map") === "doc"); // режим отображения карты: холст | документ
+  useEffect(() => lsSet("rnp.stratView", docView ? "doc" : "map"), [docView]);
 
   const save = (next) => onChange({ __v: 2, ...next });
   const updateActive = (next) => save({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges } : m)), activeId: active.id });
@@ -7313,8 +7315,18 @@ function StrategySection({ strategy, onChange, onCreateTask, onOpenTask }) {
         <button onClick={() => dupMap(active.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700" title="Дублировать карту"><Copy size={13} /> Дублировать</button>
         <button onClick={() => { if (window.confirm(`Удалить карту «${active.name}»?`)) removeMap(active.id); }} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600" title="Удалить карту"><Trash2 size={13} /> Удалить</button>
 
+        {/* Режим отображения: холст (карта) или документ (заголовки/подзаголовки) */}
+        <div className="ml-auto inline-flex rounded-lg bg-neutral-100 p-0.5">
+          {[[false, "Карта", GitBranch], [true, "Документ", FileText]].map(([v, lbl, Ic]) => (
+            <button key={String(v)} onClick={() => setDocView(v)} title={v ? "Показать как документ с заголовками" : "Показать как карту"}
+              className={"flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition " + (docView === v ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>
+              <Ic size={13} /> {lbl}
+            </button>
+          ))}
+        </div>
+
         {/* Новая карта — выбор шаблона */}
-        <div className="relative ml-auto">
+        <div className="relative">
           <button onClick={() => { setTplOpen((o) => !o); setMapOpen(false); }} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800" title="Создать новую карту"><Plus size={14} /> Карта <ChevronDown size={13} className="opacity-80" /></button>
           {tplOpen && (
             <>
@@ -7334,13 +7346,141 @@ function StrategySection({ strategy, onChange, onCreateTask, onOpenTask }) {
           )}
         </div>
       </div>
-      <StrategyBoard key={active.id} template={active.template} rootId={active.rootId} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} onCreateTask={onCreateTask} onOpenTask={onOpenTask} />
+      {docView
+        ? <StrategyDoc key={active.id + "-doc"} rootId={active.rootId} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} onCreateTask={onCreateTask} onOpenTask={onOpenTask} />
+        : <StrategyBoard key={active.id} template={active.template} rootId={active.rootId} strategy={{ nodes: active.nodes, edges: active.edges }} onChange={updateActive} onCreateTask={onCreateTask} onOpenTask={onOpenTask} />}
     </div>
   );
 }
 
 const GROUP_COLORS = ["#6366f1", "#0ea5e9", "#f59e0b", "#ec4899", "#10b981", "#8b5cf6"];
 const TYPE_COLOR = { stage: "#a3a3a3", goal: "#059669", risk: "#d97706", decision: "#7c3aed" };
+
+// ---- Режим «Документ»: то же дерево, развёрнутое в текст с заголовками ----
+function StrategyDoc({ strategy, rootId, onChange }) {
+  const nodes = (strategy && strategy.nodes) || [];
+  const edges = (strategy && strategy.edges) || [];
+  const sref = useRef({ nodes, edges }); sref.current = { nodes, edges };
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  const kids = {}; nodes.forEach((n) => (kids[n.id] = [])); edges.forEach((e) => { if (kids[e.from]) kids[e.from].push(e.to); });
+
+  const [focusId, setFocusId] = useState(null);
+  const titleRefs = useRef({});
+  const noteRefs = useRef({});
+
+  const apply = (next) => onChange(next);
+  const descendantsOf = (id) => { const set = new Set(); const stack = [id]; while (stack.length) { const u = stack.pop(); (kids[u] || []).forEach((c) => { if (!set.has(c)) { set.add(c); stack.push(c); } }); } return set; };
+  const setNode = (id, p) => { const s = sref.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) }); };
+  const addChild = (pid) => { const s = sref.current; const id = uid(); const node = { id, title: "", note: "", color: "#a3a3a3", done: false, hasCheck: false, type: "stage", collapsed: false, image: null, checklist: [] }; apply({ ...s, nodes: s.nodes.map((n) => (n.id === pid ? { ...n, collapsed: false } : n)).concat(node), edges: [...s.edges, { id: uid(), from: pid, to: id }] }); setFocusId(id); };
+  const removeNode = (id) => { if (id === rootId) return; const s = sref.current; const kill = descendantsOf(id); kill.add(id); apply({ ...s, nodes: s.nodes.filter((n) => !kill.has(n.id)), edges: s.edges.filter((e) => !kill.has(e.from) && !kill.has(e.to)) }); };
+  const addCheck = (id) => { const s = sref.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: [...(n.checklist || []), { id: uid(), text: "", done: false }] } : n)) }); };
+  const toggleCheck = (id, cid) => { const s = sref.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: (n.checklist || []).map((c) => (c.id === cid ? { ...c, done: !c.done } : c)) } : n)) }); };
+  const setCheckText = (id, cid, text) => { const s = sref.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: (n.checklist || []).map((c) => (c.id === cid ? { ...c, text } : c)) } : n)) }); };
+  const removeCheck = (id, cid) => { const s = sref.current; apply({ ...s, nodes: s.nodes.map((n) => (n.id === id ? { ...n, checklist: (n.checklist || []).filter((c) => c.id !== cid) } : n)) }); };
+
+  const sizeNote = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; };
+  useLayoutEffect(() => { Object.values(noteRefs.current).forEach(sizeNote); });
+  useEffect(() => { if (focusId && titleRefs.current[focusId]) titleRefs.current[focusId].focus(); }, [focusId]);
+
+  const root = byId[rootId];
+  if (!root) return <div className="rounded-2xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-400">Пустая карта</div>;
+
+  const isSimpleLeaf = (id) => (kids[id] || []).length === 0 && !((byId[id].note || "").trim()) && !((byId[id].checklist || []).length);
+  const childrenAllSimple = (id) => { const ch = kids[id] || []; return ch.length > 0 && ch.every(isSimpleLeaf); };
+  const scrollTo = (id) => { const el = document.getElementById("stratsec-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+
+  // --- хелперы рендера (функции, НЕ компоненты — чтобы поля не теряли фокус) ---
+  const renderTitle = (id, cls, ph) => (
+    <input ref={(el) => (titleRefs.current[id] = el)} value={byId[id].title} placeholder={ph || "Без названия"}
+      onChange={(e) => setNode(id, { title: e.target.value })}
+      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+      className={cls + " w-full bg-transparent outline-none placeholder:text-neutral-300"} />
+  );
+  const renderNote = (id) => (
+    <textarea ref={(el) => { noteRefs.current[id] = el; }} value={byId[id].note || ""} rows={1} placeholder="Заметка…"
+      onChange={(e) => { setNode(id, { note: e.target.value }); sizeNote(e.target); }} onInput={(e) => sizeNote(e.target)}
+      className="w-full resize-none overflow-hidden bg-transparent text-[14px] leading-relaxed text-neutral-600 outline-none placeholder:text-neutral-300" />
+  );
+  const renderLeafList = (pid) => (
+    <div className="mb-2 mt-1 max-w-[640px]">
+      {(kids[pid] || []).map((cid) => { const c = byId[cid]; const checkable = c.hasCheck !== false; return (
+        <div key={cid} className="group/li flex items-center gap-2.5 py-1">
+          {checkable
+            ? <button onClick={() => setNode(cid, { done: !c.done })} className={"flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-[5px] border-[1.6px] " + (c.done ? "border-green-600 bg-green-600 text-white" : "border-neutral-300 text-transparent hover:border-neutral-400")}><Check size={11} strokeWidth={3} /></button>
+            : <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-violet-300" />}
+          <input ref={(el) => (titleRefs.current[cid] = el)} value={c.title} placeholder="Пункт…"
+            onChange={(e) => setNode(cid, { title: e.target.value })}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addChild(pid); } }}
+            className={"min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-neutral-300 " + (checkable && c.done ? "text-neutral-400 line-through" : "text-neutral-700")} />
+          <button onClick={() => removeNode(cid)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/li:opacity-100" title="Удалить пункт"><X size={13} /></button>
+        </div>
+      ); })}
+      <button onClick={() => addChild(pid)} className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-medium text-neutral-400 hover:text-violet-600"><Plus size={13} /> пункт</button>
+    </div>
+  );
+  const renderCheckList = (id) => { const cl = byId[id].checklist || []; if (!cl.length) return null; return (
+    <div className="mb-2 mt-1 max-w-[640px]">
+      {cl.map((c) => (
+        <div key={c.id} className="group/ci flex items-center gap-2.5 py-1">
+          <button onClick={() => toggleCheck(id, c.id)} className={"flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-[5px] border-[1.6px] " + (c.done ? "border-green-600 bg-green-600 text-white" : "border-neutral-300 text-transparent hover:border-neutral-400")}><Check size={11} strokeWidth={3} /></button>
+          <input value={c.text} placeholder="Пункт…" onChange={(e) => setCheckText(id, c.id, e.target.value)} className={"min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-neutral-300 " + (c.done ? "text-neutral-400 line-through" : "text-neutral-700")} />
+          <button onClick={() => removeCheck(id, c.id)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/ci:opacity-100" title="Удалить пункт"><X size={13} /></button>
+        </div>
+      ))}
+      <button onClick={() => addCheck(id)} className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-medium text-neutral-400 hover:text-green-600"><Plus size={13} /> пункт</button>
+    </div>
+  ); };
+  const renderHeadActions = (id) => (
+    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover/h:opacity-100">
+      <button onClick={() => addChild(id)} className="rounded p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600" title="Добавить подтему"><Plus size={14} /></button>
+      {id !== rootId && <button onClick={() => removeNode(id)} className="rounded p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить раздел"><Trash2 size={13} /></button>}
+    </div>
+  );
+  const renderSection = (id, depth, num) => {
+    const n = byId[id]; const clr = n.color && n.color !== "#a3a3a3" ? n.color : "#8b5cf6";
+    const head = depth === 1
+      ? <div id={"stratsec-" + id} className="group/h mb-1 mt-8 flex items-center gap-2.5 border-l-[3px] pl-3" style={{ borderColor: clr }}><span className="text-[15px] font-bold text-neutral-300">{num}</span>{renderTitle(id, "text-[20px] font-extrabold tracking-tight text-neutral-900")}{renderHeadActions(id)}</div>
+      : depth === 2
+      ? <div id={"stratsec-" + id} className="group/h mb-1 mt-5 flex items-center gap-2"><span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: clr }} />{renderTitle(id, "text-[15.5px] font-extrabold text-neutral-800")}{renderHeadActions(id)}</div>
+      : <div id={"stratsec-" + id} className="group/h mb-1 mt-4 flex items-center gap-2"><span className="text-neutral-300">—</span>{renderTitle(id, "text-[14px] font-bold text-neutral-700")}{renderHeadActions(id)}</div>;
+    return (
+      <div key={id}>
+        {head}
+        <div className="pl-[15px]">
+          {depth <= 2 && renderNote(id)}
+          {renderCheckList(id)}
+          {childrenAllSimple(id)
+            ? renderLeafList(id)
+            : <>{(kids[id] || []).map((cid) => renderSection(cid, depth + 1))}<button onClick={() => addChild(id)} className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-medium text-neutral-400 hover:text-violet-600"><Plus size={13} /> подзаголовок</button></>}
+        </div>
+      </div>
+    );
+  };
+
+  const topKids = (kids[rootId] || []).map((id) => byId[id]).filter(Boolean);
+  const cnt = Math.max(0, nodes.length - 1);
+  const word = (cnt % 10 === 1 && cnt % 100 !== 11) ? "подтема" : ([2, 3, 4].includes(cnt % 10) && ![12, 13, 14].includes(cnt % 100)) ? "подтемы" : "подтем";
+
+  return (
+    <div className="grid grid-cols-[232px_1fr] overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+      <nav className="border-r border-neutral-100 bg-neutral-50/60 p-5">
+        <div className="sticky top-4">
+          <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Содержание</div>
+          <button onClick={() => scrollTo(rootId)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-[13px] font-bold text-neutral-800 hover:bg-neutral-100">{root.title || "Без названия"}</button>
+          {topKids.map((n) => <button key={n.id} onClick={() => scrollTo(n.id)} className="block w-full truncate rounded-md py-1.5 pl-5 pr-2 text-left text-[12.5px] text-neutral-500 hover:bg-neutral-100">{n.title || "Без названия"}</button>)}
+        </div>
+      </nav>
+      <article className="px-10 py-8">
+        <div className="mb-1 flex items-center gap-2 text-[12px] text-neutral-400"><span className="h-[9px] w-[9px] rounded-full bg-neutral-300" />Стратегия · {cnt} {word}</div>
+        <div id={"stratsec-" + rootId}>{renderTitle(rootId, "text-[28px] font-extrabold tracking-tight text-neutral-900")}</div>
+        <div className="mb-4 mt-1 max-w-[680px]">{renderNote(rootId)}</div>
+        {childrenAllSimple(rootId)
+          ? renderLeafList(rootId)
+          : <>{topKids.map((n, i) => renderSection(n.id, 1, i + 1))}<button onClick={() => addChild(rootId)} className="mt-8 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-[13px] font-medium text-neutral-400 hover:border-violet-300 hover:text-violet-600"><Plus size={14} /> Раздел</button></>}
+      </article>
+    </div>
+  );
+}
 
 function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template, rootId }) {
   const W = 220, GRID = 20, CW = 6000, CH = 4200;
