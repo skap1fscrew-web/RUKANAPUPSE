@@ -6125,6 +6125,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
   const [groupBy, setGroupBy] = useState(() => { const g = lsGet("rnp.kanbanGroup", "status"); return g === "label" ? "status" : g; }); // status | priority
+  const [kanbanSort, setKanbanSort] = useState(() => lsGet("rnp.kanbanSort", "created")); // created | priority
   const [fltPrio, setFltPrio] = useState(null);
   const [fltTag, setFltTag] = useState(null);
   const [fltAssignee, setFltAssignee] = useState(null);
@@ -6132,6 +6133,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [fltOpen, setFltOpen] = useState(null);
   const todayStr = isoYMD(now);
   useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
+  useEffect(() => lsSet("rnp.kanbanSort", kanbanSort), [kanbanSort]);
 
   const labelColor = (id) => (taskLabels || []).find((l) => l.id === id)?.color || "#cbd5e1";
   const prevM = () => setYm((s) => { const d = new Date(s.y, s.m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
@@ -6178,7 +6180,10 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
               <button onClick={() => setFltOpen(fltOpen === "group" ? null : "group")} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" title="Группировка колонок"><Columns3 size={14} className="text-neutral-400" /><span className="font-medium text-neutral-400">по</span> {GROUP_LABELS[groupBy]}<ChevronDown size={13} className="text-neutral-400" /></button>
               {fltOpen === "group" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
                 <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Колонки по</div>
-                {[["status", "Статусу"], ["priority", "Приоритету"]].map(([k, lbl]) => <button key={k} onClick={() => { setGroupBy(k); setFltOpen(null); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (groupBy === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{groupBy === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}</button>)}
+                {[["status", "Статусу"], ["priority", "Приоритету"]].map(([k, lbl]) => <button key={k} onClick={() => { setGroupBy(k); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (groupBy === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{groupBy === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}</button>)}
+                <div className="my-1 h-px bg-neutral-100" />
+                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Сортировка карточек</div>
+                {[["created", "По дате добавления"], ["priority", "По приоритету"]].map(([k, lbl]) => <button key={k} onClick={() => { setKanbanSort(k); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (kanbanSort === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{kanbanSort === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}{k === "priority" && <span className="ml-auto text-[10px] font-normal text-neutral-400">выс. сверху</span>}</button>)}
               </div></>)}
             </div>
           )}
@@ -6207,7 +6212,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
+        {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
           : view === "cal" ? <CalendarGrid jobs={typedJobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
           : <GanttBoard jobs={typedJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
@@ -6229,10 +6234,12 @@ function StageIcon({ j, size = 15 }) {
   return <span title={m.label} className="inline-flex shrink-0 items-center">{svg}</span>;
 }
 
-function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, onOpen, onAddJob, onUpdateJob }) {
+function KanbanBoard({ jobs, groupBy, sortBy = "created", tags, taskLabels, people = [], products, onOpen, onAddJob, onUpdateJob }) {
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const dragRef = useRef(null);
   const [overCol, setOverCol] = useState(null);
+  const [doneCollapsed, setDoneCollapsed] = useState(() => lsGet("rnp.kanbanDoneCollapsed", true));
+  useEffect(() => lsSet("rnp.kanbanDoneCollapsed", doneCollapsed), [doneCollapsed]);
   const tagById = Object.fromEntries((tags || []).map((t) => [t.id, t]));
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
   const labelColor = (id) => (taskLabels || []).find((l) => l.id === id)?.color;
@@ -6255,15 +6262,20 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
     ];
   }
   const byCol = Object.fromEntries(columns.map((c) => [c.key, []]));
-  // по умолчанию новые задачи сверху: сортировка по дате создания (убыв.),
-  // при равной дате — позже добавленные выше (стабильно по исходному индексу)
+  // сортировка карточек внутри колонок: по дате добавления (новые сверху) или по приоритету (высокий сверху);
+  // при равенстве — новые выше (стабильно по исходному индексу)
   const jobIdx = new Map(jobs.map((j, i) => [j.id, i]));
-  const sortedByNew = jobs.slice().sort((a, b) => {
+  const PRIO_RANK = { high: 0, med: 1, low: 2 };
+  const sortedJobs = jobs.slice().sort((a, b) => {
+    if (sortBy === "priority") {
+      const pa = PRIO_RANK[a.priority] ?? 3, pb = PRIO_RANK[b.priority] ?? 3;
+      if (pa !== pb) return pa - pb;
+    }
     const ca = a.createdAt || "", cb = b.createdAt || "";
     if (ca !== cb) return cb.localeCompare(ca);
     return (jobIdx.get(b.id) ?? 0) - (jobIdx.get(a.id) ?? 0);
   });
-  sortedByNew.forEach((j) => { const c = columns.find((c) => c.match(j)); if (c) byCol[c.key].push(j); });
+  sortedJobs.forEach((j) => { const c = columns.find((c) => c.match(j)); if (c) byCol[c.key].push(j); });
   const moveJob = (id, col) => { const j = jobs.find((x) => x.id === id); if (j && !col.match(j)) onUpdateJob({ ...j, ...col.preset }); };
   const [doneOpen, setDoneOpen] = useState({});
   const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
@@ -6280,22 +6292,23 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
 
   return (
     <div className="flex min-h-full gap-3 pb-1">
-      {columns.map((col) => (
+      {columns.map((col) => { const isDoneCol = groupBy === "status" && col.key === "done"; const collapsed = isDoneCol && doneCollapsed; return (
         <div key={col.key}
           onDragOver={(e) => { e.preventDefault(); setOverCol(col.key); }}
           onDragLeave={() => setOverCol((o) => (o === col.key ? null : o))}
           onDrop={(e) => { e.preventDefault(); moveJob(dragRef.current, col); dragRef.current = null; setOverCol(null); }}
-          className="flex w-72 shrink-0 flex-col rounded-2xl border p-2.5 transition"
+          className={"flex shrink-0 flex-col rounded-2xl border p-2.5 transition " + (collapsed ? "w-auto" : "w-72")}
           style={{ borderColor: overCol === col.key ? "#fdba74" : "#ececef", background: overCol === col.key ? "#fff7ed" : "#fafafa" }}>
-          <div className="mb-2 flex items-center gap-2 px-1">
+          <div className={"flex items-center gap-2 px-1 " + (collapsed ? "" : "mb-2")}>
+            {isDoneCol && <button onClick={() => setDoneCollapsed((v) => !v)} title={collapsed ? "Раскрыть" : "Свернуть"} className="-ml-0.5 shrink-0 text-neutral-400 transition hover:text-neutral-700"><ChevronRight size={15} className={"transition " + (collapsed ? "" : "rotate-90")} /></button>}
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: col.color }} />
             <span className="truncate text-xs font-bold uppercase tracking-wide text-neutral-600">{col.name}</span>
             <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.key].length}</span>
-            <button onClick={() => onAddJob({ ...col.preset })} title="Добавить задачу" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-200/70 hover:text-neutral-700"><Plus size={15} /></button>
+            {!collapsed && <button onClick={() => onAddJob({ ...col.preset })} title="Добавить задачу" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-200/70 hover:text-neutral-700"><Plus size={15} /></button>}
           </div>
-          <div className="flex min-h-[40px] flex-col gap-2">
+          {!collapsed && <div className="flex min-h-[40px] flex-col gap-2">
             {(groupBy === "status" ? byCol[col.key] : byCol[col.key].filter((j) => stageOf(j) !== "done")).map((j) => jobCard(j))}
-          </div>
+          </div>}
           {groupBy !== "status" && (() => { const doneJobs = byCol[col.key].filter((j) => stageOf(j) === "done"); if (!doneJobs.length) return null; const open = !!doneOpen[col.key]; return (
             <div className="mt-2 border-t border-neutral-200/70 pt-2">
               <button onClick={() => setDoneOpen((o) => ({ ...o, [col.key]: !o[col.key] }))} className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"><ChevronRight size={13} className={"transition " + (open ? "rotate-90" : "")} /> Выполненные <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{doneJobs.length}</span></button>
@@ -6303,7 +6316,7 @@ function KanbanBoard({ jobs, groupBy, tags, taskLabels, people = [], products, o
             </div>
           ); })()}
         </div>
-      ))}
+      ); })}
     </div>
   );
 }
