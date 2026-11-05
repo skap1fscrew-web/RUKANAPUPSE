@@ -6126,6 +6126,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
   const [groupBy, setGroupBy] = useState(() => { const g = lsGet("rnp.kanbanGroup", "status"); return g === "label" ? "status" : g; }); // status | priority
   const [kanbanSort, setKanbanSort] = useState(() => lsGet("rnp.kanbanSort", "created")); // created | priority
+  const [kanbanWide, setKanbanWide] = useState(() => lsGet("rnp.kanbanWide", false)); // широкий вид столбцов (2 подколонки по приоритету)
   const [fltPrio, setFltPrio] = useState(null);
   const [fltTag, setFltTag] = useState(null);
   const [fltAssignee, setFltAssignee] = useState(null);
@@ -6134,6 +6135,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const todayStr = isoYMD(now);
   useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
   useEffect(() => lsSet("rnp.kanbanSort", kanbanSort), [kanbanSort]);
+  useEffect(() => lsSet("rnp.kanbanWide", kanbanWide), [kanbanWide]);
 
   const labelColor = (id) => (taskLabels || []).find((l) => l.id === id)?.color || "#cbd5e1";
   const prevM = () => setYm((s) => { const d = new Date(s.y, s.m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
@@ -6184,6 +6186,11 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
                 <div className="my-1 h-px bg-neutral-100" />
                 <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Сортировка карточек</div>
                 {[["created", "По дате добавления"], ["priority", "По приоритету"]].map(([k, lbl]) => <button key={k} onClick={() => { setKanbanSort(k); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (kanbanSort === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{kanbanSort === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}{k === "priority" && <span className="ml-auto text-[10px] font-normal text-neutral-400">выс. сверху</span>}</button>)}
+                {groupBy === "status" && <>
+                  <div className="my-1 h-px bg-neutral-100" />
+                  <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Вид столбцов</div>
+                  {[[false, "Обычный", ""], [true, "Широкий", "2 колонки"]].map(([v, lbl, hint]) => <button key={String(v)} onClick={() => { setKanbanWide(v); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (kanbanWide === v ? "font-semibold text-neutral-900" : "text-neutral-600")}>{kanbanWide === v ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}{hint && <span className="ml-auto text-[10px] font-normal text-neutral-400">{hint}</span>}</button>)}
+                </>}
               </div></>)}
             </div>
           )}
@@ -6212,7 +6219,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
+        {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
           : view === "cal" ? <CalendarGrid jobs={typedJobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
           : <GanttBoard jobs={typedJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
@@ -6234,7 +6241,7 @@ function StageIcon({ j, size = 15 }) {
   return <span title={m.label} className="inline-flex shrink-0 items-center">{svg}</span>;
 }
 
-function KanbanBoard({ jobs, groupBy, sortBy = "created", tags, taskLabels, people = [], products, onOpen, onAddJob, onUpdateJob }) {
+function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, taskLabels, people = [], products, onOpen, onAddJob, onUpdateJob }) {
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const dragRef = useRef(null);
   const [overCol, setOverCol] = useState(null);
@@ -6292,12 +6299,12 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", tags, taskLabels, peop
 
   return (
     <div className="flex min-h-full gap-3 pb-1">
-      {columns.map((col) => { const isDoneCol = groupBy === "status" && col.key === "done"; const collapsed = isDoneCol && doneCollapsed; return (
+      {columns.map((col) => { const isDoneCol = groupBy === "status" && col.key === "done"; const collapsed = isDoneCol && doneCollapsed; const wideCol = wide && groupBy === "status" && !collapsed; return (
         <div key={col.key}
           onDragOver={(e) => { e.preventDefault(); setOverCol(col.key); }}
           onDragLeave={() => setOverCol((o) => (o === col.key ? null : o))}
           onDrop={(e) => { e.preventDefault(); moveJob(dragRef.current, col); dragRef.current = null; setOverCol(null); }}
-          className={"flex shrink-0 flex-col rounded-2xl border p-2.5 transition " + (collapsed ? "w-auto self-start" : "w-72")}
+          className={"flex shrink-0 flex-col rounded-2xl border p-2.5 transition " + (collapsed ? "w-auto self-start" : (wideCol ? "w-[30rem]" : "w-72"))}
           style={{ borderColor: overCol === col.key ? "#fdba74" : "#ececef", background: overCol === col.key ? "#fff7ed" : "#fafafa" }}>
           <div className={"flex items-center gap-2 px-1 " + (collapsed ? "" : "mb-2")}>
             {isDoneCol && <button onClick={() => setDoneCollapsed((v) => !v)} title={collapsed ? "Раскрыть" : "Свернуть"} className="-ml-0.5 shrink-0 text-neutral-400 transition hover:text-neutral-700"><ChevronRight size={15} className={"transition " + (collapsed ? "" : "rotate-90")} /></button>}
@@ -6306,9 +6313,16 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", tags, taskLabels, peop
             <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.key].length}</span>
             {!collapsed && <button onClick={() => onAddJob({ ...col.preset })} title="Добавить задачу" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-200/70 hover:text-neutral-700"><Plus size={15} /></button>}
           </div>
-          {!collapsed && <div className="flex min-h-[40px] flex-col gap-2">
-            {(groupBy === "status" ? byCol[col.key] : byCol[col.key].filter((j) => stageOf(j) !== "done")).map((j) => jobCard(j))}
-          </div>}
+          {!collapsed && (wideCol ? (
+            <div className="flex min-h-[40px] gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">{byCol[col.key].filter((j) => j.priority !== "high").map((j) => jobCard(j))}</div>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">{byCol[col.key].filter((j) => j.priority === "high").map((j) => jobCard(j))}</div>
+            </div>
+          ) : (
+            <div className="flex min-h-[40px] flex-col gap-2">
+              {(groupBy === "status" ? byCol[col.key] : byCol[col.key].filter((j) => stageOf(j) !== "done")).map((j) => jobCard(j))}
+            </div>
+          ))}
           {groupBy !== "status" && (() => { const doneJobs = byCol[col.key].filter((j) => stageOf(j) === "done"); if (!doneJobs.length) return null; const open = !!doneOpen[col.key]; return (
             <div className="mt-2 border-t border-neutral-200/70 pt-2">
               <button onClick={() => setDoneOpen((o) => ({ ...o, [col.key]: !o[col.key] }))} className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"><ChevronRight size={13} className={"transition " + (open ? "rotate-90" : "")} /> Выполненные <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{doneJobs.length}</span></button>
@@ -6824,6 +6838,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   useEffect(() => lsSet("rnp.taskExpanded", expanded), [expanded]);
   const checkRefs = useRef({});          // ref на поля подзадач — для фокуса новой
   const [focusCheckId, setFocusCheckId] = useState(null);
+  const [subDoneOpen, setSubDoneOpen] = useState(false); // раскрыт ли список выполненных подзадач
   const noteRef = useRef(null);
   // авто-высота полей считается ТОЛЬКО при изменении контента/раскрытия,
   // а не на каждом ре-рендере — иначе layout дёргается и скролл прыгает наверх
@@ -6848,7 +6863,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   }, [focusCheckId, (j.checklist || []).length]);
   // пересчёт высоты заметки и подзадач по изменению их текста / раскрытия окна
   useLayoutEffect(() => { sizeNote(); }, [j.note, expanded]);
-  useLayoutEffect(() => { Object.values(checkRefs.current).forEach(sizeCheck); }, [j.checklist, expanded]);
+  useLayoutEffect(() => { Object.values(checkRefs.current).forEach(sizeCheck); }, [j.checklist, expanded, subDoneOpen]);
   const jtags = Array.isArray(j.tags) ? j.tags : [];
   const toggleTag = (id) => set("tags", jtags.includes(id) ? jtags.filter((x) => x !== id) : [...jtags, id]);
   const checklist = Array.isArray(j.checklist) ? j.checklist : [];
@@ -6858,6 +6873,20 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   const setCheckText = (id, text) => setCl(checklist.map((c) => (c.id === id ? { ...c, text } : c)));
   const removeCheck = (id) => setCl(checklist.filter((c) => c.id !== id));
   const cdone = checklist.filter((c) => c.done).length;
+  const renderSubRow = (c) => (
+    <div key={c.id} className="group flex items-start gap-2.5 py-1">
+      <button onClick={() => toggleCheck(c.id)} className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border" style={{ background: c.done ? "#16a34a" : "#fff", borderColor: c.done ? "#16a34a" : "#d4d4d8", color: "#fff" }}>{c.done && <Check size={10} strokeWidth={3} />}</button>
+      <textarea value={c.text} rows={1}
+        ref={(el) => { checkRefs.current[c.id] = el; }}
+        onChange={(e) => setCheckText(c.id, e.target.value)}
+        onInput={(e) => sizeCheck(e.target)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addCheck(); } }}
+        placeholder="Подзадача…"
+        className="min-w-0 flex-1 resize-none break-words border-none bg-transparent text-sm leading-snug text-neutral-700 focus:outline-none"
+        style={c.done ? { textDecoration: "line-through", color: "#a3a3a3" } : undefined} />
+      <button onClick={() => removeCheck(c.id)} className="mt-0.5 shrink-0 text-neutral-300 opacity-0 transition hover:text-red-500 group-hover:opacity-100"><X size={13} /></button>
+    </div>
+  );
   // вложения (картинки сжимаются до превью, прочие файлы — data URL; лимит 10 МБ)
   const files = Array.isArray(j.files) ? j.files : [];
   const fileInputRef = useRef(null);
@@ -6889,7 +6918,7 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl transition-[max-width,max-height] " + (expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
+      <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
         {/* Шапка: компактный переключатель типа + создано + действия */}
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
           <div className="inline-flex rounded-xl bg-neutral-100 p-0.5">
@@ -6950,22 +6979,17 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
                 </div>
               )}
               <div className="flex flex-col">
-                {checklist.map((c) => (
-                  <div key={c.id} className="group flex items-start gap-2.5 py-1">
-                    <button onClick={() => toggleCheck(c.id)} className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border" style={{ background: c.done ? "#16a34a" : "#fff", borderColor: c.done ? "#16a34a" : "#d4d4d8", color: "#fff" }}>{c.done && <Check size={10} strokeWidth={3} />}</button>
-                    <textarea value={c.text} rows={1}
-                      ref={(el) => { checkRefs.current[c.id] = el; }}
-                      onChange={(e) => setCheckText(c.id, e.target.value)}
-                      onInput={(e) => sizeCheck(e.target)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addCheck(); } }}
-                      placeholder="Подзадача…"
-                      className="min-w-0 flex-1 resize-none break-words border-none bg-transparent text-sm leading-snug text-neutral-700 focus:outline-none"
-                      style={c.done ? { textDecoration: "line-through", color: "#a3a3a3" } : undefined} />
-                    <button onClick={() => removeCheck(c.id)} className="mt-0.5 shrink-0 text-neutral-300 opacity-0 transition hover:text-red-500 group-hover:opacity-100"><X size={13} /></button>
-                  </div>
-                ))}
+                {checklist.filter((c) => !c.done).map((c) => renderSubRow(c))}
               </div>
               <button onClick={addCheck} className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> подзадача</button>
+              {checklist.some((c) => c.done) && (() => { const doneSubs = checklist.filter((c) => c.done); return (
+                <div className="mt-3 border-t border-neutral-100 pt-2">
+                  <button onClick={() => setSubDoneOpen((v) => !v)} className="flex w-full items-center gap-1.5 rounded-lg px-1 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 transition hover:text-neutral-600">
+                    <ChevronRight size={13} className={"transition " + (subDoneOpen ? "rotate-90" : "")} /> Выполненные <span className="rounded-full bg-neutral-100 px-1.5 text-[11px] font-bold text-neutral-500">{doneSubs.length}</span>
+                  </button>
+                  {subDoneOpen && <div className="mt-1 flex flex-col">{doneSubs.map((c) => renderSubRow(c))}</div>}
+                </div>
+              ); })()}
             </div>
 
             {/* Вложения */}
