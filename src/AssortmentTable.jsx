@@ -6220,7 +6220,13 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const SegBtn = ({ id, children }) => (
     <button onClick={() => setView(id)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{children}</button>
   );
-  const isBoard = view === "kanban" || view === "list";
+  const isBoard = view === "kanban" || view === "list" || view === "prod";
+  const prodType = fltType === "product";
+  // наборы видов зависят от типа: для «по товарам» — без Календаря, но есть «Товары»
+  const viewOptions = prodType
+    ? [["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["gantt", GanttChart, "Гант"], ["prod", Box, "Товары"]]
+    : [["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["cal", CalendarIcon, "Календарь"], ["gantt", GanttChart, "Гант"]];
+  useEffect(() => { if (!viewOptions.some(([id]) => id === view)) setView(viewOptions[0][0]); }, [fltType]);
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
   const activeFilters = (fltPrio ? 1 : 0) + (fltAssignee ? 1 : 0);
   const typeOf = (j) => (j && j.type === "op") ? "op" : jobType(j);
@@ -6285,7 +6291,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
             </div>
           )}
           <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-            {[["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["cal", CalendarIcon, "Календарь"], ["gantt", GanttChart, "Гант"]].map(([id, Icon, title]) => (
+            {viewOptions.map(([id, Icon, title]) => (
               <button key={id} onClick={() => setView(id)} title={title} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Icon size={16} /></button>
             ))}
           </div>
@@ -6297,6 +6303,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
         {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
           : view === "cal" ? <CalendarGrid jobs={typedJobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
+          : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
           : <GanttBoard jobs={typedJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
       </div>
     </div>
@@ -6314,6 +6321,88 @@ function StageIcon({ j, size = 15 }) {
   else if (k === "done") svg = (<svg {...base} fill="none" stroke={m.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-4.8" /></svg>);
   else svg = (<svg {...base} fill="none" stroke={m.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>);
   return <span title={m.label} className="inline-flex shrink-0 items-center">{svg}</span>;
+}
+
+// Вид «Товары» для задач по товарам: товар (фото·код·название) + все его задачи. Раскладки: строки | колонки.
+function ProductTasksView({ jobs, products, onOpen }) {
+  const [layout, setLayout] = useState(() => lsGet("rnp.prodLayout", "rows")); // rows | cols
+  const [hideDone, setHideDone] = useState(() => lsGet("rnp.prodHideDone", false));
+  useEffect(() => lsSet("rnp.prodLayout", layout), [layout]);
+  useEffect(() => lsSet("rnp.prodHideDone", hideDone), [hideDone]);
+
+  const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
+  const byProd = new Map();
+  (jobs || []).forEach((j) => {
+    if (jobType(j) !== "product" || !j.productId) return;
+    if (hideDone && stageOf(j) === "done") return;
+    if (!byProd.has(j.productId)) byProd.set(j.productId, []);
+    byProd.get(j.productId).push(j);
+  });
+  const rows = [...byProd.entries()]
+    .map(([pid, js]) => ({ p: prodById[pid] || { id: pid, code: "—", name: "Без товара", image: null }, jobs: js }))
+    .filter((r) => r.jobs.length)
+    .sort((a, b) => (b.jobs.length - a.jobs.length) || String(a.p.code || "").localeCompare(String(b.p.code || "")));
+
+  const sortJobs = (js) => js.slice().sort((a, b) => {
+    const da = stageOf(a) === "done" ? 1 : 0, db = stageOf(b) === "done" ? 1 : 0; if (da !== db) return da - db;
+    const pr = { high: 0, med: 1, low: 2 }; return (pr[a.priority] ?? 3) - (pr[b.priority] ?? 3);
+  });
+
+  const nP = rows.length;
+  const wP = (nP % 10 === 1 && nP % 100 !== 11) ? "товар" : ([2, 3, 4].includes(nP % 10) && ![12, 13, 14].includes(nP % 100)) ? "товара" : "товаров";
+
+  const thumb = (p, w, h) => (
+    <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 text-neutral-300" style={{ width: w, height: h }}>{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={Math.round(w / 2.6)} />}</div>
+  );
+  const chip = (j) => { const done = stageOf(j) === "done"; const m = PRIORITIES[j.priority]; const style = done ? { background: "#f4f5f6", color: "#a1a1aa", borderColor: "#e9e9ec" } : m ? { background: m.bg, color: m.color, borderColor: m.color + "55" } : { background: "#f8f8f9", color: "#52525b", borderColor: "#e5e5e9" };
+    return <button key={j.id} onClick={() => onOpen(j)} title={j.title} style={style} className={"inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-semibold " + (done ? "line-through" : "")}>{done && <Check size={11} strokeWidth={3} className="shrink-0" />}<span className="truncate">{j.title || "—"}</span></button>;
+  };
+  const card = (j) => { const done = stageOf(j) === "done"; const m = PRIORITIES[j.priority]; const bc = done ? "#d1d5db" : (m ? m.color : "#cbd5e1");
+    return <button key={j.id} onClick={() => onOpen(j)} title={j.title} className={"rounded-lg border border-l-[3px] bg-white px-2.5 py-2 text-left text-[11.5px] font-semibold leading-snug " + (done ? "text-neutral-400 line-through" : "text-neutral-700")} style={{ borderLeftColor: bc }}>{j.title || "—"}</button>;
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center gap-3">
+        <span className="text-[12px] text-neutral-400">{nP} {wP} · сортировка по числу задач</span>
+        <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[12px] text-neutral-500"><input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} className="accent-neutral-800" /> скрыть выполненные</label>
+        <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+          {[["rows", ListIcon, "Строки"], ["cols", Columns3, "Колонки"]].map(([id, Ic, t]) => <button key={id} onClick={() => setLayout(id)} title={t} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (layout === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Ic size={15} /></button>)}
+        </div>
+      </div>
+
+      {!rows.length ? (
+        <div className="flex flex-col items-center gap-2 py-16 text-center text-sm text-neutral-400"><Box size={26} className="text-neutral-300" />Нет задач по товарам{hideDone ? " (кроме выполненных)" : ""}.</div>
+      ) : layout === "rows" ? (
+        <div className="overflow-hidden rounded-xl border border-neutral-200">
+          {rows.map(({ p, jobs: js }) => (
+            <div key={p.id} className="flex items-center gap-3 border-b border-neutral-100 px-3 py-2.5 last:border-b-0 hover:bg-neutral-50/40">
+              {thumb(p, 40, 52)}
+              <div className="w-[200px] shrink-0">
+                <div className="text-[10.5px] font-semibold text-neutral-400">{p.code || "—"}</div>
+                <div className="truncate text-[13px] font-semibold text-neutral-800" title={p.name}>{p.name || "Без названия"}</div>
+              </div>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{sortJobs(js).map((j) => chip(j))}</div>
+              <span className="w-8 shrink-0 text-right text-[11px] font-bold text-neutral-300">{js.length}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {rows.map(({ p, jobs: js }) => (
+            <div key={p.id} className="flex w-[220px] shrink-0 flex-col rounded-xl border border-neutral-200 bg-neutral-50/40 p-2.5">
+              <div className="mb-2.5 flex items-center gap-2.5">
+                {thumb(p, 36, 46)}
+                <div className="min-w-0"><div className="text-[9.5px] font-semibold text-neutral-400">{p.code || "—"}</div><div className="truncate text-[12px] font-bold text-neutral-800" title={p.name}>{p.name || "Без названия"}</div></div>
+                <span className="ml-auto shrink-0 rounded-full bg-neutral-200 px-1.5 text-[10px] font-bold text-neutral-500">{js.length}</span>
+              </div>
+              <div className="flex flex-col gap-1.5">{sortJobs(js).map((j) => card(j))}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, taskLabels, people = [], products, onOpen, onAddJob, onUpdateJob }) {
@@ -6638,7 +6727,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
   });
   const prodRows = products
     .filter((p) => prodMap.has(p.id))
-    .map((p) => ({ key: p.id, label: (p.code || "—") + (p.name ? " · " + p.name : ""), preset: { type: "product", productId: p.id }, items: prodMap.get(p.id) }));
+    .map((p) => ({ key: p.id, label: (p.code || "—") + (p.name ? " · " + p.name : ""), img: p.image || null, preset: { type: "product", productId: p.id }, items: prodMap.get(p.id) }));
 
   const timelineW = daysInMonth * DW;
   // нераспределённые — задачи без даты и без начала (операционные сюда не входят — они в opTypes)
@@ -6689,6 +6778,9 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
     return (
       <div className="flex border-t border-neutral-100">
         <div className="group relative flex shrink-0 items-center gap-1 py-1 pr-2" style={{ width: LW }}>
+          {row.img !== undefined && (
+            <div className="ml-1 flex h-7 w-[22px] shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100 text-neutral-300">{row.img ? <img src={row.img} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={11} />}</div>
+          )}
           {!row.preset && row.items.length === 1 ? (
             <button onClick={() => onOpen(row.items[0].j)} title="Открыть задачу" className={"min-w-0 flex-1 truncate pl-1 text-left text-[12px] hover:text-orange-700 hover:underline " + (row.items[0].j.done ? "text-neutral-400 line-through" : "text-neutral-700")}>{row.label}</button>
           ) : (
