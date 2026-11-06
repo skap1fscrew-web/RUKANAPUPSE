@@ -77,6 +77,14 @@ const JOB_TYPES = {
   product: { label: "Товар", section: "Задачи по товарам" },
 };
 const jobType = (j) => (j && j.type && JOB_TYPES[j.type]) ? j.type : (j && j.batchId ? "purchase" : (j && j.productId ? "product" : "project"));
+// В видах задач товар виден контекстно (строка/колонка/карточка/столбец «Товар»),
+// поэтому из названия убираем хвост «· Название товара», если он есть (старый формат автозадач).
+function stripProdSuffix(title, name) {
+  const t = String(title == null ? "" : title);
+  if (!name) return t;
+  const re = new RegExp("\\s*[·•]\\s*" + String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$");
+  return t.replace(re, "").trim() || t;
+}
 
 // Критерии аналитики карточки (общие для всех карточек, настраиваются)
 const ANALYTICS_CRIT_DEFAULT = [
@@ -964,9 +972,10 @@ export default function AssortmentTable() {
           // на каждый товар партии — задача типа «Товар»; не дублируем, если такая уже есть
           // (проверяем и сохранённые задачи, и созданные в этом же проходе — товар мог быть в нескольких партиях)
           (b.items || []).forEach((it) => {
-            const jt = `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
-            const dup = (jobs || []).some((j) => j && j.productId === it.productId && j.title === jt)
-              || newJobs.some((j) => j.productId === it.productId && j.title === jt);
+            const jt = String(title).trim(); // без хвоста «· товар» — товар и так привязан к задаче
+            const legacy = `${jt} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(); // старый формат — чтобы не плодить дубли
+            const dup = (jobs || []).some((j) => j && j.productId === it.productId && (j.title === jt || j.title === legacy))
+              || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
             if (dup) return;
             newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
           });
@@ -1032,8 +1041,9 @@ export default function AssortmentTable() {
       const dd = r.hasDate ? stageTaskDates(b.cycle, stageId, r.durDays) : { start: null, date: null };
       const common = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Партия: «${b.name || ""}»`, createdAt: isoYMD(new Date()) };
       if (r.scope === "product") (b.items || []).forEach((it) => {
-        const jt = `${title} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
-        const dup = (jobs || []).some((j) => j && j.productId === it.productId && j.title === jt) || newJobs.some((j) => j.productId === it.productId && j.title === jt);
+        const jt = String(title).trim();
+        const legacy = `${jt} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
+        const dup = (jobs || []).some((j) => j && j.productId === it.productId && (j.title === jt || j.title === legacy)) || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
         if (!dup) newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
       });
       else { const dup = (jobs || []).some((j) => j && j.batchId === b.id && j.title === title) || newJobs.some((j) => j.batchId === b.id && j.title === title); if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common }); }
@@ -5442,7 +5452,7 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
         <input type="checkbox" checked={isDone} onChange={() => toggleJob(j)} className="h-4 w-4 shrink-0 accent-green-600" />
         {!isDone && pr && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: pr.color }} title={pr.name} />}
         {Array.isArray(j.files) && j.files.length > 0 && <Paperclip size={13} className="shrink-0 text-neutral-400" />}
-        <button onClick={() => onOpenJob && onOpenJob(j)} className="min-w-0 flex-1 truncate text-left text-sm hover:underline" style={isDone ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }} title={j.title || "Без названия"}>{j.title || "Без названия"}</button>
+        <button onClick={() => onOpenJob && onOpenJob(j)} className="min-w-0 flex-1 truncate text-left text-sm hover:underline" style={isDone ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }} title={j.title || "Без названия"}>{stripProdSuffix(j.title, product && product.name) || "Без названия"}</button>
         {j.date && <span className="shrink-0 text-[11px] tabular-nums text-neutral-400">{fmtDM(j.date)}</span>}
       </div>
     );
@@ -6354,11 +6364,13 @@ function ProductTasksView({ jobs, products, onOpen }) {
   const thumb = (p, w, h) => (
     <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 text-neutral-300" style={{ width: w, height: h }}>{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={Math.round(w / 2.6)} />}</div>
   );
-  const chip = (j) => { const done = stageOf(j) === "done"; const m = PRIORITIES[j.priority]; const style = done ? { background: "#f4f5f6", color: "#a1a1aa", borderColor: "#e9e9ec" } : m ? { background: m.bg, color: m.color, borderColor: m.color + "55" } : { background: "#f8f8f9", color: "#52525b", borderColor: "#e5e5e9" };
-    return <button key={j.id} onClick={() => onOpen(j)} title={j.title} style={style} className={"inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-semibold " + (done ? "line-through" : "")}>{done && <Check size={11} strokeWidth={3} className="shrink-0" />}<span className="truncate">{j.title || "—"}</span></button>;
+  // убрать хвост «· Название товара» — товар и так в шапке строки
+  const stripProd = (title, name) => { let t = String(title || ""); if (name) { const re = new RegExp("\\s*[·•]\\s*" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$"); t = t.replace(re, ""); } return t.trim() || String(title || "—"); };
+  const chip = (j, pname) => { const done = stageOf(j) === "done"; const m = PRIORITIES[j.priority]; const style = done ? { background: "#f4f5f6", color: "#a1a1aa", borderColor: "#e9e9ec" } : m ? { background: m.bg, color: m.color, borderColor: m.color + "55" } : { background: "#f8f8f9", color: "#52525b", borderColor: "#e5e5e9" }; const txt = stripProd(j.title, pname);
+    return <button key={j.id} onClick={() => onOpen(j)} title={txt} style={style} className={"inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-semibold " + (done ? "line-through" : "")}>{done && <Check size={11} strokeWidth={3} className="shrink-0" />}<span className="truncate">{txt}</span></button>;
   };
-  const card = (j) => { const done = stageOf(j) === "done"; const m = PRIORITIES[j.priority]; const bc = done ? "#d1d5db" : (m ? m.color : "#cbd5e1");
-    return <button key={j.id} onClick={() => onOpen(j)} title={j.title} className={"rounded-lg border border-l-[3px] bg-white px-2.5 py-2 text-left text-[11.5px] font-semibold leading-snug " + (done ? "text-neutral-400 line-through" : "text-neutral-700")} style={{ borderLeftColor: bc }}>{j.title || "—"}</button>;
+  const card = (j, pname) => { const done = stageOf(j) === "done"; const m = PRIORITIES[j.priority]; const bc = done ? "#d1d5db" : (m ? m.color : "#cbd5e1"); const txt = stripProd(j.title, pname);
+    return <button key={j.id} onClick={() => onOpen(j)} title={txt} className={"rounded-lg border border-l-[3px] bg-white px-2.5 py-2 text-left text-[11.5px] font-semibold leading-snug " + (done ? "text-neutral-400 line-through" : "text-neutral-700")} style={{ borderLeftColor: bc }}>{txt}</button>;
   };
 
   return (
@@ -6382,7 +6394,7 @@ function ProductTasksView({ jobs, products, onOpen }) {
                 <div className="text-[10.5px] font-semibold text-neutral-400">{p.code || "—"}</div>
                 <div className="truncate text-[13px] font-semibold text-neutral-800" title={p.name}>{p.name || "Без названия"}</div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{sortJobs(js).map((j) => chip(j))}</div>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{sortJobs(js).map((j) => chip(j, p.name))}</div>
               <span className="w-8 shrink-0 text-right text-[11px] font-bold text-neutral-300">{js.length}</span>
             </div>
           ))}
@@ -6396,7 +6408,7 @@ function ProductTasksView({ jobs, products, onOpen }) {
                 <div className="min-w-0"><div className="text-[9.5px] font-semibold text-neutral-400">{p.code || "—"}</div><div className="truncate text-[12px] font-bold text-neutral-800" title={p.name}>{p.name || "Без названия"}</div></div>
                 <span className="ml-auto shrink-0 rounded-full bg-neutral-200 px-1.5 text-[10px] font-bold text-neutral-500">{js.length}</span>
               </div>
-              <div className="flex flex-col gap-1.5">{sortJobs(js).map((j) => card(j))}</div>
+              <div className="flex flex-col gap-1.5">{sortJobs(js).map((j) => card(j, p.name))}</div>
             </div>
           ))}
         </div>
@@ -6451,7 +6463,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
   const [doneOpen, setDoneOpen] = useState({});
   const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
     <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
-      <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
+      <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{stripProdSuffix(j.title, prod && prod.name) || "Без названия"}</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {groupBy !== "status" && <StageIcon j={j} />}
         {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
@@ -6523,7 +6535,7 @@ function JobsListView({ jobs, tags, taskLabels, people = [], products, onOpen, o
           {sorted.map((j) => { const lb = label(j.labelId); const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const done = stageOf(j) === "done"; return (
             <tr key={j.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
               <td className="px-2 py-2 text-center"><button onClick={() => onUpdateJob(applyStage(j, done ? "wait" : "done"))} className="flex h-4 w-4 items-center justify-center rounded border" style={{ background: done ? "#16a34a" : "#fff", borderColor: done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{done && <Check size={10} strokeWidth={3} />}</button></td>
-              <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</button></td>
+              <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{stripProdSuffix(j.title, prod && prod.name) || "Без названия"}</button></td>
               <td className="px-3 py-2"><StageIcon j={j} size={16} /></td>
               <td className="px-3 py-2"><PrioChip p={j.priority} /></td>
               <td className="px-3 py-2">{(() => { const pr = personById[j.assignee]; return pr ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>{pr.name}</span> : <span className="text-neutral-300">—</span>; })()}</td>
@@ -6570,7 +6582,7 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
                     title={(p ? p.code + " · " : "") + j.title}
                   >
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: labelColor(j.labelId) }} />
-                    <span className="min-w-0 flex-1 truncate" style={j.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#404040" }}>{j.title || "—"}</span>
+                    <span className="min-w-0 flex-1 truncate" style={j.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#404040" }}>{stripProdSuffix(j.title, p && p.name) || "—"}</span>
                   </button>
                 );
               })}
@@ -6762,7 +6774,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
           className="absolute inset-y-0 left-0 flex w-2 cursor-ew-resize items-center justify-center opacity-0 transition group-hover/bar:opacity-100"
           title="Изменить начало"
         ><span className="h-2.5 w-0.5 rounded bg-white/70" /></span>
-        <span className="truncate px-2" style={x.j.done ? { textDecoration: "line-through" } : undefined}>{x.j.title || "—"}</span>
+        <span className="truncate px-2" style={x.j.done ? { textDecoration: "line-through" } : undefined}>{stripProdSuffix(x.j.title, (products.find((p) => p.id === x.j.productId) || {}).name) || "—"}</span>
         <span
           onPointerDown={(e) => startBarDrag(e, x.j, "r")}
           className="absolute inset-y-0 right-0 flex w-2 cursor-ew-resize items-center justify-center opacity-0 transition group-hover/bar:opacity-100"
@@ -6969,7 +6981,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
             <div key={j.id} onPointerDown={(e) => startCardDrag(e, j)} onClick={() => onOpen(j)}
               className="cursor-grab rounded-xl p-2.5 shadow-sm transition hover:shadow-md"
               style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}`, touchAction: "none" }}>
-              <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{j.title || "Без названия"}</div>
+              <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{stripProdSuffix(j.title, (products.find((x) => x.id === j.productId) || {}).name) || "Без названия"}</div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <StageIcon j={j} />
                 {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
