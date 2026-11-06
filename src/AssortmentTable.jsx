@@ -5385,6 +5385,26 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
   // ===== Фонд маркетинга (по партиям) =====
   const [mktBatchId, setMktBatchId] = useState(null);
   const mktBatches = (purchaseBatches || []).filter((b) => (b.items || []).some((it) => it.productId === product.id));
+  // этапы производства партии (для дашборда «Закупка»)
+  const batchCycleInfo = (b) => {
+    const cyc = b && b.cycle;
+    const started = !!(cyc && cyc.started && Array.isArray(cyc.stages) && cyc.stages.length);
+    const stages = started ? cyc.stages : [];
+    const total = stages.length;
+    const doneCount = stages.filter((s) => s.done).length;
+    const curIdx = stages.findIndex((s) => !s.done);
+    const completed = started && curIdx < 0;
+    const cur = curIdx >= 0 ? stages[curIdx] : null;
+    const dates = started ? cycleStageDates(cyc.startDate, stages) : {};
+    const curEnd = cur && dates[cur.id] ? dates[cur.id].endStr : null;
+    const it = (b.items || []).find((x) => x.productId === product.id);
+    const q = it ? parseInt(it.qty) : NaN;
+    const qty = isNaN(q) ? null : q;
+    const st = PU_STATUS[b.status] || PU_STATUS.draft;
+    return { started, stages, total, doneCount, curIdx, completed, cur, curEnd, qty, st };
+  };
+  const batchShort = (name) => { const m = String(name || "").match(/#\s*\d+/); return m ? m[0].replace(/\s+/g, "") : String(name || "").slice(0, 4); };
+  const pluralRu = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return one; if (m10 >= 2 && m10 <= 4 && !(m100 >= 12 && m100 <= 14)) return few; return many; };
   const mktCur = mktBatches.find((b) => b.id === mktBatchId) || mktBatches[0] || null;
   const mktItem = mktCur ? (mktCur.items || []).find((it) => it.productId === product.id) : null;
   const mktQty = toNum(mktItem?.qty), mktDrr = toNum(mktItem?.mktDrr), mktPrice = toNum(mktItem?.mktPlanPrice);
@@ -5746,6 +5766,23 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-sky-400" /> Закупка</div>
                   <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{isNaN(puRubPerUnit) ? "—" : money(puRubPerUnit)}</div>
                   <div className="text-[11px] text-neutral-400">цена за единицу</div>
+                  {mktBatches.length > 0 && (
+                    <div className="mt-3 border-t border-neutral-100 pt-2.5">
+                      <div className="mb-2 text-[11px] font-semibold text-neutral-500">{mktBatches.length} {pluralRu(mktBatches.length, "партия", "партии", "партий")} с товаром</div>
+                      <div className="space-y-1.5">
+                        {mktBatches.slice(0, 3).map((b) => { const ci = batchCycleInfo(b); const segs = ci.started ? ci.stages : [0, 1, 2, 3, 4]; return (
+                          <div key={b.id} className="flex items-center gap-2">
+                            <span className="w-5 shrink-0 text-[10px] font-bold text-neutral-400">{batchShort(b.name)}</span>
+                            <span className="flex min-w-0 flex-1 gap-[3px]">
+                              {segs.map((s, i) => { const bg = !ci.started ? "#e7e7ec" : ci.stages[i].done ? "#10b981" : i === ci.curIdx ? "#0ea5e9" : "#e7e7ec"; return <span key={i} className="h-[5px] flex-1 rounded-[3px]" style={{ background: bg }} />; })}
+                            </span>
+                            <span className={"shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase " + ci.st.cls}>{ci.st.label}</span>
+                          </div>
+                        ); })}
+                        {mktBatches.length > 3 && <div className="pl-7 text-[10px] text-neutral-400">ещё {mktBatches.length - 3}</div>}
+                      </div>
+                    </div>
+                  )}
                 </button>
                 {product.purchase?.link && (
                   <a href={product.purchase.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Открыть ссылку на закупку" className="absolute right-9 top-2.5 flex h-6 w-6 items-center justify-center rounded-md text-neutral-300 transition hover:bg-sky-50 hover:text-sky-600"><ExternalLink size={13} /></a>
@@ -5891,6 +5928,44 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
 
                     {fullBlock === "purchase" && (
                       <>
+                        {mktBatches.length > 0 && (
+                          <div className="mb-5">
+                            <div className="mb-2.5 flex items-center gap-2 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Партии с этим товаром <span className="rounded-full bg-sky-100 px-2 text-[11px] font-bold text-sky-600">{mktBatches.length}</span></div>
+                            <div className="space-y-2.5">
+                              {mktBatches.map((b) => { const ci = batchCycleInfo(b); return (
+                                <div key={b.id} className="rounded-xl border border-neutral-200 bg-white p-3.5">
+                                  <div className="mb-3 flex items-center gap-2.5">
+                                    <span className={"rounded-full px-2 py-0.5 text-[10px] font-bold uppercase " + ci.st.cls}>{ci.st.label}</span>
+                                    <span className="text-sm font-bold text-neutral-800">{b.name}</span>
+                                    {ci.qty != null && <span className="text-xs font-medium text-neutral-400">· {ci.qty} шт</span>}
+                                  </div>
+                                  {!ci.started ? (
+                                    <div className="flex items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50/60 px-3 py-2 text-[12.5px] text-neutral-500"><span className="h-2 w-2 rounded-full bg-neutral-300" /> Производственный цикл ещё не запущен</div>
+                                  ) : ci.completed ? (
+                                    <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2 text-[12.5px] font-medium text-emerald-700"><Check size={14} strokeWidth={3} /> Цикл производства завершён — все {ci.total} {pluralRu(ci.total, "этап", "этапа", "этапов")} пройдены</div>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-start">
+                                        {ci.stages.map((s, i) => { const done = s.done; const cur = i === ci.curIdx; return (
+                                          <div key={s.id} className="relative flex min-w-0 flex-1 flex-col items-center">
+                                            {i > 0 && <span className="absolute left-[-50%] top-[11px] h-[2px] w-full" style={{ background: done || cur ? "#34d399" : "#e7e7ec" }} />}
+                                            <span className="relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-bold" style={done ? { background: "#10b981", borderColor: "#10b981", color: "#fff" } : cur ? { background: "#fff", borderColor: "#0ea5e9", color: "#0ea5e9", boxShadow: "0 0 0 4px #e0f2fe" } : { background: "#f1f1f4", borderColor: "#e2e2e8", color: "#b4b4bb" }}>{done ? <Check size={12} strokeWidth={3} /> : i + 1}</span>
+                                            <span className={"mt-1.5 max-w-[84px] text-center text-[10px] leading-tight " + (cur ? "font-bold text-sky-700" : done ? "text-neutral-500" : "text-neutral-400")}>{s.name}</span>
+                                          </div>
+                                        ); })}
+                                      </div>
+                                      <div className="mt-3 flex items-center gap-2.5 border-t border-neutral-100 pt-2.5">
+                                        <span className="text-[12.5px] text-neutral-600">Сейчас: <b className="text-sky-700">{ci.cur ? ci.cur.name : ""}</b></span>
+                                        {ci.curEnd && <span className="text-[12px] font-medium text-neutral-400">план до {ci.curEnd}</span>}
+                                        <span className="ml-auto text-[11.5px] font-semibold text-neutral-400">Готово {ci.doneCount} из {ci.total}</span>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              ); })}
+                            </div>
+                          </div>
+                        )}
                         <div className="mb-4 flex flex-wrap items-end gap-x-4 gap-y-2 rounded-xl border border-neutral-200 bg-neutral-50/60 px-3 py-2.5">
                           <div className="-mb-0.5 w-full text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Курсы и комиссии <span className="font-normal normal-case text-neutral-400">· общие для всех товаров, меняются сразу везде</span></div>
                           {[["Курс ¥", "cny", "₽"], ["Курс $", "usd", "₽"], ["Карго", "cargo", "$/кг"], ["Комиссия", "commission", "%"], ["Страховка", "insurance", "%"]].map(([label, key, suf]) => (
