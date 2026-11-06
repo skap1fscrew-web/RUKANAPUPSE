@@ -7365,6 +7365,9 @@ function StrategyDoc({ strategy, rootId, onChange }) {
   const kids = {}; nodes.forEach((n) => (kids[n.id] = [])); edges.forEach((e) => { if (kids[e.from]) kids[e.from].push(e.to); });
 
   const [focusId, setFocusId] = useState(null);
+  const [noteFocusId, setNoteFocusId] = useState(null);
+  const [menuFor, setMenuFor] = useState(null);
+  const [openNotes, setOpenNotes] = useState(() => new Set());
   const titleRefs = useRef({});
   const noteRefs = useRef({});
 
@@ -7381,13 +7384,48 @@ function StrategyDoc({ strategy, rootId, onChange }) {
   const sizeNote = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; };
   useLayoutEffect(() => { Object.values(noteRefs.current).forEach(sizeNote); });
   useEffect(() => { if (focusId && titleRefs.current[focusId]) titleRefs.current[focusId].focus(); }, [focusId]);
+  useEffect(() => { if (noteFocusId && noteRefs.current[noteFocusId]) { noteRefs.current[noteFocusId].focus(); setNoteFocusId(null); } }, [noteFocusId]);
 
   const root = byId[rootId];
   if (!root) return <div className="rounded-2xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-400">Пустая карта</div>;
 
-  const isSimpleLeaf = (id) => (kids[id] || []).length === 0 && !((byId[id].note || "").trim()) && !((byId[id].checklist || []).length);
-  const childrenAllSimple = (id) => { const ch = kids[id] || []; return ch.length > 0 && ch.every(isSimpleLeaf); };
+  const isListLeaf = (id) => (kids[id] || []).length === 0; // лист без детей — остаётся в списке даже с заметкой/галочкой
+  const childrenAllSimple = (id) => { const ch = kids[id] || []; return ch.length > 0 && ch.every(isListLeaf); };
   const scrollTo = (id) => { const el = document.getElementById("stratsec-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+
+  const DOC_COLORS = ["#a3a3a3", "#2563eb", "#0ea5e9", "#16a34a", "#f59e0b", "#ef4444", "#ec4899", "#7c3aed"];
+  const noteVisible = (id) => !!((byId[id].note || "").trim()) || openNotes.has(id);
+  const openNote = (id) => { setOpenNotes((s) => { const n = new Set(s); n.add(id); return n; }); setNoteFocusId(id); setMenuFor(null); };
+  const hideNote = (id) => { if ((byId[id].note || "").trim()) return; setOpenNotes((s) => { const n = new Set(s); n.delete(id); return n; }); };
+  const toggleNote = (id) => { noteVisible(id) ? hideNote(id) : openNote(id); };
+
+  const renderToggle = (on) => (
+    <span className={"relative h-[20px] w-[34px] shrink-0 rounded-full transition " + (on ? "bg-neutral-900" : "bg-neutral-200")}><span className={"absolute top-[2px] h-[16px] w-[16px] rounded-full bg-white transition-all " + (on ? "left-[16px]" : "left-[2px]")} /></span>
+  );
+  const renderSettings = (id, { check = false, color = false } = {}) => (
+    <div className="relative shrink-0">
+      <button onClick={(e) => { e.stopPropagation(); setMenuFor((m) => (m === id ? null : id)); }} className={"rounded p-1 transition hover:bg-neutral-100 " + (menuFor === id ? "text-violet-600" : "text-neutral-300 hover:text-neutral-600")} title="Настройки строки"><Settings2 size={13} /></button>
+      {menuFor === id && (
+        <div className="absolute right-0 top-8 z-20 w-56 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          {check && (
+            <button onClick={() => setNode(id, { hasCheck: !(byId[id].hasCheck !== false) })} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50"><span className="text-[13px] font-medium text-neutral-700">Чекбокс</span>{renderToggle(byId[id].hasCheck !== false)}</button>
+          )}
+          {color && (<>
+            {check && <div className="my-1 h-px bg-neutral-100" />}
+            <div className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Цвет</div>
+            <div className="flex flex-wrap gap-1.5 px-2 pb-1">
+              {DOC_COLORS.map((c) => <button key={c} onClick={() => setNode(id, { color: c })} className="h-[19px] w-[19px] rounded-full transition hover:scale-110" style={{ background: c, boxShadow: (byId[id].color || "") === c ? "0 0 0 2px #fff, 0 0 0 4px #111" : "none" }} />)}
+            </div>
+          </>)}
+          {(check || color) && <div className="my-1 h-px bg-neutral-100" />}
+          <button onClick={() => toggleNote(id)} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50"><span className="text-[13px] font-medium text-neutral-700">Заметка</span>{renderToggle(noteVisible(id))}</button>
+        </div>
+      )}
+    </div>
+  );
+  const renderPlus = (onClick, title, extra = "") => (
+    <button onClick={onClick} title={title} className={"mt-1 inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border border-dashed border-neutral-200 text-neutral-400 transition hover:border-violet-300 hover:text-violet-600 " + extra}><Plus size={14} /></button>
+  );
 
   // --- хелперы рендера (функции, НЕ компоненты — чтобы поля не теряли фокус) ---
   const renderTitle = (id, cls, ph) => (
@@ -7403,19 +7441,25 @@ function StrategyDoc({ strategy, rootId, onChange }) {
   );
   const renderLeafList = (pid) => (
     <div className="mb-2 mt-1 max-w-[640px]">
-      {(kids[pid] || []).map((cid) => { const c = byId[cid]; const checkable = c.hasCheck !== false; return (
-        <div key={cid} className="group/li flex items-center gap-2.5 py-1">
-          {checkable
-            ? <button onClick={() => setNode(cid, { done: !c.done })} className={"flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-[5px] border-[1.6px] " + (c.done ? "border-green-600 bg-green-600 text-white" : "border-neutral-300 text-transparent hover:border-neutral-400")}><Check size={11} strokeWidth={3} /></button>
-            : <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-violet-300" />}
-          <input ref={(el) => (titleRefs.current[cid] = el)} value={c.title} placeholder="Пункт…"
-            onChange={(e) => setNode(cid, { title: e.target.value })}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addChild(pid); } }}
-            className={"min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-neutral-300 " + (checkable && c.done ? "text-neutral-400 line-through" : "text-neutral-700")} />
-          <button onClick={() => removeNode(cid)} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/li:opacity-100" title="Удалить пункт"><X size={13} /></button>
+      {(kids[pid] || []).map((cid) => { const c = byId[cid]; const checkable = c.hasCheck !== false; const accent = c.color && c.color !== "#a3a3a3" ? c.color : "#16a34a"; const bul = c.color && c.color !== "#a3a3a3" ? c.color : "#c4b5fd"; const actsOpen = menuFor === cid; return (
+        <div key={cid}>
+          <div className="group/li flex items-center gap-2.5 py-1">
+            {checkable
+              ? <button onClick={() => setNode(cid, { done: !c.done })} className="flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-[5px] border-[1.6px]" style={c.done ? { background: accent, borderColor: accent, color: "#fff" } : { borderColor: "#d2d2d8", color: "transparent" }}><Check size={11} strokeWidth={3} /></button>
+              : <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: bul }} />}
+            <input ref={(el) => (titleRefs.current[cid] = el)} value={c.title} placeholder="Пункт…"
+              onChange={(e) => setNode(cid, { title: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addChild(pid); } }}
+              className={"min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-neutral-300 " + (checkable && c.done ? "text-neutral-400 line-through" : "text-neutral-700")} />
+            <div className={"flex shrink-0 items-center transition " + (actsOpen ? "opacity-100" : "opacity-0 group-hover/li:opacity-100")}>
+              <button onClick={() => removeNode(cid)} className="rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить пункт"><X size={13} /></button>
+              {renderSettings(cid, { check: true, color: true })}
+            </div>
+          </div>
+          {noteVisible(cid) && <div className="mb-1 ml-[16px] max-w-[600px] border-l-2 border-violet-100 pl-3">{renderNote(cid)}</div>}
         </div>
       ); })}
-      <button onClick={() => addChild(pid)} className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-medium text-neutral-400 hover:text-violet-600"><Plus size={13} /> пункт</button>
+      {renderPlus(() => addChild(pid), "Добавить пункт")}
     </div>
   );
   const renderCheckList = (id) => { const cl = byId[id].checklist || []; if (!cl.length) return null; return (
@@ -7430,12 +7474,13 @@ function StrategyDoc({ strategy, rootId, onChange }) {
       <button onClick={() => addCheck(id)} className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-medium text-neutral-400 hover:text-green-600"><Plus size={13} /> пункт</button>
     </div>
   ); };
-  const renderHeadActions = (id) => (
-    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover/h:opacity-100">
+  const renderHeadActions = (id, { color = true } = {}) => { const open = menuFor === id; return (
+    <div className={"flex shrink-0 items-center gap-0.5 transition " + (open ? "opacity-100" : "opacity-0 group-hover/h:opacity-100")}>
       <button onClick={() => addChild(id)} className="rounded p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600" title="Добавить подтему"><Plus size={14} /></button>
+      {renderSettings(id, { color })}
       {id !== rootId && <button onClick={() => removeNode(id)} className="rounded p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить раздел"><Trash2 size={13} /></button>}
     </div>
-  );
+  ); };
   const renderSection = (id, depth, num) => {
     const n = byId[id]; const clr = n.color && n.color !== "#a3a3a3" ? n.color : "#8b5cf6";
     const head = depth === 1
@@ -7447,11 +7492,11 @@ function StrategyDoc({ strategy, rootId, onChange }) {
       <div key={id}>
         {head}
         <div className="pl-[15px]">
-          {depth <= 2 && renderNote(id)}
+          {noteVisible(id) && renderNote(id)}
           {renderCheckList(id)}
           {childrenAllSimple(id)
             ? renderLeafList(id)
-            : <>{(kids[id] || []).map((cid) => renderSection(cid, depth + 1))}<button onClick={() => addChild(id)} className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-medium text-neutral-400 hover:text-violet-600"><Plus size={13} /> подзаголовок</button></>}
+            : <>{(kids[id] || []).map((cid) => renderSection(cid, depth + 1))}{renderPlus(() => addChild(id), "Добавить подзаголовок")}</>}
         </div>
       </div>
     );
@@ -7462,8 +7507,10 @@ function StrategyDoc({ strategy, rootId, onChange }) {
   const word = (cnt % 10 === 1 && cnt % 100 !== 11) ? "подтема" : ([2, 3, 4].includes(cnt % 10) && ![12, 13, 14].includes(cnt % 100)) ? "подтемы" : "подтем";
 
   return (
-    <div className="grid grid-cols-[232px_1fr] overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-      <nav className="border-r border-neutral-100 bg-neutral-50/60 p-5">
+    <>
+      {menuFor && <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />}
+    <div className="grid grid-cols-[232px_1fr] rounded-2xl border border-neutral-200 bg-white">
+      <nav className="rounded-l-2xl border-r border-neutral-100 bg-neutral-50/60 p-5">
         <div className="sticky top-4">
           <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Содержание</div>
           <button onClick={() => scrollTo(rootId)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-[13px] font-bold text-neutral-800 hover:bg-neutral-100">{root.title || "Без названия"}</button>
@@ -7472,13 +7519,14 @@ function StrategyDoc({ strategy, rootId, onChange }) {
       </nav>
       <article className="px-10 py-8">
         <div className="mb-1 flex items-center gap-2 text-[12px] text-neutral-400"><span className="h-[9px] w-[9px] rounded-full bg-neutral-300" />Стратегия · {cnt} {word}</div>
-        <div id={"stratsec-" + rootId}>{renderTitle(rootId, "text-[28px] font-extrabold tracking-tight text-neutral-900")}</div>
-        <div className="mb-4 mt-1 max-w-[680px]">{renderNote(rootId)}</div>
+        <div id={"stratsec-" + rootId} className="group/h flex items-center gap-2">{renderTitle(rootId, "text-[28px] font-extrabold tracking-tight text-neutral-900")}{renderHeadActions(rootId, { color: false })}</div>
+        {noteVisible(rootId) && <div className="mb-4 mt-1 max-w-[680px]">{renderNote(rootId)}</div>}
         {childrenAllSimple(rootId)
           ? renderLeafList(rootId)
-          : <>{topKids.map((n, i) => renderSection(n.id, 1, i + 1))}<button onClick={() => addChild(rootId)} className="mt-8 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-[13px] font-medium text-neutral-400 hover:border-violet-300 hover:text-violet-600"><Plus size={14} /> Раздел</button></>}
+          : <>{topKids.map((n, i) => renderSection(n.id, 1, i + 1))}{renderPlus(() => addChild(rootId), "Добавить раздел", "mt-8")}</>}
       </article>
     </div>
+    </>
   );
 }
 
