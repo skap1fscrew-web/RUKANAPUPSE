@@ -6250,6 +6250,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [kanbanSort, setKanbanSort] = useState(() => lsGet("rnp.kanbanSort", "created")); // created | priority
   const [kanbanWide, setKanbanWide] = useState(() => lsGet("rnp.kanbanWide", false)); // широкий вид столбцов (2 подколонки по приоритету)
   const [fltPrio, setFltPrio] = useState(null);
+  const [fltMark, setFltMark] = useState(null); // метка: urgent|edu|long|__none
+  const [fltStatus, setFltStatus] = useState(null); // статус: wait|progress|done
   const [fltTag, setFltTag] = useState(null);
   const [fltAssignee, setFltAssignee] = useState(null);
   const [fltType, setFltType] = useState(null); // быстрый фильтр по типу задачи: op|purchase|project|product
@@ -6275,7 +6277,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
     : [["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["cal", CalendarIcon, "Календарь"], ["gantt", GanttChart, "Гант"]];
   useEffect(() => { if (!viewOptions.some(([id]) => id === view)) setView(viewOptions[0][0]); }, [fltType]);
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
-  const activeFilters = (fltPrio ? 1 : 0) + (fltAssignee ? 1 : 0);
+  const activeFilters = (fltPrio ? 1 : 0) + (fltAssignee ? 1 : 0) + (fltMark ? 1 : 0) + (fltStatus ? 1 : 0);
   const typeOf = (j) => (j && j.type === "op") ? "op" : jobType(j);
   const matchType = (j) => !fltType || typeOf(j) === fltType;
   const typedJobs = jobs.filter(matchType); // для календаря/ганта (там без приоритет/исполнитель)
@@ -6283,6 +6285,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
     if (!matchType(j)) return false;
     if (fltPrio && (j.priority || null) !== fltPrio) return false;
     if (fltAssignee && (fltAssignee === "__none" ? !!j.assignee : (j.assignee || null) !== fltAssignee)) return false;
+    if (fltMark && (fltMark === "__none" ? !!j.mark : (j.mark || null) !== fltMark)) return false;
+    if (fltStatus && stageOf(j) !== fltStatus) return false;
     return true;
   });
 
@@ -6326,6 +6330,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
             <div className="relative">
               <button onClick={() => setFltOpen(fltOpen === "filter" ? null : "filter")} className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold " + (activeFilters ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><Filter size={13} />Фильтр{activeFilters > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">{activeFilters}</span>}</button>
               {fltOpen === "filter" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-neutral-200 bg-white p-2.5 shadow-lg">
+                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Статус</span>{fltStatus && <button onClick={() => setFltStatus(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
+                <div className="mb-3 flex flex-wrap gap-1">{[["wait", "Ожидает", "#6b7280", "#f3f4f6"], ["progress", "В процессе", "#c77d1a", "#fff7ea"], ["done", "Готово", "#16a34a", "#ecfdf5"]].map(([k, lbl, c, bg]) => <button key={k} onClick={() => setFltStatus(fltStatus === k ? null : k)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltStatus === k ? { background: c, color: "#fff" } : { background: bg, color: c }}>{lbl}</button>)}</div>
                 <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Приоритет</span>{fltPrio && <button onClick={() => setFltPrio(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
                 <div className="mb-3 flex flex-wrap gap-1">{Object.keys(PRIORITIES).map((k) => <button key={k} onClick={() => setFltPrio(fltPrio === k ? null : k)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltPrio === k ? { background: PRIORITIES[k].color, color: "#fff" } : { background: PRIORITIES[k].bg, color: PRIORITIES[k].color }}>{PRIORITIES[k].label}</button>)}</div>
                 <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Исполнитель</span>{fltAssignee && <button onClick={() => setFltAssignee(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
@@ -6333,6 +6339,11 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
                   {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Исполнителей нет</span>}
                   {(people || []).map((pr) => { const on = fltAssignee === pr.id; return <button key={pr.id} onClick={() => setFltAssignee(on ? null : pr.id)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={on ? { background: pr.color, color: "#fff" } : { background: (pr.color || "#999") + "22", color: pr.color || "#737373" }}>{pr.name}</button>; })}
                   {(people || []).length > 0 && <button onClick={() => setFltAssignee(fltAssignee === "__none" ? null : "__none")} className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + (fltAssignee === "__none" ? "bg-neutral-700 text-white" : "bg-neutral-100 text-neutral-500")}>Не назначен</button>}
+                </div>
+                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Метка</span>{fltMark && <button onClick={() => setFltMark(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
+                <div className="flex flex-wrap items-center gap-1">
+                  {JOB_MARKS.map(([id, ic]) => <button key={id} onClick={() => setFltMark(fltMark === id ? null : id)} className={"rounded-full px-2 py-0.5 text-[13px] leading-none transition " + (fltMark === id ? "bg-violet-100 ring-1 ring-violet-400" : "bg-neutral-100 hover:bg-neutral-200")}>{ic}</button>)}
+                  <button onClick={() => setFltMark(fltMark === "__none" ? null : "__none")} className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + (fltMark === "__none" ? "bg-neutral-700 text-white" : "bg-neutral-100 text-neutral-500")}>Без метки</button>
                 </div>
               </div></>)}
             </div>
@@ -7424,11 +7435,11 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
             {curType === "project" && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-sm text-neutral-600">Метка</span>
-                <div className="flex gap-2">
+                <div className="inline-flex w-full rounded-lg bg-neutral-100 p-0.5">
                   {JOB_MARKS.map(([id, ic]) => (
-                    <button key={id} onClick={() => set("mark", j.mark === id ? null : id)} className={"flex h-9 w-10 items-center justify-center rounded-lg border text-[19px] leading-none transition " + (j.mark === id ? "border-violet-500 ring-2 ring-violet-200" : "border-neutral-200 hover:border-neutral-300")}>{ic}</button>
+                    <button key={id} onClick={() => set("mark", j.mark === id ? null : id)} className={"flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-[17px] leading-none transition " + (j.mark === id ? "bg-white shadow-sm" : "")}>{ic}</button>
                   ))}
-                  <button onClick={() => set("mark", null)} className={"flex h-9 w-10 items-center justify-center rounded-lg border text-[12px] font-bold transition " + (!j.mark ? "border-violet-500 text-violet-600 ring-2 ring-violet-200" : "border-neutral-200 text-neutral-400 hover:border-neutral-300")}>нет</button>
+                  <button onClick={() => set("mark", null)} className={"flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs font-bold transition " + (!j.mark ? "bg-white text-neutral-700 shadow-sm" : "text-neutral-400")}>нет</button>
                 </div>
               </div>
             )}
