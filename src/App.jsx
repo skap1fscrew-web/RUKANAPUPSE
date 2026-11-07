@@ -20,7 +20,7 @@ export default function App() {
           <button onClick={() => supabase.auth.signOut()} className="rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium hover:bg-neutral-50">Выйти</button>
         </div>
       </div>
-      <AssortmentTable />
+      <AssortmentTable userEmail={session.user.email} />
     </div>
   );
 }

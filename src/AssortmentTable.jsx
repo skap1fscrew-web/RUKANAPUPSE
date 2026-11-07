@@ -776,7 +776,7 @@ const SubjectsDatalist = memo(function SubjectsDatalist({ subjects }) {
   );
 });
 
-export default function AssortmentTable() {
+export default function AssortmentTable({ userEmail = null }) {
   const [products, setProducts] = useState([]);
   const [statuses, setStatuses] = useState(DEFAULT_STATUSES);
   const [metricsByGroup, setMetricsByGroup] = useState(DEFAULT_METRICS_BY_GROUP);
@@ -785,9 +785,7 @@ export default function AssortmentTable() {
   const [purchaseBatches, setPurchaseBatches] = useState([]); // блок «Закупки» — партии [{id,name,status,cny,usd,cargo,items:[{id,productId,priceCny,qty}]}]
   const [jobs, setJobs] = useState([]); // блок «Задачи» — задачи с датой [{id,title,date,done,labelId,productId}]
   const [jobEditor, setJobEditor] = useState(null); // {id?...} открытое окно задачи
-  const [me, setMe] = useState(() => lsGet("rnp.me", null)); // кто я (id из команды) — автор ручных правок в логах задач
-  useEffect(() => lsSet("rnp.me", me), [me]);
-  const meRef = useRef(me); meRef.current = me;
+  const meRef = useRef(userEmail); meRef.current = userEmail; // автор ручных правок в логах задач — логин авторизованного пользователя
   const [rnpStartDate, setRnpStartDate] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString().slice(0, 10);
   });
@@ -2239,8 +2237,6 @@ export default function AssortmentTable() {
             taskLabels={taskLabels}
             taskTags={taskTags}
             people={duties.people}
-            me={me}
-            onSetMe={setMe}
             onUpdateJob={upsertJob}
             products={products}
             batches={purchaseBatches}
@@ -6242,10 +6238,7 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
   );
 }
 
-function TasksView({ jobs, taskLabels, taskTags = [], people = [], me = null, onSetMe, onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
-  const [meOpen, setMeOpen] = useState(false);
-  const meName = me ? (((people || []).find((p) => p.id === me) || {}).name || "Вы") : "Вы";
-  const meColor = me ? (((people || []).find((p) => p.id === me) || {}).color || "#64748b") : "#64748b";
+function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
@@ -6308,24 +6301,6 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], me = null, on
           ); })}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {onSetMe && (
-            <div className="relative">
-              <button onClick={() => setMeOpen((o) => !o)} title="Кто я — автор в истории задач" className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: meColor }}>{(meName[0] || "В").toUpperCase()}</span>
-                <span className="hidden sm:inline">Я: {meName}</span><ChevronDown size={13} className="text-neutral-400" />
-              </button>
-              {meOpen && (<>
-                <div className="fixed inset-0 z-20" onClick={() => setMeOpen(false)} />
-                <div className="absolute right-0 top-9 z-30 w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
-                  <div className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Кто я</div>
-                  <button onClick={() => { onSetMe(null); setMeOpen(false); }} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-neutral-50 " + (me ? "text-neutral-600" : "font-semibold text-neutral-900")}><span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-400 text-[10px] font-bold text-white">В</span>Вы (не из команды)</button>
-                  {(people || []).map((p) => (
-                    <button key={p.id} onClick={() => { onSetMe(p.id); setMeOpen(false); }} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-neutral-50 " + (me === p.id ? "font-semibold text-neutral-900" : "text-neutral-600")}><span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: p.color }}>{(p.name[0] || "?").toUpperCase()}</span>{p.name}</button>
-                  ))}
-                </div>
-              </>)}
-            </div>
-          )}
           {view === "kanban" && (
             <div className="relative">
               <button onClick={() => setFltOpen(fltOpen === "group" ? null : "group")} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" title="Группировка колонок"><Columns3 size={14} className="text-neutral-400" /><span className="font-medium text-neutral-400">по</span> {GROUP_LABELS[groupBy]}<ChevronDown size={13} className="text-neutral-400" /></button>
@@ -7223,7 +7198,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
 
   // ---- История задачи (логи) ----
   const STAGE_LBL = { wait: "Ожидает", progress: "В процессе", done: "Готово" };
-  const authorName = (by) => by == null ? "Вы" : by === "system" ? "Триггер" : (((people || []).find((p) => p.id === by) || {}).name || "Вы");
+  const authorName = (by) => { if (by == null) return "Вы"; if (by === "system") return "Триггер"; if (typeof by === "string" && by.includes("@")) return by; return ((people || []).find((p) => p.id === by) || {}).name || "Вы"; };
   const LOG_ICON = { created: [Plus, "#6366f1"], done: [Check, "#16a34a"], reopen: [Repeat, "#0ea5e9"], status: [Repeat, "#0ea5e9"], prio: [Flag, "#f59e0b"], assignee: [Users, "#8b5cf6"], date: [CalendarIcon, "#14b8a6"], sub_done: [ListChecks, "#64748b"], sub_del: [X, "#ef4444"] };
   const logText = (e) => {
     switch (e.kind) {
