@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -84,6 +84,29 @@ function stripProdSuffix(title, name) {
   if (!name) return t;
   const re = new RegExp("\\s*[·•]\\s*" + String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$");
   return t.replace(re, "").trim() || t;
+}
+// ---- Логи задач: запись событий (история внутри карточки) ----
+const JOB_LOG_MAX = 500; // хранить последние N событий на задачу
+const mkLog = (kind, extra, by) => ({ id: uid(), ts: new Date().toISOString(), kind, by: by === undefined ? null : by, ...(extra || {}) });
+function diffJobEvents(prev, next, by) {
+  const ev = [];
+  if (!prev) { ev.push(mkLog("created", {}, by)); return ev; }
+  const sp = stageOf(prev), sn = stageOf(next);
+  if (sp !== sn) {
+    if (sn === "done") ev.push(mkLog("done", {}, by));
+    else if (sp === "done") ev.push(mkLog("reopen", { to: sn }, by));
+    else ev.push(mkLog("status", { from: sp, to: sn }, by));
+  }
+  if ((prev.priority || "") !== (next.priority || "")) ev.push(mkLog("prio", { to: next.priority || "" }, by));
+  if ((prev.assignee || "") !== (next.assignee || "")) ev.push(mkLog("assignee", { to: next.assignee || "" }, by));
+  if ((prev.date || "") !== (next.date || "")) ev.push(mkLog("date", { to: next.date || "" }, by));
+  const pc = Array.isArray(prev.checklist) ? prev.checklist : [];
+  const nc = Array.isArray(next.checklist) ? next.checklist : [];
+  const pMap = Object.fromEntries(pc.map((c) => [c.id, c]));
+  const nMap = Object.fromEntries(nc.map((c) => [c.id, c]));
+  nc.forEach((c) => { const old = pMap[c.id]; if (old && !old.done && c.done && (c.text || "").trim()) ev.push(mkLog("sub_done", { text: c.text }, by)); });
+  pc.forEach((c) => { if (!nMap[c.id] && (c.text || "").trim()) ev.push(mkLog("sub_del", { text: c.text }, by)); });
+  return ev;
 }
 
 // Критерии аналитики карточки (общие для всех карточек, настраиваются)
@@ -762,6 +785,9 @@ export default function AssortmentTable() {
   const [purchaseBatches, setPurchaseBatches] = useState([]); // блок «Закупки» — партии [{id,name,status,cny,usd,cargo,items:[{id,productId,priceCny,qty}]}]
   const [jobs, setJobs] = useState([]); // блок «Задачи» — задачи с датой [{id,title,date,done,labelId,productId}]
   const [jobEditor, setJobEditor] = useState(null); // {id?...} открытое окно задачи
+  const [me, setMe] = useState(() => lsGet("rnp.me", null)); // кто я (id из команды) — автор ручных правок в логах задач
+  useEffect(() => lsSet("rnp.me", me), [me]);
+  const meRef = useRef(me); meRef.current = me;
   const [rnpStartDate, setRnpStartDate] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString().slice(0, 10);
   });
@@ -977,13 +1003,13 @@ export default function AssortmentTable() {
             const dup = (jobs || []).some((j) => j && j.productId === it.productId && (j.title === jt || j.title === legacy))
               || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
             if (dup) return;
-            newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
+            newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common, log: [mkLog("created", {}, "system")] });
           });
         } else {
           // на партию — задача типа «Закупки»; не дублируем, если такая уже есть у партии
           const dup = (jobs || []).some((j) => j && j.batchId === b.id && j.title === title)
             || newJobs.some((j) => j.batchId === b.id && j.title === title);
-          if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common });
+          if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common, log: [mkLog("created", {}, "system")] });
         }
         fired[r.id] = true; localChanged = true;
       });
@@ -1019,7 +1045,7 @@ export default function AssortmentTable() {
         if (!exists) {
           let date = null, start = null;
           if (r.hasDate) { const s0 = new Date(); const e0 = new Date(); e0.setDate(e0.getDate() + Math.max(1, Number(r.durDays) || 1) - 1); start = isoYMD(s0); date = isoYMD(e0); }
-          newJobs.push({ id: uid(), title, type, productId: type === "product" ? p.id : null, trgId: r.id, date, start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Триггер: статус «${r.statusName}»`, createdAt: isoYMD(new Date()) });
+          newJobs.push({ id: uid(), title, type, productId: type === "product" ? p.id : null, trgId: r.id, date, start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Триггер: статус «${r.statusName}»`, createdAt: isoYMD(new Date()), log: [mkLog("created", {}, "system")] });
         }
         done[r.id] = true; local = true; // помечаем заход обработанным (создали или задача уже была)
       });
@@ -1046,7 +1072,7 @@ export default function AssortmentTable() {
         const dup = (jobs || []).some((j) => j && j.productId === it.productId && (j.title === jt || j.title === legacy)) || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
         if (!dup) newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
       });
-      else { const dup = (jobs || []).some((j) => j && j.batchId === b.id && j.title === title) || newJobs.some((j) => j.batchId === b.id && j.title === title); if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common }); }
+      else { const dup = (jobs || []).some((j) => j && j.batchId === b.id && j.title === title) || newJobs.some((j) => j.batchId === b.id && j.title === title); if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common, log: [mkLog("created", {}, "system")] }); }
       firedKeys.push(r.id);
     });
     if (!newJobs.length) { setToast({ text: "Задачи этого этапа уже созданы" }); return; }
@@ -1226,7 +1252,15 @@ export default function AssortmentTable() {
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, seasonality } : x)));
   const setProductAnalytics = (id, analytics) =>
     setProducts((p) => p.map((x) => (x.id === id ? { ...x, analytics } : x)));
-  const upsertJob = (job) => setJobs((js) => { const i = js.findIndex((j) => j.id === job.id); if (i === -1) return [...js, job]; const c = js.slice(); c[i] = job; return c; });
+  const upsertJob = (job) => setJobs((js) => {
+    const i = js.findIndex((j) => j.id === job.id);
+    const prev = i === -1 ? null : js[i];
+    const events = diffJobEvents(prev, job, meRef.current || null); // автор ручной правки — текущий пользователь (или «Вы»)
+    const baseLog = (prev && Array.isArray(prev.log) ? prev.log : (Array.isArray(job.log) ? job.log : [])); // лог ведём от сохранённого — автосейв по клавише не теряет события
+    const nextJob = events.length ? { ...job, log: [...baseLog, ...events].slice(-JOB_LOG_MAX) } : { ...job, log: baseLog };
+    if (i === -1) return [...js, nextJob];
+    const c = js.slice(); c[i] = nextJob; return c;
+  });
   const removeJob = (id) => setJobs((js) => js.filter((j) => j.id !== id));
   const upsertOpType = (o) => setOpTypes((list) => { const i = (list || []).findIndex((x) => x.id === o.id); if (i === -1) return [...(list || []), o]; const c = list.slice(); c[i] = o; return c; });
   const removeOpType = (id) => setOpTypes((list) => (list || []).filter((x) => x.id !== id));
@@ -2205,6 +2239,8 @@ export default function AssortmentTable() {
             taskLabels={taskLabels}
             taskTags={taskTags}
             people={duties.people}
+            me={me}
+            onSetMe={setMe}
             onUpdateJob={upsertJob}
             products={products}
             batches={purchaseBatches}
@@ -2251,6 +2287,7 @@ export default function AssortmentTable() {
       {jobEditor && (
         <JobEditor
           job={jobEditor}
+          liveLog={(jobs.find((x) => x.id === jobEditor.id) || {}).log || jobEditor.log || []}
           taskLabels={taskLabels}
           taskTags={taskTags}
           people={duties.people}
@@ -6205,7 +6242,10 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
   );
 }
 
-function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
+function TasksView({ jobs, taskLabels, taskTags = [], people = [], me = null, onSetMe, onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
+  const [meOpen, setMeOpen] = useState(false);
+  const meName = me ? (((people || []).find((p) => p.id === me) || {}).name || "Вы") : "Вы";
+  const meColor = me ? (((people || []).find((p) => p.id === me) || {}).color || "#64748b") : "#64748b";
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
@@ -6234,7 +6274,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const prodType = fltType === "product";
   // наборы видов зависят от типа: для «по товарам» — без Календаря, но есть «Товары»
   const viewOptions = prodType
-    ? [["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["gantt", GanttChart, "Гант"], ["prod", Box, "Товары"]]
+    ? [["kanban", Columns3, "Канбан"], ["gantt", GanttChart, "Гант"], ["prod", Box, "Товары"]]
     : [["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["cal", CalendarIcon, "Календарь"], ["gantt", GanttChart, "Гант"]];
   useEffect(() => { if (!viewOptions.some(([id]) => id === view)) setView(viewOptions[0][0]); }, [fltType]);
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
@@ -6268,6 +6308,24 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
           ); })}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {onSetMe && (
+            <div className="relative">
+              <button onClick={() => setMeOpen((o) => !o)} title="Кто я — автор в истории задач" className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: meColor }}>{(meName[0] || "В").toUpperCase()}</span>
+                <span className="hidden sm:inline">Я: {meName}</span><ChevronDown size={13} className="text-neutral-400" />
+              </button>
+              {meOpen && (<>
+                <div className="fixed inset-0 z-20" onClick={() => setMeOpen(false)} />
+                <div className="absolute right-0 top-9 z-30 w-48 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
+                  <div className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Кто я</div>
+                  <button onClick={() => { onSetMe(null); setMeOpen(false); }} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-neutral-50 " + (me ? "text-neutral-600" : "font-semibold text-neutral-900")}><span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-400 text-[10px] font-bold text-white">В</span>Вы (не из команды)</button>
+                  {(people || []).map((p) => (
+                    <button key={p.id} onClick={() => { onSetMe(p.id); setMeOpen(false); }} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-neutral-50 " + (me === p.id ? "font-semibold text-neutral-900" : "text-neutral-600")}><span className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: p.color }}>{(p.name[0] || "?").toUpperCase()}</span>{p.name}</button>
+                  ))}
+                </div>
+              </>)}
+            </div>
+          )}
           {view === "kanban" && (
             <div className="relative">
               <button onClick={() => setFltOpen(fltOpen === "group" ? null : "group")} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" title="Группировка колонок"><Columns3 size={14} className="text-neutral-400" /><span className="font-medium text-neutral-400">по</span> {GROUP_LABELS[groupBy]}<ChevronDown size={13} className="text-neutral-400" /></button>
@@ -6314,7 +6372,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
           : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
           : view === "cal" ? <CalendarGrid jobs={typedJobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
-          : <GanttBoard jobs={typedJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} />}
+          : <GanttBoard jobs={typedJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} productOnly={prodType} />}
       </div>
     </div>
   );
@@ -6337,8 +6395,10 @@ function StageIcon({ j, size = 15 }) {
 function ProductTasksView({ jobs, products, onOpen }) {
   const [layout, setLayout] = useState(() => lsGet("rnp.prodLayout", "rows")); // rows | cols
   const [hideDone, setHideDone] = useState(() => lsGet("rnp.prodHideDone", false));
+  const [groupMode, setGroupMode] = useState(() => lsGet("rnp.prodGroup", "prod")); // prod: товар→задачи | task: задача→товары
   useEffect(() => lsSet("rnp.prodLayout", layout), [layout]);
   useEffect(() => lsSet("rnp.prodHideDone", hideDone), [hideDone]);
+  useEffect(() => lsSet("rnp.prodGroup", groupMode), [groupMode]);
 
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
   const byProd = new Map();
@@ -6373,18 +6433,75 @@ function ProductTasksView({ jobs, products, onOpen }) {
     return <button key={j.id} onClick={() => onOpen(j)} title={txt} className={"rounded-lg border border-l-[3px] bg-white px-2.5 py-2 text-left text-[11.5px] font-semibold leading-snug " + (done ? "text-neutral-400 line-through" : "text-neutral-700")} style={{ borderLeftColor: bc }}>{txt}</button>;
   };
 
+  // «по задачам»: группируем по нормализованному названию задачи → товары
+  const byTask = new Map();
+  (jobs || []).forEach((j) => {
+    if (jobType(j) !== "product" || !j.productId) return;
+    if (hideDone && stageOf(j) === "done") return;
+    const key = stripProd(j.title, (prodById[j.productId] || {}).name) || "—";
+    if (!byTask.has(key)) byTask.set(key, []);
+    byTask.get(key).push(j);
+  });
+  const taskRows = [...byTask.entries()].map(([title, js]) => ({ title, jobs: js })).filter((r) => r.jobs.length)
+    .sort((a, b) => (b.jobs.length - a.jobs.length) || a.title.localeCompare(b.title));
+  const nT = taskRows.length;
+  const wT = (nT % 10 === 1 && nT % 100 !== 11) ? "задача" : ([2, 3, 4].includes(nT % 10) && ![12, 13, 14].includes(nT % 100)) ? "задачи" : "задач";
+  const groupPrio = (js) => { const rank = { high: 0, med: 1, low: 2 }; let best = 3, bp = ""; js.forEach((j) => { const r = rank[j.priority] ?? 3; if (r < best) { best = r; bp = j.priority; } }); return bp; };
+  const sortProds = (js) => js.slice().sort((a, b) => { const da = stageOf(a) === "done" ? 1 : 0, db = stageOf(b) === "done" ? 1 : 0; if (da !== db) return da - db; return String((prodById[a.productId] || {}).code || "").localeCompare(String((prodById[b.productId] || {}).code || "")); });
+  const prodChip = (j) => { const p = prodById[j.productId] || {}; const done = stageOf(j) === "done"; return (
+    <button key={j.id} onClick={() => onOpen(j)} title={p.name || ""} className={"inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white py-[3px] pl-[3px] pr-2.5 hover:border-neutral-300 " + (done ? "opacity-50" : "")}>
+      {thumb(p, 26, 32)}
+      <span className="min-w-0 text-left"><span className="block text-[9px] font-bold leading-none text-neutral-400">{p.code || "—"}</span><span className="block max-w-[150px] truncate text-[11.5px] font-semibold leading-tight text-neutral-700">{p.name || "Без названия"}</span></span>
+    </button>
+  ); };
+  const prodCard = (j) => { const p = prodById[j.productId] || {}; const done = stageOf(j) === "done"; return (
+    <button key={j.id} onClick={() => onOpen(j)} title={p.name || ""} className={"flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-left hover:border-neutral-300 " + (done ? "opacity-50" : "")}>
+      {thumb(p, 24, 30)}
+      <span className="min-w-0"><span className="block text-[9px] font-bold leading-none text-neutral-400">{p.code || "—"}</span><span className="block truncate text-[11.5px] font-semibold leading-tight text-neutral-700">{p.name || "Без названия"}</span></span>
+    </button>
+  ); };
+  const isTask = groupMode === "task";
+  const empty = isTask ? !taskRows.length : !rows.length;
+
   return (
     <div>
-      <div className="mb-3 flex items-center gap-3">
-        <span className="text-[12px] text-neutral-400">{nP} {wP} · сортировка по числу задач</span>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <span className="text-[12px] text-neutral-400">{isTask ? `${nT} ${wT} · по числу товаров` : `${nP} ${wP} · по числу задач`}</span>
+        <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+          {[["prod", "По товарам"], ["task", "По задачам"]].map(([id, t]) => <button key={id} onClick={() => setGroupMode(id)} className={"rounded-md px-2.5 py-1 text-[12px] font-semibold transition " + (groupMode === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{t}</button>)}
+        </div>
         <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[12px] text-neutral-500"><input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} className="accent-neutral-800" /> скрыть выполненные</label>
         <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
           {[["rows", ListIcon, "Строки"], ["cols", Columns3, "Колонки"]].map(([id, Ic, t]) => <button key={id} onClick={() => setLayout(id)} title={t} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (layout === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Ic size={15} /></button>)}
         </div>
       </div>
 
-      {!rows.length ? (
+      {empty ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center text-sm text-neutral-400"><Box size={26} className="text-neutral-300" />Нет задач по товарам{hideDone ? " (кроме выполненных)" : ""}.</div>
+      ) : isTask ? (
+        layout === "rows" ? (
+          <div className="overflow-hidden rounded-xl border border-neutral-200">
+            {taskRows.map(({ title, jobs: js }) => { const bp = groupPrio(js); const clr = (PRIORITIES[bp] || {}).color || "#cbd5e1"; return (
+              <div key={title} className="flex items-start gap-3.5 border-b border-neutral-100 px-3.5 py-3 last:border-b-0 hover:bg-neutral-50/40">
+                <div className="flex w-[220px] shrink-0 items-stretch gap-2.5 pt-0.5">
+                  <span className="w-1 shrink-0 rounded-full" style={{ background: clr }} />
+                  <div className="min-w-0"><div className="text-[13.5px] font-extrabold leading-tight text-neutral-800">{title}</div>{bp && <div className="mt-0.5 text-[10.5px] font-semibold text-neutral-400">{(PRIORITIES[bp] || {}).label}</div>}</div>
+                </div>
+                <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{sortProds(js).map((j) => prodChip(j))}</div>
+                <span className="w-7 shrink-0 pt-1 text-right text-[11px] font-bold text-neutral-300">{js.length}</span>
+              </div>
+            ); })}
+          </div>
+        ) : (
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {taskRows.map(({ title, jobs: js }) => { const bp = groupPrio(js); const clr = (PRIORITIES[bp] || {}).color || "#cbd5e1"; return (
+              <div key={title} className="flex w-[230px] shrink-0 flex-col rounded-xl border border-neutral-200 bg-neutral-50/40 p-2.5">
+                <div className="mb-2.5 flex items-center gap-2"><span className="h-5 w-1 shrink-0 rounded-full" style={{ background: clr }} /><div className="min-w-0 flex-1 text-[12.5px] font-extrabold leading-tight text-neutral-800">{title}</div><span className="shrink-0 rounded-full bg-neutral-200 px-1.5 text-[10px] font-bold text-neutral-500">{js.length}</span></div>
+                <div className="flex flex-col gap-1.5">{sortProds(js).map((j) => prodCard(j))}</div>
+              </div>
+            ); })}
+          </div>
+        )
       ) : layout === "rows" ? (
         <div className="overflow-hidden rounded-xl border border-neutral-200">
           {rows.map(({ p, jobs: js }) => (
@@ -6595,7 +6712,7 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
   );
 }
 
-function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob }) {
+function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob, productOnly = false }) {
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const LW = 320;      // ширина колонки с подписями
   const DW = 30;       // ширина дня
@@ -6751,20 +6868,23 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
     const { startCol, endCol, clipL, clipR } = pos;
     const left = (startCol - 1) * DW;
     const width = (endCol - startCol + 1) * DW - 4;
-    const col = prioColor(x.j);
+    const pm = PRIORITIES[x.j.priority];
+    const done = x.j.done;
+    const barBg = done ? "#f5f6f7" : (pm ? pm.bg : "#f8f8f9"); // как канбан-карточка: светлая заливка
+    const barBd = done ? "#e2e3e6" : (pm ? pm.color : "#d4d4d8"); // цветной контур по приоритету
+    const barTxt = done ? "#9a9aa2" : "#1f1f24"; // тёмный текст
     const dragging = dragRef.current && dragRef.current.jobId === x.j.id;
     return (
       <div
         onPointerDown={(e) => startBarDrag(e, x.j, "move")}
         title={x.j.title}
-        className="group/bar absolute flex items-center overflow-hidden text-left text-[11px] font-medium text-white shadow-sm"
+        className="group/bar absolute flex items-center overflow-hidden text-left text-[11px] font-semibold shadow-sm"
         style={{
           left: left + 2, width: Math.max(width, DW - 4), top: x.track * TRACK_H + 3, height: BAR_H,
-          background: col,
-          borderRadius: 6,
-          borderTopLeftRadius: clipL ? 0 : 6, borderBottomLeftRadius: clipL ? 0 : 6,
-          borderTopRightRadius: clipR ? 0 : 6, borderBottomRightRadius: clipR ? 0 : 6,
-          opacity: x.j.done ? 0.5 : 1,
+          background: barBg, color: barTxt, border: `1.5px solid ${barBd}`,
+          borderRadius: 7,
+          borderTopLeftRadius: clipL ? 0 : 7, borderBottomLeftRadius: clipL ? 0 : 7,
+          borderTopRightRadius: clipR ? 0 : 7, borderBottomRightRadius: clipR ? 0 : 7,
           cursor: "grab", touchAction: "none",
           outline: dragging ? "2px solid rgba(0,0,0,.25)" : "none",
         }}
@@ -6773,13 +6893,13 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
           onPointerDown={(e) => startBarDrag(e, x.j, "l")}
           className="absolute inset-y-0 left-0 flex w-2 cursor-ew-resize items-center justify-center opacity-0 transition group-hover/bar:opacity-100"
           title="Изменить начало"
-        ><span className="h-2.5 w-0.5 rounded bg-white/70" /></span>
+        ><span className="h-2.5 w-0.5 rounded bg-neutral-400/70" /></span>
         <span className="truncate px-2" style={x.j.done ? { textDecoration: "line-through" } : undefined}>{stripProdSuffix(x.j.title, (products.find((p) => p.id === x.j.productId) || {}).name) || "—"}</span>
         <span
           onPointerDown={(e) => startBarDrag(e, x.j, "r")}
           className="absolute inset-y-0 right-0 flex w-2 cursor-ew-resize items-center justify-center opacity-0 transition group-hover/bar:opacity-100"
           title="Изменить длительность"
-        ><span className="h-2.5 w-0.5 rounded bg-white/70" /></span>
+        ><span className="h-2.5 w-0.5 rounded bg-neutral-400/70" /></span>
       </div>
     );
   };
@@ -6932,6 +7052,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
         </div>
 
         <div className="relative">
+          {!productOnly && (<>
           <Section id="op" title="Операционные задачи" count={(opTypes || []).length}>
             {(opTypes || []).length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Добавьте операционные задачи в настройках</div>
@@ -6953,6 +7074,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Все проектные задачи выполнены — нажмите глаз, чтобы показать</div>
               : projShown.map((x) => <Row key={x.j.id} row={{ key: x.j.id, label: x.j.title || "—", preset: null, items: [x] }} />)}
           </Section>
+          </>)}
 
           <Section id="prod" title="Задачи по товарам" count={prodRows.length} doneCount={prodDoneCount}>
             {prodRows.length === 0
@@ -6963,7 +7085,8 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
       </div>
     </div>
 
-    {/* Нераспределённые задачи (без даты) */}
+    {/* Нераспределённые задачи (без даты) — скрыты в режиме «только по товарам» */}
+    {!productOnly && (
     <aside ref={unschedRef} className={"flex w-[250px] shrink-0 flex-col self-stretch border-l transition " + (overUnsched ? "border-orange-300 bg-orange-50/60" : "border-neutral-200 bg-neutral-50/40")}>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <ListIcon size={14} className="text-neutral-400" />
@@ -6993,6 +7116,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
       </div>
       <div className="border-t border-neutral-100 px-3 py-2 text-[10px] leading-snug text-neutral-400">Перетащите карточку на гант → назначить дату. Перетащите бар сюда → снять дату.</div>
     </aside>
+    )}
 
     {/* Плавающий «призрак» перетаскиваемой карточки */}
     {cardDrag && (
@@ -7011,9 +7135,10 @@ const TASK_TYPE_META = [
   { key: "project", label: "Проектная", short: "Проектная", Icon: FileText, tint: "#7c3aed", bg: "#f5f3ff", hint: "раздел «Проектные»" },
   { key: "product", label: "Товар", short: "Товар", Icon: Box, tint: "#ea580c", bg: "#fff7ed", hint: "раздел «Задачи по товарам»" },
 ];
-function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onClose }) {
+function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onClose }) {
   const [j, setJ] = useState(job);
   const [expanded, setExpanded] = useState(() => lsGet("rnp.taskExpanded", false)); // раскрытое окно задачи
+  const [showLog, setShowLog] = useState(false); // показывать «Историю» вместо деталей
   useEffect(() => lsSet("rnp.taskExpanded", expanded), [expanded]);
   const checkRefs = useRef({});          // ref на поля подзадач — для фокуса новой
   const [focusCheckId, setFocusCheckId] = useState(null);
@@ -7095,6 +7220,56 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
   };
   const datesOn = !!(j.start || j.date);
   const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
+
+  // ---- История задачи (логи) ----
+  const STAGE_LBL = { wait: "Ожидает", progress: "В процессе", done: "Готово" };
+  const authorName = (by) => by == null ? "Вы" : by === "system" ? "Триггер" : (((people || []).find((p) => p.id === by) || {}).name || "Вы");
+  const LOG_ICON = { created: [Plus, "#6366f1"], done: [Check, "#16a34a"], reopen: [Repeat, "#0ea5e9"], status: [Repeat, "#0ea5e9"], prio: [Flag, "#f59e0b"], assignee: [Users, "#8b5cf6"], date: [CalendarIcon, "#14b8a6"], sub_done: [ListChecks, "#64748b"], sub_del: [X, "#ef4444"] };
+  const logText = (e) => {
+    switch (e.kind) {
+      case "created": return <b>Создана</b>;
+      case "done": return <b>Выполнена</b>;
+      case "reopen": return <>Снова открыта <span className="rounded bg-sky-50 px-1.5 text-[11px] font-semibold text-sky-700">{STAGE_LBL[e.to] || e.to}</span></>;
+      case "status": return <>Статус: <span className="rounded bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-400 line-through">{STAGE_LBL[e.from] || e.from}</span> <ArrowRight size={11} className="inline text-neutral-300" /> <span className="rounded bg-sky-50 px-1.5 text-[11px] font-semibold text-sky-700">{STAGE_LBL[e.to] || e.to}</span></>;
+      case "prio": return <>Приоритет: <span className="rounded px-1.5 text-[11px] font-semibold" style={{ background: (PRIORITIES[e.to] || {}).bg || "#f1f1f4", color: (PRIORITIES[e.to] || {}).color || "#555" }}>{(PRIORITIES[e.to] || {}).label || "—"}</span></>;
+      case "assignee": { const n = e.to ? (((people || []).find((p) => p.id === e.to) || {}).name || "—") : null; return n ? <>Исполнитель: <b>{n}</b></> : <>Исполнитель снят</>; }
+      case "date": return e.to ? <>Дедлайн: <b>{fmtD(e.to)}</b></> : <>Дедлайн снят</>;
+      case "sub_done": return <>Подзадача <b>«{e.text}»</b> отмечена</>;
+      case "sub_del": return <>Подзадача <b>«{e.text}»</b> удалена</>;
+      default: return e.kind;
+    }
+  };
+  const renderLog = () => {
+    const items = (liveLog || []).slice().reverse();
+    const groups = [];
+    items.forEach((e) => { const d = new Date(e.ts); const key = isoYMD(d); let g = groups.find((x) => x.key === key); if (!g) { g = { key, d, list: [] }; groups.push(g); } g.list.push(e); });
+    const today = isoYMD(new Date()), yd = isoYMD(new Date(Date.now() - 864e5));
+    const dayLabel = (key, d) => key === today ? "Сегодня" : key === yd ? "Вчера" : d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+    return (
+      <div className="flex-1 overflow-y-auto p-5">
+        <div className="mb-1 text-lg font-bold leading-snug text-neutral-900">{stripProdSuffix(j.title, ((products || []).find((p) => p.id === j.productId) || {}).name) || "Без названия"}</div>
+        <div className="mb-4 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-neutral-400"><History size={12} /> История</div>
+        {!items.length ? (
+          <div className="py-10 text-center text-sm text-neutral-400">Событий пока нет</div>
+        ) : groups.map((g) => (
+          <div key={g.key}>
+            <div className="mb-2 mt-3 text-[10px] font-bold uppercase tracking-wide text-neutral-400">{dayLabel(g.key, g.d)}</div>
+            {g.list.map((e, i) => { const [Ic, clr] = LOG_ICON[e.kind] || [Flag, "#9ca3af"]; const last = i === g.list.length - 1; return (
+              <div key={e.id || i} className="relative flex gap-3 pb-3">
+                {!last && <span className="absolute bottom-0 left-[11px] top-6 w-px bg-neutral-200" />}
+                <span className="relative z-10 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-white" style={{ background: clr }}><Ic size={12} strokeWidth={2.5} /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] leading-snug text-neutral-700">{logText(e)}</div>
+                  <div className="mt-0.5 text-[11px] text-neutral-400">{new Date(e.ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} · {authorName(e.by)}</div>
+                </div>
+              </div>
+            ); })}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
       <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
@@ -7110,13 +7285,17 @@ function JobEditor({ job, taskLabels, taskTags = [], people = [], products, opTy
             ); })}
           </div>
           <span className="ml-auto flex items-center gap-1">
+            {curType !== "op" && <>
+              <button onClick={() => setShowLog((v) => !v)} title={showLog ? "К деталям" : "История"} className={"rounded-md p-1 transition " + (showLog ? "bg-sky-50 text-sky-600" : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700")}><History size={17} /></button>
+              <span className="mx-0.5 h-4 w-px self-center bg-neutral-200" />
+            </>}
             <button onClick={() => setExpanded((v) => !v)} title={expanded ? "Свернуть" : "Раскрыть"} className="rounded-md p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700">{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
             {!job._new && <button onClick={() => onDelete(j.id)} title="Удалить задачу" className="rounded-md p-1 text-neutral-400 transition hover:bg-red-50 hover:text-red-600"><Trash2 size={18} /></button>}
             <button onClick={onClose} title="Закрыть" className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
           </span>
         </div>
 
-        {curType === "op" ? (
+        {showLog ? renderLog() : curType === "op" ? (
           /* ОПЕРАЦИОННАЯ: название · повтор/дни недели · исполнитель */
           <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
             <textarea value={j.title} rows={1} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="Название операционной задачи…" autoFocus
