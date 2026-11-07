@@ -49,9 +49,9 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } ca
 
 // Задачи: приоритеты и дефолтные колонки Канбана
 const PRIORITIES = {
-  high: { label: "Высокий", color: "#ef4444", bg: "#fef0f0" },
-  med: { label: "Средний", color: "#f59e0b", bg: "#fef7eb" },
-  low: { label: "Низкий", color: "#a3a3a3", bg: "#fafafa" },
+  high: { label: "Высокий", color: "#ef4444", bg: "#fef0f0", soft: "#fdf5f5" },
+  med: { label: "Средний", color: "#f59e0b", bg: "#fef7eb", soft: "#fdf8ef" },
+  low: { label: "Низкий", color: "#a3a3a3", bg: "#fafafa", soft: "#fafafa" },
 };
 const KANBAN_DEFAULT = [
   { id: "backlog", name: "Бэклог", color: "#94a3b8" },
@@ -6383,10 +6383,8 @@ function StageIcon({ j, size = 15 }) {
 
 // Вид «Товары» для задач по товарам: товар (фото·код·название) + все его задачи. Раскладки: строки | колонки.
 function ProductTasksView({ jobs, products, onOpen }) {
-  const [layout, setLayout] = useState(() => lsGet("rnp.prodLayout", "rows")); // rows | cols
   const [hideDone, setHideDone] = useState(() => lsGet("rnp.prodHideDone", false));
   const [groupMode, setGroupMode] = useState(() => lsGet("rnp.prodGroup", "prod")); // prod: товар→задачи | task: задача→товары
-  useEffect(() => lsSet("rnp.prodLayout", layout), [layout]);
   useEffect(() => lsSet("rnp.prodHideDone", hideDone), [hideDone]);
   useEffect(() => lsSet("rnp.prodGroup", groupMode), [groupMode]);
 
@@ -6461,50 +6459,18 @@ function ProductTasksView({ jobs, products, onOpen }) {
           {[["prod", "По товарам"], ["task", "По задачам"]].map(([id, t]) => <button key={id} onClick={() => setGroupMode(id)} className={"rounded-md px-2.5 py-1 text-[12px] font-semibold transition " + (groupMode === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{t}</button>)}
         </div>
         <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[12px] text-neutral-500"><input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} className="accent-neutral-800" /> скрыть выполненные</label>
-        <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-          {[["rows", ListIcon, "Строки"], ["cols", Columns3, "Колонки"]].map(([id, Ic, t]) => <button key={id} onClick={() => setLayout(id)} title={t} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (layout === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Ic size={15} /></button>)}
-        </div>
       </div>
 
       {empty ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center text-sm text-neutral-400"><Box size={26} className="text-neutral-300" />Нет задач по товарам{hideDone ? " (кроме выполненных)" : ""}.</div>
       ) : isTask ? (
-        layout === "rows" ? (
-          <div className="overflow-hidden rounded-xl border border-neutral-200">
-            {taskRows.map(({ title, jobs: js }) => { const bp = groupPrio(js); const clr = (PRIORITIES[bp] || {}).color || "#cbd5e1"; return (
-              <div key={title} className="flex items-start gap-3.5 border-b border-neutral-100 px-3.5 py-3 last:border-b-0 hover:bg-neutral-50/40">
-                <div className="flex w-[220px] shrink-0 items-stretch gap-2.5 pt-0.5">
-                  <span className="w-1 shrink-0 rounded-full" style={{ background: clr }} />
-                  <div className="min-w-0"><div className="text-[13.5px] font-extrabold leading-tight text-neutral-800">{title}</div>{bp && <div className="mt-0.5 text-[10.5px] font-semibold text-neutral-400">{(PRIORITIES[bp] || {}).label}</div>}</div>
-                </div>
-                <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{sortProds(js).map((j) => prodChip(j))}</div>
-                <span className="w-7 shrink-0 pt-1 text-right text-[11px] font-bold text-neutral-300">{js.length}</span>
-              </div>
-            ); })}
-          </div>
-        ) : (
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {taskRows.map(({ title, jobs: js }) => { const bp = groupPrio(js); const clr = (PRIORITIES[bp] || {}).color || "#cbd5e1"; return (
-              <div key={title} className="flex w-[230px] shrink-0 flex-col rounded-xl border border-neutral-200 bg-neutral-50/40 p-2.5">
-                <div className="mb-2.5 flex items-center gap-2"><span className="h-5 w-1 shrink-0 rounded-full" style={{ background: clr }} /><div className="min-w-0 flex-1 text-[12.5px] font-extrabold leading-tight text-neutral-800">{title}</div><span className="shrink-0 rounded-full bg-neutral-200 px-1.5 text-[10px] font-bold text-neutral-500">{js.length}</span></div>
-                <div className="flex flex-col gap-1.5">{sortProds(js).map((j) => prodCard(j))}</div>
-              </div>
-            ); })}
-          </div>
-        )
-      ) : layout === "rows" ? (
-        <div className="overflow-hidden rounded-xl border border-neutral-200">
-          {rows.map(({ p, jobs: js }) => (
-            <div key={p.id} className="flex items-center gap-3 border-b border-neutral-100 px-3 py-2.5 last:border-b-0 hover:bg-neutral-50/40">
-              {thumb(p, 40, 52)}
-              <div className="w-[200px] shrink-0">
-                <div className="text-[10.5px] font-semibold text-neutral-400">{p.code || "—"}</div>
-                <div className="truncate text-[13px] font-semibold text-neutral-800" title={p.name}>{p.name || "Без названия"}</div>
-              </div>
-              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{sortJobs(js).map((j) => chip(j, p.name))}</div>
-              <span className="w-8 shrink-0 text-right text-[11px] font-bold text-neutral-300">{js.length}</span>
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {taskRows.map(({ title, jobs: js }) => { const bp = groupPrio(js); const clr = (PRIORITIES[bp] || {}).color || "#cbd5e1"; return (
+            <div key={title} className="flex w-[230px] shrink-0 flex-col rounded-xl border border-neutral-200 bg-neutral-50/40 p-2.5">
+              <div className="mb-2.5 flex items-center gap-2"><span className="h-5 w-1 shrink-0 rounded-full" style={{ background: clr }} /><div className="min-w-0 flex-1 text-[12.5px] font-extrabold leading-tight text-neutral-800">{title}</div><span className="shrink-0 rounded-full bg-neutral-200 px-1.5 text-[10px] font-bold text-neutral-500">{js.length}</span></div>
+              <div className="flex flex-col gap-1.5">{sortProds(js).map((j) => prodCard(j))}</div>
             </div>
-          ))}
+          ); })}
         </div>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-2">
@@ -6569,7 +6535,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
   const moveJob = (id, col) => { const j = jobs.find((x) => x.id === id); if (j && !col.match(j)) onUpdateJob({ ...j, ...col.preset }); };
   const [doneOpen, setDoneOpen] = useState({});
   const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
-    <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
+    <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.soft : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
       <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, prod && prod.name) || "Без названия")}</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {groupBy !== "status" && <StageIcon j={j} />}
@@ -6863,7 +6829,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
     const width = (endCol - startCol + 1) * DW - 4;
     const pm = PRIORITIES[x.j.priority];
     const done = x.j.done;
-    const barBg = done ? "#f5f6f7" : (pm ? pm.bg : "#f8f8f9"); // как канбан-карточка: светлая заливка
+    const barBg = done ? "#f5f6f7" : (pm ? pm.soft : "#f8f8f9"); // как канбан-карточка: мягкая заливка
     const barBd = done ? "#e2e3e6" : (pm ? pm.color : "#d4d4d8"); // цветной контур по приоритету
     const barTxt = done ? "#9a9aa2" : "#1f1f24"; // тёмный текст
     const dragging = dragRef.current && dragRef.current.jobId === x.j.id;
@@ -7111,7 +7077,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
           return (
             <div key={j.id} onPointerDown={(e) => startCardDrag(e, j)} onClick={() => onOpen(j)}
               className="cursor-grab rounded-xl p-2.5 shadow-sm transition hover:shadow-md"
-              style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}`, touchAction: "none" }}>
+              style={{ background: pm ? pm.soft : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}`, touchAction: "none" }}>
               <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, (products.find((x) => x.id === j.productId) || {}).name) || "Без названия")}</div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <StageIcon j={j} />
