@@ -6831,7 +6831,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
   });
   const prodRows = products
     .filter((p) => prodMap.has(p.id))
-    .map((p) => ({ key: p.id, label: (p.code || "—") + (p.name ? " · " + p.name : ""), img: p.image || null, preset: { type: "product", productId: p.id }, items: prodMap.get(p.id) }));
+    .map((p) => ({ key: p.id, label: (p.code || "—") + (p.name ? " · " + p.name : ""), code: p.code || "—", name: p.name || "Без названия", img: p.image || null, preset: { type: "product", productId: p.id }, items: prodMap.get(p.id) }));
 
   const timelineW = daysInMonth * DW;
   // нераспределённые — задачи без даты и без начала (операционные сюда не входят — они в opTypes)
@@ -6882,8 +6882,19 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
   const Row = ({ row, emptyHint }) => {
     const { bars, tracks } = withTracks(row.items);
     const rowH = tracks * TRACK_H + 6;
+    const isProd = row.preset && row.preset.type === "product";
     return (
       <div className="flex border-t border-neutral-100">
+        {isProd ? (
+          <div className="group relative flex shrink-0 items-center gap-3 py-1.5 pl-2.5 pr-2" style={{ width: LW }}>
+            <div className="flex h-[60px] w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 text-neutral-300">{row.img ? <img src={row.img} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={18} />}</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-semibold text-neutral-400">{row.code}</div>
+              <div className="mt-0.5 line-clamp-2 text-[13px] font-semibold leading-tight text-neutral-800" title={row.name}>{row.name}</div>
+            </div>
+            <button onClick={() => onAddJob({ ...row.preset, date: todayStr })} className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 transition hover:bg-neutral-100 hover:text-neutral-600 group-hover:opacity-100" title="Добавить задачу по товару"><Plus size={13} /></button>
+          </div>
+        ) : (
         <div className="group relative flex shrink-0 items-center gap-1 py-1 pr-2" style={{ width: LW }}>
           {row.img !== undefined && (
             <div className="ml-1 flex h-7 w-[22px] shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100 text-neutral-300">{row.img ? <img src={row.img} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={11} />}</div>
@@ -6901,6 +6912,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
             ><Plus size={13} /></button>
           )}
         </div>
+        )}
         <div className="relative shrink-0" style={{ width: timelineW, height: rowH }} onClick={() => row.preset && onAddJob({ ...row.preset, date: todayStr })}>
           {bars.map((b) => <Bar key={b.j.id} x={b} />)}
           {bars.length === 0 && emptyHint && <span className="absolute left-2 top-1.5 text-[11px] text-neutral-300">{emptyHint}</span>}
