@@ -85,6 +85,10 @@ function stripProdSuffix(title, name) {
   const re = new RegExp("\\s*[·•]\\s*" + String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$");
   return t.replace(re, "").trim() || t;
 }
+// ---- Метки проектных задач (эмодзи, по умолчанию без метки) ----
+const JOB_MARKS = [["urgent", "⚡️"], ["edu", "🎓"], ["long", "🔨"]];
+const markIcon = (m) => { const f = JOB_MARKS.find((x) => x[0] === m); return f ? f[1] : ""; };
+
 // ---- Логи задач: запись событий (история внутри карточки) ----
 const JOB_LOG_MAX = 500; // хранить последние N событий на задачу
 const mkLog = (kind, extra, by) => ({ id: uid(), ts: new Date().toISOString(), kind, by: by === undefined ? null : by, ...(extra || {}) });
@@ -6318,7 +6322,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
               </div></>)}
             </div>
           )}
-          {isBoard && (
+          {(isBoard || view === "gantt") && (
             <div className="relative">
               <button onClick={() => setFltOpen(fltOpen === "filter" ? null : "filter")} className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold " + (activeFilters ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><Filter size={13} />Фильтр{activeFilters > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">{activeFilters}</span>}</button>
               {fltOpen === "filter" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-neutral-200 bg-white p-2.5 shadow-lg">
@@ -6347,7 +6351,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
           : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
           : view === "cal" ? <CalendarGrid jobs={typedJobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
-          : <GanttBoard jobs={typedJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} productOnly={prodType} />}
+          : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} />}
       </div>
     </div>
   );
@@ -6441,7 +6445,7 @@ function ProductTasksView({ jobs, products, onOpen }) {
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <span className="text-[12px] text-neutral-400">{isTask ? `${nT} ${wT} · по числу товаров` : `${nP} ${wP} · по числу задач`}</span>
+        <span className="text-[12px] text-neutral-400">{isTask ? `${nT} ${wT}` : `${nP} ${wP}`}</span>
         <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
           {[["prod", "По товарам"], ["task", "По задачам"]].map(([id, t]) => <button key={id} onClick={() => setGroupMode(id)} className={"rounded-md px-2.5 py-1 text-[12px] font-semibold transition " + (groupMode === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{t}</button>)}
         </div>
@@ -6555,7 +6559,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
   const [doneOpen, setDoneOpen] = useState({});
   const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
     <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
-      <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{stripProdSuffix(j.title, prod && prod.name) || "Без названия"}</div>
+      <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, prod && prod.name) || "Без названия")}</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {groupBy !== "status" && <StageIcon j={j} />}
         {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
@@ -6627,7 +6631,7 @@ function JobsListView({ jobs, tags, taskLabels, people = [], products, onOpen, o
           {sorted.map((j) => { const lb = label(j.labelId); const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const done = stageOf(j) === "done"; return (
             <tr key={j.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
               <td className="px-2 py-2 text-center"><button onClick={() => onUpdateJob(applyStage(j, done ? "wait" : "done"))} className="flex h-4 w-4 items-center justify-center rounded border" style={{ background: done ? "#16a34a" : "#fff", borderColor: done ? "#16a34a" : "#d4d4d4", color: "#fff" }}>{done && <Check size={10} strokeWidth={3} />}</button></td>
-              <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{stripProdSuffix(j.title, prod && prod.name) || "Без названия"}</button></td>
+              <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, prod && prod.name) || "Без названия")}</button></td>
               <td className="px-3 py-2"><StageIcon j={j} size={16} /></td>
               <td className="px-3 py-2"><PrioChip p={j.priority} /></td>
               <td className="px-3 py-2">{(() => { const pr = personById[j.assignee]; return pr ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>{pr.name}</span> : <span className="text-neutral-300">—</span>; })()}</td>
@@ -6674,7 +6678,7 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
                     title={(p ? p.code + " · " : "") + j.title}
                   >
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: labelColor(j.labelId) }} />
-                    <span className="min-w-0 flex-1 truncate" style={j.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#404040" }}>{stripProdSuffix(j.title, p && p.name) || "—"}</span>
+                    <span className="min-w-0 flex-1 truncate" style={j.done ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#404040" }}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, p && p.name) || "—")}</span>
                   </button>
                 );
               })}
@@ -6687,7 +6691,8 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
   );
 }
 
-function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob, productOnly = false }) {
+function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob, onlyType = null }) {
+  const productOnly = onlyType === "product";
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const LW = 320;      // ширина колонки с подписями
   const DW = 30;       // ширина дня
@@ -6835,7 +6840,9 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
 
   const timelineW = daysInMonth * DW;
   // нераспределённые — задачи без даты и без начала (операционные сюда не входят — они в opTypes)
-  const unscheduled = (jobs || []).filter((j) => !j.date && !j.start);
+  const PRIO_RANK = { high: 0, med: 1, low: 2 };
+  const unscheduled = (jobs || []).filter((j) => !j.date && !j.start)
+    .sort((a, b) => (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3)); // сверху высокий приоритет
 
   const Bar = ({ x }) => {
     const prev = preview && preview.jobId === x.j.id;
@@ -6869,7 +6876,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
           className="absolute inset-y-0 left-0 flex w-2 cursor-ew-resize items-center justify-center opacity-0 transition group-hover/bar:opacity-100"
           title="Изменить начало"
         ><span className="h-2.5 w-0.5 rounded bg-neutral-400/70" /></span>
-        <span className="truncate px-2" style={x.j.done ? { textDecoration: "line-through" } : undefined}>{stripProdSuffix(x.j.title, (products.find((p) => p.id === x.j.productId) || {}).name) || "—"}</span>
+        <span className="truncate px-2" style={x.j.done ? { textDecoration: "line-through" } : undefined}>{(markIcon(x.j.mark) ? markIcon(x.j.mark) + " " : "") + (stripProdSuffix(x.j.title, (products.find((p) => p.id === x.j.productId) || {}).name) || "—")}</span>
         <span
           onPointerDown={(e) => startBarDrag(e, x.j, "r")}
           className="absolute inset-y-0 right-0 flex w-2 cursor-ew-resize items-center justify-center opacity-0 transition group-hover/bar:opacity-100"
@@ -7039,13 +7046,14 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
         </div>
 
         <div className="relative">
-          {!productOnly && (<>
+          {(!onlyType || onlyType === "op") && (
           <Section id="op" title="Операционные задачи" count={(opTypes || []).length}>
             {(opTypes || []).length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Добавьте операционные задачи в настройках</div>
               : (opTypes || []).map((op) => <OpRow key={op.id} op={op} />)}
           </Section>
-
+          )}
+          {(!onlyType || onlyType === "purchase") && (
           <Section id="pur" title="Закупки" count={purCount} doneCount={purDoneCount}>
             {batchRows.length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет задач по закупкам в этом месяце</div>
@@ -7053,7 +7061,8 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Все задачи по закупкам выполнены — нажмите глаз, чтобы показать</div>
               : purRowsShown.map((row) => <Row key={row.key} row={row} />)}
           </Section>
-
+          )}
+          {(!onlyType || onlyType === "project") && (
           <Section id="gen" title="Проектные" count={projItems.length} doneCount={projDone.length}>
             {projItems.length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет проектных задач в этом месяце</div>
@@ -7061,13 +7070,14 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Все проектные задачи выполнены — нажмите глаз, чтобы показать</div>
               : projShown.map((x) => <Row key={x.j.id} row={{ key: x.j.id, label: x.j.title || "—", preset: null, items: [x] }} />)}
           </Section>
-          </>)}
-
+          )}
+          {(!onlyType || onlyType === "product") && (
           <Section id="prod" title="Задачи по товарам" count={prodRows.length} doneCount={prodDoneCount}>
             {prodRows.length === 0
               ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет задач по товарам в этом месяце</div>
               : prodRowsShown.map((row) => <Row key={row.key} row={row} />)}
           </Section>
+          )}
         </div>
       </div>
     </div>
@@ -7091,7 +7101,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
             <div key={j.id} onPointerDown={(e) => startCardDrag(e, j)} onClick={() => onOpen(j)}
               className="cursor-grab rounded-xl p-2.5 shadow-sm transition hover:shadow-md"
               style={{ background: pm ? pm.bg : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}`, touchAction: "none" }}>
-              <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{stripProdSuffix(j.title, (products.find((x) => x.id === j.productId) || {}).name) || "Без названия"}</div>
+              <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, (products.find((x) => x.id === j.productId) || {}).name) || "Без названия")}</div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <StageIcon j={j} />
                 {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
@@ -7411,6 +7421,17 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
                 ))}
               </div>
             </div>
+            {curType === "project" && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm text-neutral-600">Метка</span>
+                <div className="flex gap-2">
+                  {JOB_MARKS.map(([id, ic]) => (
+                    <button key={id} onClick={() => set("mark", j.mark === id ? null : id)} className={"flex h-9 w-10 items-center justify-center rounded-lg border text-[19px] leading-none transition " + (j.mark === id ? "border-violet-500 ring-2 ring-violet-200" : "border-neutral-200 hover:border-neutral-300")}>{ic}</button>
+                  ))}
+                  <button onClick={() => set("mark", null)} className={"flex h-9 w-10 items-center justify-center rounded-lg border text-[12px] font-bold transition " + (!j.mark ? "border-violet-500 text-violet-600 ring-2 ring-violet-200" : "border-neutral-200 text-neutral-400 hover:border-neutral-300")}>нет</button>
+                </div>
+              </div>
+            )}
             {curType === "product" && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-sm text-neutral-600">Товар</span>
