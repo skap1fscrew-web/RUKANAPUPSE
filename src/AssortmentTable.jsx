@@ -6277,7 +6277,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [fltStatus, setFltStatus] = useState(null); // статус: wait|progress|done
   const [fltTag, setFltTag] = useState(null);
   const [fltAssignee, setFltAssignee] = useState(null);
-  const [fltType, setFltType] = useState(null); // быстрый фильтр по типу задачи: op|purchase|project|product
+  const [fltType, setFltType] = useState("project"); // тип задачи всегда выбран (у каждого — свой набор видов); по умолчанию проектные
   const [fltOpen, setFltOpen] = useState(null);
   const todayStr = isoYMD(now);
   useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
@@ -6294,9 +6294,10 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   );
   const isBoard = view === "kanban" || view === "list" || view === "prod";
   const prodType = fltType === "product";
-  // наборы видов зависят от типа: для «по товарам» — без Календаря, но есть «Товары»
-  const viewOptions = prodType
-    ? [["kanban", Columns3, "Канбан"], ["gantt", GanttChart, "Гант"], ["prod", Box, "Товары"]]
+  // наборы видов зависят от типа задачи
+  const viewOptions =
+    fltType === "product" ? [["kanban", Columns3, "Канбан"], ["gantt", GanttChart, "Гант"], ["prod", Box, "Товары"]]
+    : fltType === "op" ? [["gantt", GanttChart, "Гант"]] // операционные — только Гант
     : [["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["cal", CalendarIcon, "Календарь"], ["gantt", GanttChart, "Гант"]];
   useEffect(() => { if (!viewOptions.some(([id]) => id === view)) setView(viewOptions[0][0]); }, [fltType]);
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
@@ -6328,7 +6329,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
         )}
         <div className="ml-3 inline-flex rounded-lg bg-neutral-100 p-0.5" title="Быстрый фильтр по типу задачи">
           {TASK_TYPE_META.map(({ key, label, Icon, tint }) => { const on = fltType === key; return (
-            <button key={key} title={on ? label + " · показать все" : label} onClick={() => setFltType(on ? null : key)} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
+            <button key={key} title={label} onClick={() => setFltType(key)} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
           ); })}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -6385,7 +6386,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
           : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
           : view === "cal" ? <CalendarGrid jobs={typedJobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
-          : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} />}
+          : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={fltAssignee ? (opTypes || []).filter((op) => fltAssignee === "__none" ? !op.assignee : (op.assignee || null) === fltAssignee) : opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} />}
       </div>
     </div>
   );
@@ -7082,8 +7083,8 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
       </div>
     </div>
 
-    {/* Нераспределённые задачи (без даты) — скрыты в режиме «только по товарам» */}
-    {!productOnly && (
+    {/* Нераспределённые задачи (без даты) — скрыты для «по товарам» и операционных */}
+    {onlyType !== "product" && onlyType !== "op" && (
     <aside ref={unschedRef} className={"flex w-[250px] shrink-0 flex-col self-stretch border-l transition " + (overUnsched ? "border-orange-300 bg-orange-50/60" : "border-neutral-200 bg-neutral-50/40")}>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <ListIcon size={14} className="text-neutral-400" />
