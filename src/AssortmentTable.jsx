@@ -2802,6 +2802,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const [payOpen, setPayOpen] = useState(false);
   const [cycOpen, setCycOpen] = useState(false);
   const [durOpen, setDurOpen] = useState(false);
+  const [factOpen, setFactOpen] = useState(false);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false); // поповер «Задачи по партии»
   const [qtyOpen, setQtyOpen] = useState({}); // раскрытые ячейки «Кол-во» по id позиции
@@ -2827,9 +2828,13 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const toggleCycStage = (id) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, done: !s.done } : s)) });
   const setCycDays = (id, v) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, days: Math.max(0, parseInt(v) || 0) } : s)) });
   // мультиступенчатый переключатель: клик по этапу i → предыдущие «пройдены», этот текущий
-  const setCycToStage = (i) => patchCyc({ stages: cycSt.map((s, j) => ({ ...s, done: j < i })) });
-  const advanceCyc = () => { if (curIdx < 0) return; patchCyc({ stages: cycSt.map((s, j) => (j === curIdx ? { ...s, done: true } : s)) }); };
-  const regressCyc = () => { const target = curIdx < 0 ? cycSt.length - 1 : curIdx - 1; if (target < 0) return; patchCyc({ stages: cycSt.map((s, j) => (j === target ? { ...s, done: false } : s)) }); };
+  // факт-дата: у пройденного этапа = день прохождения (можно поправить вручную); конец этапа = начало следующего
+  const setCycToStage = (i) => patchCyc({ stages: cycSt.map((s, j) => ({ ...s, done: j < i, actualDate: j < i ? (s.actualDate || todayISO()) : null })) });
+  const advanceCyc = () => { if (curIdx < 0) return; patchCyc({ stages: cycSt.map((s, j) => (j === curIdx ? { ...s, done: true, actualDate: s.actualDate || todayISO() } : s)) }); };
+  const regressCyc = () => { const target = curIdx < 0 ? cycSt.length - 1 : curIdx - 1; if (target < 0) return; patchCyc({ stages: cycSt.map((s, j) => (j === target ? { ...s, done: false, actualDate: null } : s)) }); };
+  const setCycActual = (id, v) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, actualDate: v || null } : s)) });
+  const fmtDM = (iso) => { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0"); };
+  const stageDev = (s) => { const d = cycDates[s.id]; if (!s.actualDate || !d || !d.endISO) return null; return Math.round((new Date(s.actualDate) - new Date(d.endISO)) / 86400000); }; // >0 позже плана
   const addItem = (productId) => { patchBatch({ items: [...(active.items || []), { id: uid(), productId, priceCny: "", qty: "" }] }); setPicker(false); setPq(""); };
   const setItem = (iid, k, v) => patchBatch({ items: active.items.map((it) => (it.id === iid ? { ...it, [k]: v } : it)) });
   const removeItem = (iid) => patchBatch({ items: active.items.filter((it) => it.id !== iid) });
@@ -3003,13 +3008,14 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                       {i < cycSt.length - 1 && <div className="absolute left-1/2 top-[16px] h-[3px] w-full" style={{ background: done ? "#16a34a" : "#e7e7ec" }} />}
                       <div className="relative z-10 mx-auto flex h-8 w-8 items-center justify-center rounded-full border-[2.5px] text-[12px] font-bold transition group-hover:scale-110" style={done ? { background: "#16a34a", borderColor: "#16a34a", color: "#fff" } : cur ? { borderColor: "#f59e0b", color: "#c77d1a", background: "#fff", boxShadow: "0 0 0 5px #fef0d9" } : { borderColor: "#d4d4d8", color: "#b0b0b6", background: "#fff" }}>{done ? <Check size={14} strokeWidth={3} /> : i + 1}</div>
                       <div className={"mt-2 text-[11px] font-semibold leading-tight " + (cur ? "text-amber-700" : done ? "text-neutral-600" : "text-neutral-400")}>{s.name}</div>
-                      <div className="text-[9.5px] text-neutral-400">{d ? `${d.startStr} – ${d.endStr}` : ""}</div>
+                      <div className="text-[9.5px] text-neutral-400">{d ? `план ${d.startStr} – ${d.endStr}` : ""}</div>
+                      {done && s.actualDate && (() => { const dev = stageDev(s); return (<div className="text-[9.5px] font-bold text-emerald-600">факт {fmtDM(s.actualDate)}{dev != null && <span className={"ml-1 rounded px-1 " + (dev > 0 ? "bg-red-50 text-red-600" : dev < 0 ? "bg-emerald-50 text-emerald-600" : "bg-neutral-100 text-neutral-500")}>{dev > 0 ? "+" + dev + " дн" : dev < 0 ? dev + " дн" : "в срок"}</span>}</div>); })()}
                     </button>
                   ); })}
                 </div>
                 {/* компактная строка управления */}
                 <div className="mt-3 flex flex-wrap items-center gap-2.5 border-t border-neutral-100 pt-3">
-                  <span className="text-sm text-neutral-500">{curStage ? <>Текущий этап: <b className="text-neutral-800">{curStage.name}</b>{cycDates[curStage.id] && <span className="ml-1.5 text-neutral-400">· план {cycDates[curStage.id].startStr} – {cycDates[curStage.id].endStr}</span>}</> : <span className="font-semibold text-emerald-600">Цикл завершён ✓</span>}</span>
+                  <span className="text-sm text-neutral-500">{curStage ? <>Текущий этап: <b className="text-neutral-800">{curStage.name}</b>{cycDates[curStage.id] && <span className="ml-1.5 text-neutral-400">· план {cycDates[curStage.id].startStr} – {cycDates[curStage.id].endStr}</span>}{(() => { const fs = curIdx > 0 ? cycSt[curIdx - 1].actualDate : cyc.startDate; return fs ? <span className="ml-1.5 font-semibold text-emerald-600">· факт с {fmtDM(fs)}</span> : null; })()}</> : <span className="font-semibold text-emerald-600">Цикл завершён ✓</span>}</span>
                   {curStage && (cycleTriggers || []).some((r) => r.stageId === curStage.id && r.enabled && String(r.text || "").trim()) && <button onClick={() => onCreateStageTask && onCreateStageTask(active.id, curStage.id)} title="Создать задачу(и) по текущему этапу" className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-600 hover:bg-sky-100"><Plus size={11} /> создать задачу</button>}
                   <span className="ml-auto flex items-center gap-2">
                     <button onClick={regressCyc} disabled={cycSt.every((x) => !x.done)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 transition hover:bg-neutral-50 disabled:opacity-40"><ChevronRight size={13} style={{ transform: "rotate(180deg)" }} /> Вернуть</button>
@@ -3026,7 +3032,24 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                     </div>
                   )}
                 </div>
-                <div className="mt-2 text-[11px] text-neutral-400">Кликни по этапу в линейке или жми «Пройти этап» после фактического прохождения — следующий станет текущим, по нему по правилам из «Настроек» создастся задача.</div>
+                {/* факт по этапам — свёрнуто */}
+                <div className="mt-1 border-t border-dashed border-neutral-100 pt-2">
+                  <button onClick={() => setFactOpen((o) => !o)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400 transition hover:text-neutral-600"><Settings2 size={12} /> факт по этапам <ChevronDown size={11} className={"transition " + (factOpen ? "rotate-180" : "")} /></button>
+                  {factOpen && (
+                    <div className="mt-2 overflow-hidden rounded-lg border border-neutral-100">
+                      {cycSt.map((s, i) => { const d = cycDates[s.id]; const dev = stageDev(s); return (
+                        <div key={s.id} className="flex items-center gap-3 border-b border-neutral-100 px-3 py-2 text-xs last:border-b-0">
+                          <span className="flex min-w-0 flex-1 items-center gap-2"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.done ? "#16a34a" : i === curIdx ? "#f59e0b" : "#cbd5e1" }} /><span className="truncate font-semibold text-neutral-700">{s.name}</span></span>
+                          <span className="hidden w-28 shrink-0 text-neutral-400 sm:inline">план {d ? `${d.startStr}–${d.endStr}` : "—"}</span>
+                          <span className="flex shrink-0 items-center gap-1.5 text-neutral-500">факт<input type="date" value={s.actualDate || ""} onChange={(e) => setCycActual(s.id, e.target.value)} className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-neutral-600 focus:outline-none" /></span>
+                          <button onClick={() => setCycActual(s.id, todayISO())} className="shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-bold text-sky-600 hover:bg-sky-50">сегодня</button>
+                          {dev != null && <span className={"w-14 shrink-0 text-right text-[10.5px] font-bold " + (dev > 0 ? "text-red-600" : dev < 0 ? "text-emerald-600" : "text-neutral-400")}>{dev > 0 ? "+" + dev + " дн" : dev < 0 ? dev + " дн" : "в срок"}</span>}
+                        </div>
+                      ); })}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 text-[11px] text-neutral-400">Кликни по этапу в линейке или жми «Пройти этап» после фактического прохождения — конец этапа ставится сегодня (факт), по правилам из «Настроек» создаётся задача. Факт-дату любого этапа можно поправить в «факт по этапам».</div>
               </>
             )}
           </div>
