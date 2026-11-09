@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -2367,6 +2367,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             taskLabels={taskLabels}
             taskTags={taskTags}
             people={profiles}
+            myId={myProfile ? myProfile.id : null}
             onUpdateJob={upsertJob}
             products={products}
             batches={purchaseBatches}
@@ -6434,7 +6435,7 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
   );
 }
 
-function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
+function TasksView({ jobs, taskLabels, taskTags = [], people = [], myId = null, onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
@@ -6450,6 +6451,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [fltOpen, setFltOpen] = useState(null);
   const [fltSearch, setFltSearch] = useState(""); // поиск по названию задачи
   const [searchOpen, setSearchOpen] = useState(false); // лупа развёрнута в поле
+  const [focusMode, setFocusMode] = useState(false); // режим ФОКУС (повестка на сегодня)
   const todayStr = isoYMD(now);
   useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
   useEffect(() => lsSet("rnp.kanbanSort", kanbanSort), [kanbanSort]);
@@ -6487,7 +6489,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   return (
     <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4" style={{ maxHeight: "calc(100vh - 128px)" }}>
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
-        {(isBoard || view === "today") ? (
+        {(isBoard || view === "today" || focusMode) ? (
           <h2 className="text-base font-semibold text-neutral-900">Задачи</h2>
         ) : (
           <>
@@ -6498,11 +6500,12 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
           </>
         )}
         <div className="ml-3 inline-flex rounded-lg bg-neutral-100 p-0.5" title="Быстрый фильтр по типу задачи">
-          {TASK_TYPE_META.map(({ key, label, Icon, tint }) => { const on = fltType === key; return (
-            <button key={key} title={label} onClick={() => setFltType(key)} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
+          {TASK_TYPE_META.map(({ key, label, Icon, tint }) => { const on = fltType === key && !focusMode; return (
+            <button key={key} title={label} onClick={() => { setFocusMode(false); setFltType(key); }} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
           ); })}
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <button onClick={() => setFocusMode((f) => !f)} title="Фокус — повестка на сегодня" className={"inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-extrabold transition " + (focusMode ? "text-white shadow-[0_2px_8px_rgba(225,29,72,0.35)]" : "text-rose-600 hover:bg-rose-50")} style={focusMode ? { background: "#e11d48" } : { border: "1px solid #fbcfe8" }}><Target size={15} />ФОКУС</button>
+        {!focusMode && <div className="ml-auto flex flex-wrap items-center gap-2">
           {searchOpen || fltSearch ? (
             <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5 py-1.5" style={{ width: 210 }}>
               <Search size={14} className="shrink-0 text-neutral-400" />
@@ -6519,6 +6522,9 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
             </div>
           ) : (
             <button onClick={() => setSearchOpen(true)} title="Поиск по названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
+          )}
+          {myId && (
+            <button onClick={() => setFltAssignee(fltAssignee === myId ? null : myId)} title="Только мои задачи" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold " + (fltAssignee === myId ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><User size={14} className={fltAssignee === myId ? "" : "text-neutral-400"} />Свои</button>
           )}
           {view === "kanban" && (
             <div className="relative">
@@ -6565,11 +6571,12 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
             ))}
           </div>
           <button onClick={() => onAddJob({})} title="Добавить задачу" className="inline-flex h-8 items-center gap-1 rounded-lg bg-neutral-900 px-2.5 text-white hover:bg-neutral-800"><Plus size={16} /><span className="hidden text-sm font-semibold sm:inline">Задача</span></button>
-        </div>
+        </div>}
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
+        {focusMode ? <FocusView jobs={jobs} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} products={products} people={people} myId={myId} now={now} onUpdateJob={onUpdateJob} onOpen={onOpen} />
+          : view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
           : view === "today" ? <OpTodayView opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} people={people} now={now} onEditOp={onEditOp} />
           : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} />}
@@ -6589,6 +6596,151 @@ function StageIcon({ j, size = 15 }) {
   else if (k === "done") svg = (<svg {...base} fill="none" stroke={m.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-4.8" /></svg>);
   else svg = (<svg {...base} fill="none" stroke={m.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>);
   return <span title={m.label} className="inline-flex shrink-0 items-center">{svg}</span>;
+}
+
+// Режим «Фокус»: повестка на сегодня по всем типам задач, горизонтально (под экран ноутбука).
+function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], myId = null, now, onUpdateJob, onOpen }) {
+  const [waitOpen, setWaitOpen] = useState(false);
+  const todayStr = isoYMD(now);
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate(), wd = now.getDay();
+  const PRANK = { high: 0, med: 1, low: 2 };
+  const sortP = (a, b) => (PRANK[a.priority] ?? 1) - (PRANK[b.priority] ?? 1);
+  const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
+
+  // — операционные: мои, сегодня, невыполненные (выполненные скрыты) —
+  const opIsDone = (op) => !!(opDone[op.id] && opDone[op.id][todayStr]);
+  const myOpsToday = (opTypes || []).filter((op) => (myId ? (op.assignee || null) === myId : true) && occurrenceDays(op.recur, y, m).includes(d));
+  const opsPending = myOpsToday.filter((op) => !opIsDone(op));
+  const opsDoneCount = myOpsToday.length - opsPending.length;
+
+  // — проектные —
+  const burning = (j) => j.date && j.date <= todayStr && stageOf(j) !== "done"; // срок сегодня/просрочено
+  const dueBadge = (j) => { if (!j.date || stageOf(j) === "done") return null; if (j.date < todayStr) { const dd = Math.round((new Date(todayStr) - new Date(j.date)) / 86400000); return { txt: `−${dd} дн`, over: true }; } if (j.date === todayStr) return { txt: "сегодня", over: false }; return null; };
+  const mine = (j) => !myId || (j.assignee || null) === myId; // только задачи текущего пользователя
+  const projAll = (jobs || []).filter((j) => jobType(j) === "project" && !j.opId && mine(j));
+  const focusProjects = projAll.filter((j) => stageOf(j) !== "done" && (stageOf(j) === "progress" || burning(j))).sort(sortP);
+  const waiting = projAll.filter((j) => stageOf(j) === "wait" && !burning(j)).sort(sortP);
+
+  // — товары: горящие или в работе с высоким приоритетом —
+  const prodJobs = (jobs || []).filter((j) => jobType(j) === "product" && stageOf(j) !== "done" && mine(j));
+  const prodHot = prodJobs.filter((j) => burning(j) || (stageOf(j) === "progress" && j.priority === "high"));
+  const byProduct = {};
+  prodHot.forEach((j) => { (byProduct[j.productId] = byProduct[j.productId] || []).push(j); });
+  const hotProducts = Object.keys(byProduct);
+
+  // — метрики —
+  const inWorkCount = projAll.filter((j) => stageOf(j) === "progress").length;
+  const overdueCount = (jobs || []).filter((j) => mine(j) && j.date && j.date < todayStr && stageOf(j) !== "done").length;
+  const dueTodayCount = (jobs || []).filter((j) => mine(j) && j.date === todayStr && stageOf(j) !== "done").length;
+  const opPct = myOpsToday.length ? Math.round((opsDoneCount / myOpsToday.length) * 360) : 0;
+
+  const prioSize = (j) => j.priority === "high" ? "t-hi" : j.priority === "med" ? "t-md" : "t-lo";
+  const pmeta = (pr) => PRIORITIES[pr] || PRIORITIES.med;
+
+  const Tile = ({ j, onClick, action }) => {
+    const pm = pmeta(j.priority);
+    const sz = prioSize(j);
+    const badge = dueBadge(j);
+    const pr = (people || []).find((p) => p.id === j.assignee);
+    const base = sz === "t-hi" ? "basis-[calc(50%-5px)] min-h-[92px] text-[14px]" : sz === "t-md" ? "basis-[calc(50%-5px)] min-h-[68px] text-[12.5px]" : "basis-[calc(33.333%-6px)] min-h-[50px] text-[11.5px]";
+    return (
+      <button onClick={onClick} className={"relative flex grow flex-col justify-between rounded-xl border-[1.5px] p-3 text-left transition hover:shadow-sm " + base} style={{ background: pm.soft, borderColor: pm.color }}>
+        <span className="absolute right-2.5 top-2 text-[8.5px] font-extrabold uppercase" style={{ color: pm.color }}>{j.priority === "high" ? "выс" : j.priority === "med" ? "сред" : "низ"}</span>
+        <span className="pr-8 font-bold leading-tight text-neutral-800">{stripProdSuffix(j.title, prodById[j.productId]?.name)}</span>
+        <span className="mt-2 flex items-center gap-1.5">
+          {badge && <span className="rounded-md border bg-white px-1.5 text-[10px] font-extrabold" style={{ color: badge.over ? "#dc2626" : "#d97706", borderColor: badge.over ? "#fecaca" : "#fde68a" }}>{badge.txt}</span>}
+          {action === "start" && <span className="text-[10px] font-bold text-emerald-600">↑ в работу</span>}
+          {pr && <span className="ml-auto"><PersonAvatar p={pr} size={21} /></span>}
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+      {/* шапка + дашборд */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-rose-100 bg-gradient-to-r from-rose-50 to-white px-4 py-2.5">
+        <div>
+          <div className="flex items-center gap-1.5 text-[15px] font-black text-rose-700"><Target size={16} />ФОКУС</div>
+          <div className="text-[11px] text-rose-700/60">{WD_FULL ? WD_FULL[wd] : WD_LABEL[wd]}, {d} {MONTHS_GEN[m]}{myId ? ` · ${profileLabel((people || []).find((p) => p.id === myId))}` : ""}</div>
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white py-1 pl-1.5 pr-3">
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-full" style={{ background: `conic-gradient(#16a34a 0 ${opPct}deg, #e9eaee ${opPct}deg 360deg)` }}><span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-[10px] font-extrabold text-emerald-600">{opsDoneCount}/{myOpsToday.length}</span></span>
+            <div className="leading-tight"><div className="text-[10.5px] font-extrabold text-emerald-600">Операционные</div><div className="text-[9.5px] text-neutral-400">сделано сегодня</div></div>
+          </div>
+          <div className="min-w-[66px] rounded-xl border border-neutral-200 bg-white px-2.5 py-1 text-center"><div className="text-[15px] font-black text-neutral-800">{inWorkCount}</div><div className="text-[9px] font-bold uppercase text-neutral-400">в работе</div></div>
+          <div className="min-w-[66px] rounded-xl border border-neutral-200 bg-white px-2.5 py-1 text-center"><div className="text-[15px] font-black text-red-600">{overdueCount}</div><div className="text-[9px] font-bold uppercase text-neutral-400">просрочено</div></div>
+          <div className="min-w-[66px] rounded-xl border border-neutral-200 bg-white px-2.5 py-1 text-center"><div className="text-[15px] font-black text-neutral-800">{dueTodayCount}</div><div className="text-[9px] font-bold uppercase text-neutral-400">на сегодня</div></div>
+        </div>
+      </div>
+
+      {/* три колонки */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:grid-cols-[1fr_1.9fr_1.15fr]">
+        {/* операционные */}
+        <div className="border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
+          <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-indigo-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Операционные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{opsPending.length}</span></div>
+          {opsPending.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">На сегодня всё закрыто 🎉</div>
+          ) : opsPending.map((op) => {
+            const pr = (people || []).find((p) => p.id === op.assignee);
+            return (
+              <div key={op.id} className="flex items-center gap-2.5 border-b border-neutral-100 py-2 text-[12.5px] last:border-b-0">
+                <button onClick={() => onToggleDone(op.id, todayStr)} title="Отметить выполнено" className="h-[19px] w-[19px] shrink-0 rounded-md transition hover:scale-110" style={{ background: "#fff7f0", border: "2px solid #f6b98a" }} />
+                <button onClick={() => onEditOp && onEditOp(op)} className="min-w-0 flex-1 truncate text-left text-neutral-800">{op.name}</button>
+                {pr && <PersonAvatar p={pr} size={18} />}
+              </div>
+            );
+          })}
+          {opsDoneCount > 0 && <div className="mt-2 text-[10.5px] text-neutral-400">✓ выполненные скрыты ({opsDoneCount})</div>}
+        </div>
+
+        {/* проектные */}
+        <div className="border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
+          <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-violet-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Проектные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{focusProjects.length}</span>
+            <button onClick={() => setWaitOpen((v) => !v)} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition " + (waitOpen ? "border-violet-300 bg-violet-50 text-violet-700" : "border-dashed border-neutral-300 text-neutral-500 hover:bg-neutral-50")}><Plus size={12} />из ожидающих{waiting.length ? ` (${waiting.length})` : ""}</button>
+          </div>
+          {focusProjects.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">Нет задач в работе и горящих</div>
+          ) : (
+            <div className="flex flex-wrap content-start gap-2.5">{focusProjects.map((j) => <Tile key={j.id} j={j} onClick={() => onOpen(j)} />)}</div>
+          )}
+          {waitOpen && (
+            <div className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-neutral-50/60 p-3">
+              <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-neutral-500">Ожидают — нажми, чтобы взять в работу</div>
+              {waiting.length === 0 ? <div className="py-2 text-center text-[11.5px] text-neutral-400">Нет ожидающих задач</div> : (
+                <div className="flex flex-wrap content-start gap-2.5">{waiting.map((j) => <Tile key={j.id} j={j} action="start" onClick={() => onUpdateJob(applyStage(j, "progress"))} />)}</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* товары */}
+        <div className="p-3.5">
+          <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-orange-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Товары</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotProducts.length}</span></div>
+          {hotProducts.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">Нет горящих задач по товарам</div>
+          ) : hotProducts.map((pid) => {
+            const prod = prodById[pid];
+            return (
+              <div key={pid} className="mb-2.5 flex gap-2.5 rounded-xl border border-neutral-100 p-2.5">
+                <div className="flex h-[54px] w-[44px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 text-neutral-300">{prod?.image ? <img src={prod.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={16} />}</div>
+                <div className="min-w-0">
+                  <div className="text-[10.5px] font-extrabold text-orange-600">{prod?.code || "—"}</div>
+                  <div className="mb-1.5 truncate text-[12px] font-semibold text-neutral-800">{prod?.name || "Товар"}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {byProduct[pid].map((j) => { const bd = dueBadge(j); return (
+                      <button key={j.id} onClick={() => onOpen(j)} className={"inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10.5px] font-semibold " + (bd?.over ? "border-red-200 bg-white text-red-600" : j.priority === "high" ? "border-red-200 bg-rose-50 text-red-700" : "border-neutral-200 bg-white text-neutral-600")}>{bd ? `📅 ${bd.txt}` : (j.priority === "high" ? "⚡" : "")} {stripProdSuffix(j.title, prod?.name)}</button>
+                    ); })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Вид «Сегодня» для операционных задач: только текущий день, список задач на сегодня с чекбоксом.
