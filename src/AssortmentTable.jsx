@@ -1863,7 +1863,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         </div>
       </div>
 
-      <div className="mx-auto max-w-full p-4 sm:p-6">
+      <div className="mx-auto max-w-full px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-3">
         {/* Шапка */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
