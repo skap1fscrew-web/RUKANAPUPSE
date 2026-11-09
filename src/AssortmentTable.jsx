@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -6279,6 +6279,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const [fltAssignee, setFltAssignee] = useState(null);
   const [fltType, setFltType] = useState("project"); // тип задачи всегда выбран (у каждого — свой набор видов); по умолчанию проектные
   const [fltOpen, setFltOpen] = useState(null);
+  const [fltSearch, setFltSearch] = useState(""); // поиск по названию задачи
+  const [searchOpen, setSearchOpen] = useState(false); // лупа развёрнута в поле
   const todayStr = isoYMD(now);
   useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
   useEffect(() => lsSet("rnp.kanbanSort", kanbanSort), [kanbanSort]);
@@ -6289,35 +6291,34 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
   const nextM = () => setYm((s) => { const d = new Date(s.y, s.m + 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const goToday = () => setYm({ y: now.getFullYear(), m: now.getMonth() });
 
-  const SegBtn = ({ id, children }) => (
-    <button onClick={() => setView(id)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{children}</button>
-  );
-  const isBoard = view === "kanban" || view === "list" || view === "prod";
+  const isBoard = view === "kanban" || view === "prod";
   const prodType = fltType === "product";
   // наборы видов зависят от типа задачи
   const viewOptions =
     fltType === "product" ? [["kanban", Columns3, "Канбан"], ["gantt", GanttChart, "Гант"], ["prod", Box, "Товары"]]
-    : fltType === "op" ? [["gantt", GanttChart, "Гант"]] // операционные — только Гант
-    : [["kanban", Columns3, "Канбан"], ["list", ListIcon, "Список"], ["cal", CalendarIcon, "Календарь"], ["gantt", GanttChart, "Гант"]];
+    : fltType === "op" ? [["gantt", GanttChart, "Гант"], ["today", CalendarCheck, "Сегодня"]] // операционные — Гант + Сегодня
+    : [["kanban", Columns3, "Канбан"], ["gantt", GanttChart, "Гант"]]; // Календарь/Список убраны
   useEffect(() => { if (!viewOptions.some(([id]) => id === view)) setView(viewOptions[0][0]); }, [fltType]);
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
   const activeFilters = (fltPrio ? 1 : 0) + (fltAssignee ? 1 : 0) + (fltMark ? 1 : 0) + (fltStatus ? 1 : 0);
   const typeOf = (j) => (j && j.type === "op") ? "op" : jobType(j);
   const matchType = (j) => !fltType || typeOf(j) === fltType;
-  const typedJobs = jobs.filter(matchType); // для календаря/ганта (там без приоритет/исполнитель)
   const fJobs = jobs.filter((j) => {
     if (!matchType(j)) return false;
     if (fltPrio && (j.priority || null) !== fltPrio) return false;
     if (fltAssignee && (fltAssignee === "__none" ? !!j.assignee : (j.assignee || null) !== fltAssignee)) return false;
     if (fltMark && (fltMark === "__none" ? !!j.mark : (j.mark || null) !== fltMark)) return false;
     if (fltStatus && stageOf(j) !== fltStatus) return false;
+    if (fltSearch.trim() && !String(j.title || "").toLowerCase().includes(fltSearch.trim().toLowerCase())) return false;
     return true;
   });
+  // операционные, отфильтрованные по исполнителю (для Ганта и вида «Сегодня»)
+  const opTypesF = fltAssignee ? (opTypes || []).filter((op) => fltAssignee === "__none" ? !op.assignee : (op.assignee || null) === fltAssignee) : (opTypes || []);
 
   return (
     <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4" style={{ maxHeight: "calc(100vh - 128px)" }}>
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
-        {isBoard ? (
+        {(isBoard || view === "today") ? (
           <h2 className="text-base font-semibold text-neutral-900">Задачи</h2>
         ) : (
           <>
@@ -6333,6 +6334,23 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
           ); })}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {searchOpen || fltSearch ? (
+            <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5 py-1.5" style={{ width: 210 }}>
+              <Search size={14} className="shrink-0 text-neutral-400" />
+              <input
+                autoFocus
+                value={fltSearch}
+                onChange={(e) => setFltSearch(e.target.value)}
+                onBlur={() => { if (!fltSearch.trim()) setSearchOpen(false); }}
+                onKeyDown={(e) => { if (e.key === "Escape") { setFltSearch(""); setSearchOpen(false); } }}
+                placeholder="Поиск по названию…"
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs text-neutral-800 outline-none placeholder:text-neutral-400"
+              />
+              <button onClick={() => { setFltSearch(""); setSearchOpen(false); }} className="shrink-0 text-neutral-300 hover:text-neutral-600" title="Очистить"><X size={14} /></button>
+            </div>
+          ) : (
+            <button onClick={() => setSearchOpen(true)} title="Поиск по названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
+          )}
           {view === "kanban" && (
             <div className="relative">
               <button onClick={() => setFltOpen(fltOpen === "group" ? null : "group")} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" title="Группировка колонок"><Columns3 size={14} className="text-neutral-400" /><span className="font-medium text-neutral-400">по</span> {GROUP_LABELS[groupBy]}<ChevronDown size={13} className="text-neutral-400" /></button>
@@ -6350,7 +6368,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
               </div></>)}
             </div>
           )}
-          {(isBoard || view === "gantt") && (
+          {(isBoard || view === "gantt" || view === "today") && (
             <div className="relative">
               <button onClick={() => setFltOpen(fltOpen === "filter" ? null : "filter")} className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold " + (activeFilters ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><Filter size={13} />Фильтр{activeFilters > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">{activeFilters}</span>}</button>
               {fltOpen === "filter" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-neutral-200 bg-white p-2.5 shadow-lg">
@@ -6383,10 +6401,9 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
 
       <div className="min-h-0 flex-1 overflow-auto">
         {view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
-          : view === "list" ? <JobsListView jobs={fJobs} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onUpdateJob={onUpdateJob} />
-          : view === "cal" ? <CalendarGrid jobs={typedJobs} products={products} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddOnDay={(ds) => onAddJob({ date: ds })} onOpen={onOpen} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
-          : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={fltAssignee ? (opTypes || []).filter((op) => fltAssignee === "__none" ? !op.assignee : (op.assignee || null) === fltAssignee) : opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} />}
+          : view === "today" ? <OpTodayView opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} people={people} now={now} onEditOp={onEditOp} />
+          : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} />}
       </div>
     </div>
   );
@@ -6403,6 +6420,58 @@ function StageIcon({ j, size = 15 }) {
   else if (k === "done") svg = (<svg {...base} fill="none" stroke={m.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-4.8" /></svg>);
   else svg = (<svg {...base} fill="none" stroke={m.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>);
   return <span title={m.label} className="inline-flex shrink-0 items-center">{svg}</span>;
+}
+
+// Вид «Сегодня» для операционных задач: только текущий день, список задач на сегодня с чекбоксом.
+const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+function OpTodayView({ opTypes = [], opDone = {}, onToggleDone, people = [], now, onEditOp }) {
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate(), wd = now.getDay();
+  const todayStr = isoYMD(now);
+  const isDone = (op) => !!(opDone[op.id] && opDone[op.id][todayStr]);
+  const todays = (opTypes || []).filter((op) => occurrenceDays(op.recur, y, m).includes(d));
+  const sorted = [...todays].sort((a, b) => (isDone(b) ? 1 : 0) - (isDone(a) ? 1 : 0)); // выполненные — вверх
+  const doneCount = todays.filter(isDone).length;
+  const personOf = (id) => (people || []).find((p) => p.id === id);
+  const avatar = (op) => {
+    const p = personOf(op.assignee);
+    if (!p) return null;
+    return <span className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ background: p.color || "#9ca3af" }} title={p.name}>{(p.name || "?").charAt(0)}</span>;
+  };
+  return (
+    <div className="mx-auto max-w-2xl">
+      <div className="mb-3 flex items-center gap-3 rounded-xl border border-orange-100 bg-orange-50/60 px-4 py-3">
+        <CalendarCheck size={20} className="text-orange-600" />
+        <div>
+          <div className="text-[15px] font-bold text-orange-700">Сегодня · {d} {MONTHS_GEN[m]}, {WD_LABEL[wd]}</div>
+          <div className="text-xs text-orange-700/60">задачи на эту дату</div>
+        </div>
+        <span className="ml-auto rounded-full border border-orange-200 bg-white px-2.5 py-0.5 text-[11px] font-bold text-orange-600">{doneCount} из {todays.length}</span>
+      </div>
+      {todays.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-200 py-12 text-center text-sm text-neutral-400">На сегодня операционных задач нет</div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-neutral-200">
+          {sorted.map((op) => {
+            const done = isDone(op);
+            return (
+              <div key={op.id} className="flex items-center gap-3 border-b border-neutral-100 px-4 py-2.5 last:border-b-0 hover:bg-neutral-50">
+                <button
+                  onClick={() => onToggleDone(op.id, todayStr)}
+                  title={done ? "Выполнено — снять отметку" : "Отметить выполнено"}
+                  className="flex shrink-0 items-center justify-center transition hover:scale-110"
+                  style={{ width: 22, height: 22, borderRadius: 7, background: done ? "#16a34a" : "#fff7f0", border: done ? "2px solid #16a34a" : "2px solid #f6b98a", color: "#fff" }}
+                >{done && <Check size={13} strokeWidth={3} />}</button>
+                <button onClick={() => onEditOp && onEditOp(op)} className="min-w-0 flex-1 text-left" title="Настроить график">
+                  <span className={"block truncate text-[13.5px] font-medium " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{op.name}</span>
+                </button>
+                <span className="shrink-0">{avatar(op)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Вид «Товары» для задач по товарам: товар (фото·код·название) + все его задачи. Раскладки: строки | колонки.
@@ -6842,7 +6911,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
   const timelineW = daysInMonth * DW;
   // нераспределённые — задачи без даты и без начала (операционные сюда не входят — они в opTypes)
   const PRIO_RANK = { high: 0, med: 1, low: 2 };
-  const unscheduled = (jobs || []).filter((j) => !j.date && !j.start)
+  const unscheduled = (jobs || []).filter((j) => !j.date && !j.start && stageOf(j) !== "done") // выполненные не показываем
     .sort((a, b) => (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3)); // сверху высокий приоритет
 
   const Bar = ({ x }) => {
