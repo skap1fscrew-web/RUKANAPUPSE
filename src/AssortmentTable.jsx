@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -594,6 +594,69 @@ const SWATCHES = [
   "#0ea5e9", "#ec4899", "#84cc16", "#a3a3a3",
 ];
 
+// --- Профили пользователей (исполнители задач, привязанные к логину) ---
+// Раскладка логин → имя (для первичной привязки существующих исполнителей).
+const KNOWN_LOGINS = {
+  "jabulani2000@yandex.ru": "Андрей",
+  "fbrk6263@mail.ru": "Роман",
+  "anastasi.mezhueva@yandex.ru": "Анастасия",
+  "skap1fscrew@gmail.com": "Сергей",
+};
+// Канон имени: «Рома»/«Роман» → один ключ, регистр не важен.
+const canonName = (s) => {
+  const n = String(s || "").trim().toLowerCase();
+  if (n.startsWith("ром")) return "роман";
+  return n;
+};
+const LOGIN_BY_NAME = Object.fromEntries(Object.entries(KNOWN_LOGINS).map(([email, name]) => [canonName(name), email.toLowerCase()]));
+function normProfiles(v) {
+  return Array.isArray(v)
+    ? v.filter((p) => p && typeof p === "object").map((p) => ({
+        id: p.id || uid(),
+        email: String(p.email || "").toLowerCase().trim(),
+        name: p.name || "",
+        color: p.color || "#64748b",
+        photo: typeof p.photo === "string" ? p.photo : "",
+      }))
+    : [];
+}
+// Имя для показа: ник профиля, иначе часть логина до @.
+const profileLabel = (p) => (p && (p.name || (p.email ? p.email.split("@")[0] : ""))) || "Исполнитель";
+// Общая аватарка: фото, иначе цветной кружок с буквой. size в px.
+function PersonAvatar({ p, size = 24, ring = false, title }) {
+  const s = size, st = { width: s, height: s };
+  const cls = "inline-flex shrink-0 items-center justify-center rounded-full overflow-hidden " + (ring ? "ring-2 ring-white " : "");
+  const tt = title || (p ? profileLabel(p) : "");
+  if (p && p.photo) return <span className={cls} style={st} title={tt}><img src={p.photo} alt="" className="h-full w-full object-cover" /></span>;
+  return (
+    <span className={cls + "font-bold text-white"} style={{ ...st, background: p ? p.color : "#cfcfd6", fontSize: Math.round(s * 0.42) }} title={tt}>
+      {(profileLabel(p)[0] || "?").toUpperCase()}
+    </span>
+  );
+}
+// Ужать изображение (File) до data-URL ~квадрат maxPx, jpeg.
+function fileToAvatarDataURL(file, maxPx = 256) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = reject;
+    r.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2, sy = (img.height - side) / 2;
+        const cv = document.createElement("canvas");
+        cv.width = maxPx; cv.height = maxPx;
+        const ctx = cv.getContext("2d");
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, maxPx, maxPx);
+        resolve(cv.toDataURL("image/jpeg", 0.82));
+      };
+      img.src = r.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
 
 /* ----------------------------------------------------------------------------
    Утилиты
@@ -849,7 +912,9 @@ export default function AssortmentTable({ userEmail = null }) {
   const [dbActive, setDbActive] = useState("blogger"); // blogger | razdach | <customId>
   const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
   const [strategy, setStrategy] = useState(() => normStrategy(null)); // блок «Стратегия» — карты холстов
-  const [duties, setDuties] = useState(() => normDuties(null)); // блок «Обязанности» — области/функции/подфункции/исполнители
+  const [duties, setDuties] = useState(() => normDuties(null)); // блок «Обязанности» — области/функции/подфункции/исполнители (СПРАВОЧНИК, не связан с назначением задач)
+  const [profiles, setProfiles] = useState([]); // профили пользователей — исполнители задач, привязанные к логину
+  const [myProfileOpen, setMyProfileOpen] = useState(false); // окно личных настроек профиля
   const [prodCycle, setProdCycle] = useState(() => normCycle(null)); // производственный цикл — этапы и правила автозадач по умолчанию
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
@@ -861,6 +926,7 @@ export default function AssortmentTable({ userEmail = null }) {
   const [panelW, setPanelW] = useState(0);
 
   const fileInputRef = useRef(null);
+  const profilePhotoInputRef = useRef(null);
   const uploadTarget = useRef(null);
   const scrollRef = useRef(null);
 
@@ -914,6 +980,7 @@ export default function AssortmentTable({ userEmail = null }) {
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
         if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
+        if (Array.isArray(settings.profiles)) { const np = normProfiles(settings.profiles); setProfiles(np); syncedRef.current.settings.profiles = JSON.stringify(np); }
         if (settings.prodCycle && typeof settings.prodCycle === "object") { const nc = normCycle(settings.prodCycle); setProdCycle(nc); syncedRef.current.settings.prodCycle = JSON.stringify(nc); }
         // cycleTriggers: загрузка готового списка либо одноразовая миграция из старых автозадач этапов
         if (Array.isArray(settings.cycleTriggers)) {
@@ -1091,7 +1158,7 @@ export default function AssortmentTable({ userEmail = null }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1134,7 +1201,31 @@ export default function AssortmentTable({ userEmail = null }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+
+  // Миграция/привязка профилей: создаём профили известных пользователей (по раскладке),
+  // переиспользуя id существующих исполнителей (чтобы уже проставленные назначения задач не слетели),
+  // и гарантируем профиль текущего вошедшего пользователя. Идемпотентно.
+  useEffect(() => {
+    if (!loaded) return;
+    setProfiles((prev) => {
+      const list = Array.isArray(prev) ? prev.map((p) => ({ ...p })) : [];
+      const hasEmail = (em) => list.some((p) => (p.email || "").toLowerCase() === String(em || "").toLowerCase());
+      const peopleByCanon = {};
+      (duties.people || []).forEach((p) => { const k = canonName(p.name); if (!(k in peopleByCanon)) peopleByCanon[k] = p; });
+      // 1) известные аккаунты из раскладки
+      Object.entries(KNOWN_LOGINS).forEach(([email, dispName]) => {
+        if (hasEmail(email)) return;
+        const src = peopleByCanon[canonName(dispName)];
+        list.push({ id: src ? src.id : uid(), email: email.toLowerCase(), name: src ? (src.name || dispName) : dispName, color: src ? (src.color || SWATCHES[list.length % SWATCHES.length]) : SWATCHES[list.length % SWATCHES.length], photo: "" });
+      });
+      // 2) текущий пользователь (если ещё не заведён)
+      if (userEmail && !hasEmail(userEmail)) {
+        list.push({ id: uid(), email: String(userEmail).toLowerCase(), name: String(userEmail).split("@")[0], color: SWATCHES[list.length % SWATCHES.length], photo: "" });
+      }
+      return JSON.stringify(list) === JSON.stringify(prev) ? prev : list;
+    });
+  }, [loaded, duties, userEmail]);
 
   // realtime — чужие изменения
   useEffect(() => {
@@ -1166,6 +1257,7 @@ export default function AssortmentTable({ userEmail = null }) {
         // начинается шторм эха между вкладками — правки лагают и затираются.
         if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = JSON.stringify(ns); setStrategy(ns); } return; }
         if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = JSON.stringify(nd); setDuties(nd); } return; }
+        if (key === "profiles") { if (Array.isArray(value)) { const np = normProfiles(value); syncedRef.current.settings.profiles = JSON.stringify(np); setProfiles(np); } return; }
         if (key === "prodCycle") { if (value && typeof value === "object") { const nc = normCycle(value); syncedRef.current.settings.prodCycle = JSON.stringify(nc); setProdCycle(nc); } return; }
         syncedRef.current.settings[key] = js;
         if (key === "statuses") setStatuses(value);
@@ -1729,6 +1821,10 @@ export default function AssortmentTable({ userEmail = null }) {
 
   /* ---------------------------------------------------------------------- */
 
+  // Профиль текущего вошедшего пользователя (для личных настроек имени/фото)
+  const myProfile = (profiles || []).find((p) => (p.email || "").toLowerCase() === String(userEmail || "").toLowerCase()) || null;
+  const patchMyProfile = (patch) => { if (!myProfile) return; setProfiles((list) => list.map((p) => (p.id === myProfile.id ? { ...p, ...patch } : p))); };
+
   return (
     <div
       style={{ fontFamily: '"Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
@@ -1804,6 +1900,10 @@ export default function AssortmentTable({ userEmail = null }) {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setMyProfileOpen(true)} title="Мой профиль" className="rounded-xl inline-flex items-center gap-2 border border-neutral-200 bg-white py-1 pl-1 pr-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+              <PersonAvatar p={myProfile} size={26} />
+              <span className="hidden sm:inline">{myProfile ? profileLabel(myProfile) : "Профиль"}</span>
+            </button>
             <button onClick={() => setDbOpen(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100">
               База
             </button>
@@ -2229,7 +2329,7 @@ export default function AssortmentTable({ userEmail = null }) {
             cycleTriggers={cycleTriggers}
             onCreateStageTask={createCycleStageTasks}
             jobs={jobs}
-            people={duties.people}
+            people={profiles}
             onOpenJob={(job) => setJobEditor({ ...job })}
             onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()), _new: true, ...preset })}
           />
@@ -2240,7 +2340,7 @@ export default function AssortmentTable({ userEmail = null }) {
             jobs={jobs}
             taskLabels={taskLabels}
             taskTags={taskTags}
-            people={duties.people}
+            people={profiles}
             onUpdateJob={upsertJob}
             products={products}
             batches={purchaseBatches}
@@ -2290,7 +2390,7 @@ export default function AssortmentTable({ userEmail = null }) {
           liveLog={(jobs.find((x) => x.id === jobEditor.id) || {}).log || jobEditor.log || []}
           taskLabels={taskLabels}
           taskTags={taskTags}
-          people={duties.people}
+          people={profiles}
           products={products}
           opTypes={opTypes}
           batches={purchaseBatches}
@@ -2307,6 +2407,7 @@ export default function AssortmentTable({ userEmail = null }) {
             }
           }}
           onDelete={(id) => { removeJob(id); removeOpType(id); setJobEditor(null); }}
+          onOpenProduct={(pid) => pid && setCardModal(pid)}
           onClose={() => setJobEditor(null)}
         />
       )}
@@ -2340,7 +2441,7 @@ export default function AssortmentTable({ userEmail = null }) {
           setTaskTriggers={setTaskTriggers}
           cycleTriggers={cycleTriggers}
           setCycleTriggers={setCycleTriggers}
-          taskPeople={duties.people}
+          taskPeople={profiles}
           unitConst={unitConst}
           setUnitConst={setUnitConst}
           initialTab={settingsTab}
@@ -2355,6 +2456,7 @@ export default function AssortmentTable({ userEmail = null }) {
         const cp = products.find((x) => x.id === cardModal);
         if (!cp) return null;
         return (
+          <div className="relative z-[95]">
           <CardTasksModal
             product={withConst(cp)}
             statuses={statuses}
@@ -2406,6 +2508,7 @@ export default function AssortmentTable({ userEmail = null }) {
             onFetchWb={fetchWbOrders}
             onClose={() => setCardModal(null)}
           />
+          </div>
         );
       })()}
 
@@ -2545,6 +2648,46 @@ export default function AssortmentTable({ userEmail = null }) {
           />
         );
       })()}
+
+      {myProfileOpen && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-neutral-900/40 p-4" onClick={() => setMyProfileOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-neutral-900">Мой профиль</h2>
+              <button onClick={() => setMyProfileOpen(false)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
+            </div>
+            {!myProfile ? (
+              <div className="py-8 text-center text-sm text-neutral-400">Профиль загружается…</div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <PersonAvatar p={myProfile} size={64} />
+                    <button onClick={() => profilePhotoInputRef.current && profilePhotoInputRef.current.click()} title="Загрузить фото" className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-500 shadow-sm hover:text-neutral-800"><Camera size={13} /></button>
+                    <input ref={profilePhotoInputRef} type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return; try { const url = await fileToAvatarDataURL(f); patchMyProfile({ photo: url }); } catch { /* фото не загрузилось — пропускаем */ } }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-neutral-800">{profileLabel(myProfile)}</div>
+                    <div className="truncate text-xs text-neutral-400">{myProfile.email}</div>
+                    {myProfile.photo && <button onClick={() => patchMyProfile({ photo: "" })} className="mt-1 text-[11px] font-semibold text-neutral-400 hover:text-red-500">Убрать фото</button>}
+                  </div>
+                </div>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-semibold text-neutral-500">Имя</span>
+                  <input value={myProfile.name} onChange={(e) => patchMyProfile({ name: e.target.value })} placeholder={myProfile.email ? myProfile.email.split("@")[0] : "Ваше имя"} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-neutral-400 focus:outline-none" />
+                </label>
+                <div>
+                  <span className="mb-1.5 block text-xs font-semibold text-neutral-500">Цвет</span>
+                  <div className="flex flex-wrap gap-1.5">{SWATCHES.map((c) => <button key={c} onClick={() => patchMyProfile({ color: c })} className="h-6 w-6 rounded-full" style={{ background: c, boxShadow: myProfile.color === c ? `0 0 0 2px #fff, 0 0 0 3px ${c}` : "none" }} />)}</div>
+                </div>
+                <div className="flex justify-end pt-1">
+                  <button onClick={() => setMyProfileOpen(false)} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800">Готово</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );
@@ -2949,7 +3092,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                             <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: st ? st.color : "#d4d4d8" }} />
                             <span className={"min-w-0 flex-1 truncate text-[13.5px] " + (done ? "text-neutral-400 line-through" : "text-neutral-700")}>{j.title || "Без названия"}</span>
                             {j.date && <span className="shrink-0 text-[11px] text-neutral-400">{fmtD(j.date)}</span>}
-                            {pr && <span title={pr.name} className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>}
+                            {pr && <PersonAvatar p={pr} size={20} />}
                           </button>
                         ); })}
                         {batchJobs.length === 0 && <p className="px-1 py-6 text-center text-[12px] text-neutral-400">Задач по этой партии ещё нет</p>}
@@ -6379,7 +6522,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], onUpdateJob, 
                 <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Исполнитель</span>{fltAssignee && <button onClick={() => setFltAssignee(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
                 <div className="mb-3 flex max-h-28 flex-wrap gap-1 overflow-auto">
                   {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Исполнителей нет</span>}
-                  {(people || []).map((pr) => { const on = fltAssignee === pr.id; return <button key={pr.id} onClick={() => setFltAssignee(on ? null : pr.id)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={on ? { background: pr.color, color: "#fff" } : { background: (pr.color || "#999") + "22", color: pr.color || "#737373" }}>{pr.name}</button>; })}
+                  {(people || []).map((pr) => { const on = fltAssignee === pr.id; return <button key={pr.id} onClick={() => setFltAssignee(on ? null : pr.id)} className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={on ? { background: pr.color, color: "#fff" } : { background: (pr.color || "#999") + "22", color: pr.color || "#737373" }}><PersonAvatar p={pr} size={16} />{profileLabel(pr)}</button>; })}
                   {(people || []).length > 0 && <button onClick={() => setFltAssignee(fltAssignee === "__none" ? null : "__none")} className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + (fltAssignee === "__none" ? "bg-neutral-700 text-white" : "bg-neutral-100 text-neutral-500")}>Не назначен</button>}
                 </div>
                 <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Метка</span>{fltMark && <button onClick={() => setFltMark(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
@@ -6435,7 +6578,7 @@ function OpTodayView({ opTypes = [], opDone = {}, onToggleDone, people = [], now
   const avatar = (op) => {
     const p = personOf(op.assignee);
     if (!p) return null;
-    return <span className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ background: p.color || "#9ca3af" }} title={p.name}>{(p.name || "?").charAt(0)}</span>;
+    return <PersonAvatar p={p} size={20} />;
   };
   return (
     <div className="mx-auto max-w-2xl">
@@ -6634,7 +6777,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
         {groupBy !== "status" && <StageIcon j={j} />}
         {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
         {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
-        {(() => { const pr = personById[j.assignee]; return pr ? <span title={pr.name} className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span> : null; })()}
+        {(() => { const pr = personById[j.assignee]; return pr ? <span className="ml-auto"><PersonAvatar p={pr} size={20} /></span> : null; })()}
       </div>
     </div>
   ); };
@@ -7175,7 +7318,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
               <div className="flex flex-wrap items-center gap-1.5">
                 <StageIcon j={j} />
                 {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
-                {(() => { const pr = personById[j.assignee]; return pr ? <span title={pr.name} className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span> : null; })()}
+                {(() => { const pr = personById[j.assignee]; return pr ? <span className="ml-auto"><PersonAvatar p={pr} size={20} /></span> : null; })()}
               </div>
             </div>
           );
@@ -7202,7 +7345,7 @@ const TASK_TYPE_META = [
   { key: "project", label: "Проектная", short: "Проектная", Icon: FileText, tint: "#7c3aed", bg: "#f5f3ff", hint: "раздел «Проектные»" },
   { key: "product", label: "Товар", short: "Товар", Icon: Box, tint: "#ea580c", bg: "#fff7ed", hint: "раздел «Задачи по товарам»" },
 ];
-function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onClose }) {
+function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onOpenProduct, onClose }) {
   const [j, setJ] = useState(job);
   const [expanded, setExpanded] = useState(() => lsGet("rnp.taskExpanded", false)); // раскрытое окно задачи
   const [showLog, setShowLog] = useState(false); // показывать «Историю» вместо деталей
@@ -7371,13 +7514,13 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Исполнитель</span>
               <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ((people || []).find((pp) => pp.id === j.assignee) || {}).color || "#e5e5e5" }} />
+                <PersonAvatar p={(people || []).find((pp) => pp.id === j.assignee) || null} size={20} />
                 <select value={j.assignee || ""} onChange={(e) => set("assignee", e.target.value || null)} className="w-full max-w-xs rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
                   <option value="">Не назначен</option>
-                  {(people || []).map((pp) => (<option key={pp.id} value={pp.id}>{pp.name}</option>))}
+                  {(people || []).map((pp) => (<option key={pp.id} value={pp.id}>{profileLabel(pp)}</option>))}
                 </select>
               </div>
-              {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Добавьте исполнителей в разделе «Функционал».</span>}
+              {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Профили появляются после входа пользователей.</span>}
             </div>
             <p className="rounded-xl bg-indigo-50/60 px-3 py-2 text-[11px] leading-snug text-indigo-500">Операционная задача ложится в раздел «Операционные» на Ганте — чекбоксами по дням графика.</p>
           </div>
@@ -7504,7 +7647,16 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
             )}
             {curType === "product" && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-sm text-neutral-600">Товар</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-neutral-600">Товар</span>
+                  <button
+                    type="button"
+                    disabled={!j.productId}
+                    onClick={() => j.productId && onOpenProduct && onOpenProduct(j.productId)}
+                    title={j.productId ? "Открыть карточку товара" : "Сначала выберите товар"}
+                    className={"inline-flex h-5 w-5 items-center justify-center rounded-md border transition " + (j.productId ? "border-neutral-200 text-neutral-500 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600" : "cursor-not-allowed border-neutral-100 text-neutral-300")}
+                  ><Maximize2 size={12} /></button>
+                </div>
                 <select value={j.productId || ""} onChange={(e) => set("productId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
                   <option value="">—</option>
                   {(products || []).map((p) => (<option key={p.id} value={p.id}>{(p.code || "—") + (p.name ? " · " + p.name : "")}</option>))}
@@ -7526,13 +7678,13 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Исполнитель</span>
               <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ((people || []).find((pp) => pp.id === j.assignee) || {}).color || "#e5e5e5" }} />
+                <PersonAvatar p={(people || []).find((pp) => pp.id === j.assignee) || null} size={20} />
                 <select value={j.assignee || ""} onChange={(e) => set("assignee", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
                   <option value="">Не назначен</option>
-                  {(people || []).map((pp) => (<option key={pp.id} value={pp.id}>{pp.name}</option>))}
+                  {(people || []).map((pp) => (<option key={pp.id} value={pp.id}>{profileLabel(pp)}</option>))}
                 </select>
               </div>
-              {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Добавьте исполнителей в разделе «Функционал».</span>}
+              {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Профили появляются после входа пользователей.</span>}
             </div>
           </div>
         </div>
