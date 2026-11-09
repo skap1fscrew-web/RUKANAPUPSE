@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } f
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -843,7 +843,7 @@ const SubjectsDatalist = memo(function SubjectsDatalist({ subjects }) {
   );
 });
 
-export default function AssortmentTable({ userEmail = null }) {
+export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [products, setProducts] = useState([]);
   const [statuses, setStatuses] = useState(DEFAULT_STATUSES);
   const [metricsByGroup, setMetricsByGroup] = useState(DEFAULT_METRICS_BY_GROUP);
@@ -915,6 +915,7 @@ export default function AssortmentTable({ userEmail = null }) {
   const [duties, setDuties] = useState(() => normDuties(null)); // блок «Обязанности» — области/функции/подфункции/исполнители (СПРАВОЧНИК, не связан с назначением задач)
   const [profiles, setProfiles] = useState([]); // профили пользователей — исполнители задач, привязанные к логину
   const [myProfileOpen, setMyProfileOpen] = useState(false); // окно личных настроек профиля
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false); // меню профиля в верхней шапке
   const [prodCycle, setProdCycle] = useState(() => normCycle(null)); // производственный цикл — этапы и правила автозадач по умолчанию
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
@@ -1828,12 +1829,41 @@ export default function AssortmentTable({ userEmail = null }) {
   return (
     <div
       style={{ fontFamily: '"Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
-      className="min-h-screen w-full bg-neutral-100 p-4 sm:p-6 text-neutral-900"
+      className="min-h-screen w-full bg-neutral-100 text-neutral-900"
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
 
-      <div className="mx-auto max-w-full">
+      {/* Верхняя шапка */}
+      <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-1.5 text-sm">
+        <span className="font-semibold text-neutral-700">Работаем, братья!</span>
+        <div className="relative">
+          <button onClick={() => setProfileMenuOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-2.5 hover:bg-neutral-50">
+            <PersonAvatar p={myProfile} size={26} />
+            <span className="text-[13px] font-medium text-neutral-800">{myProfile ? profileLabel(myProfile) : "Профиль"}</span>
+            <ChevronDown size={13} className="text-neutral-400" />
+          </button>
+          {profileMenuOpen && (
+            <>
+              <button className="fixed inset-0 z-[70] cursor-default" onClick={() => setProfileMenuOpen(false)} aria-label="Закрыть меню" />
+              <div className="absolute right-0 top-10 z-[71] w-60 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
+                <div className="mb-1.5 flex items-center gap-2.5 border-b border-neutral-100 px-2 pb-2.5 pt-1">
+                  <PersonAvatar p={myProfile} size={34} />
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-semibold text-neutral-800">{myProfile ? profileLabel(myProfile) : "Профиль"}</div>
+                    <div className="truncate text-[11px] text-neutral-400">{userEmail}</div>
+                  </div>
+                </div>
+                <button onClick={() => { setProfileMenuOpen(false); setMyProfileOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[13px] text-neutral-700 hover:bg-neutral-50"><Settings2 size={15} className="text-neutral-400" />Мой профиль</button>
+                <div className="my-1 h-px bg-neutral-100" />
+                <button onClick={() => { setProfileMenuOpen(false); onSignOut && onSignOut(); }} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[13px] font-medium text-red-600 hover:bg-red-50"><LogOut size={15} />Выйти</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-full p-4 sm:p-6">
         {/* Шапка */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -1900,10 +1930,6 @@ export default function AssortmentTable({ userEmail = null }) {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setMyProfileOpen(true)} title="Мой профиль" className="rounded-xl inline-flex items-center gap-2 border border-neutral-200 bg-white py-1 pl-1 pr-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
-              <PersonAvatar p={myProfile} size={26} />
-              <span className="hidden sm:inline">{myProfile ? profileLabel(myProfile) : "Профиль"}</span>
-            </button>
             <button onClick={() => setDbOpen(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100">
               База
             </button>
@@ -1913,8 +1939,8 @@ export default function AssortmentTable({ userEmail = null }) {
                 {allOpen ? "Свернуть всё" : "Развернуть всё"}
               </button>
             )}
-            <button onClick={exportCsv} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
-              <Download size={15} /> Экспорт CSV
+            <button onClick={exportCsv} title="Экспорт CSV" className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
+              <Download size={16} />
             </button>
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Settings2 size={15} /> Настройки

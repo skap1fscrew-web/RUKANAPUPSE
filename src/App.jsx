@@ -11,18 +11,7 @@ export default function App() {
   }, []);
   if (session === undefined) return <div className="flex min-h-screen items-center justify-center text-neutral-400">Загрузка…</div>;
   if (!session) return <Login />;
-  return (
-    <div>
-      <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-1.5 text-sm">
-        <span className="font-semibold text-neutral-700">РНП</span>
-        <div className="flex items-center gap-3 text-neutral-500">
-          <span className="hidden sm:inline">{session.user.email}</span>
-          <button onClick={() => supabase.auth.signOut()} className="rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium hover:bg-neutral-50">Выйти</button>
-        </div>
-      </div>
-      <AssortmentTable userEmail={session.user.email} />
-    </div>
-  );
+  return <AssortmentTable userEmail={session.user.email} onSignOut={() => supabase.auth.signOut()} />;
 }
 
 function Login() {
