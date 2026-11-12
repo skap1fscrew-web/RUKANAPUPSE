@@ -900,6 +900,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [purchases, setPurchases] = useState([]);
   const [purchaseBatches, setPurchaseBatches] = useState([]); // блок «Закупки» — партии [{id,name,status,cny,usd,cargo,items:[{id,productId,priceCny,qty}]}]
   const [jobs, setJobs] = useState([]); // блок «Задачи» — задачи с датой [{id,title,date,done,labelId,productId}]
+  const liveJobs = useMemo(() => jobs.filter((j) => j && !j.deletedAt), [jobs]); // без корзины
+  const trashJobs = useMemo(() => jobs.filter((j) => j && j.deletedAt).sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt))), [jobs]);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [undoDel, setUndoDel] = useState(null); // {id,title} — плашка «Вернуть»
   const [jobEditor, setJobEditor] = useState(null); // {id?...} открытое окно задачи
   const meRef = useRef(userEmail); meRef.current = userEmail; // автор ручных правок в логах задач — логин авторизованного пользователя
   const [rnpStartDate, setRnpStartDate] = useState(() => {
@@ -1456,6 +1460,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const upsertJob = (job) => setJobs((js) => {
     const i = js.findIndex((j) => j.id === job.id);
     const prev = i === -1 ? null : js[i];
+    if (prev && prev.deletedAt) return js; // задача в корзине — правки (в т.ч. запоздалый автосейв редактора) не воскрешают её
     const events = diffJobEvents(prev, job, meRef.current || null); // автор ручной правки — текущий пользователь (или «Вы»)
     const baseLog = (prev && Array.isArray(prev.log) ? prev.log : (Array.isArray(job.log) ? job.log : [])); // лог ведём от сохранённого — автосейв по клавише не теряет события
     const nextJob = events.length ? { ...job, log: [...baseLog, ...events].slice(-JOB_LOG_MAX) } : { ...job, log: baseLog };
@@ -1463,6 +1468,21 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     const c = js.slice(); c[i] = nextJob; return c;
   });
   const removeJob = (id) => setJobs((js) => js.filter((j) => j.id !== id));
+  // Корзина: задача не стирается, а помечается deletedAt (хранится 30 дней, видна всем)
+  const trashJob = (id) => {
+    const j = jobs.find((x) => x.id === id);
+    setJobs((js) => js.map((x) => x.id === id ? { ...x, deletedAt: new Date().toISOString(), deletedBy: (myProfile && myProfile.id) || userEmail || null } : x));
+    if (j) setUndoDel({ id, title: j.title || "Без названия" });
+  };
+  const restoreJob = (id) => setJobs((js) => js.map((x) => { if (x.id !== id) return x; const { deletedAt, deletedBy, ...rest } = x; return rest; }));
+  useEffect(() => { if (!undoDel) return; const t = setTimeout(() => setUndoDel(null), 8000); return () => clearTimeout(t); }, [undoDel]);
+  // автоочистка: старше 30 дней удаляем окончательно
+  useEffect(() => {
+    if (!loaded) return;
+    const lim = Date.now() - 30 * 86400000;
+    const old = jobs.filter((j) => j && j.deletedAt && new Date(j.deletedAt).getTime() < lim).map((j) => j.id);
+    if (old.length) setJobs((js) => js.filter((j) => !old.includes(j.id)));
+  }, [loaded]); // eslint-disable-line
   const upsertOpType = (o) => setOpTypes((list) => { const i = (list || []).findIndex((x) => x.id === o.id); if (i === -1) return [...(list || []), o]; const c = list.slice(); c[i] = o; return c; });
   const removeOpType = (id) => setOpTypes((list) => (list || []).filter((x) => x.id !== id));
   const toggleOpDone = (opId, ds) => setOpDone((m) => { const day = { ...((m || {})[opId] || {}) }; if (day[ds]) delete day[ds]; else day[ds] = true; return { ...(m || {}), [opId]: day }; });
@@ -2064,6 +2084,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             <button onClick={exportCsv} title={activeTab === "purchases" ? "Выгрузка партии в Excel (с фото)" : "Экспорт CSV"} className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
               <Download size={16} />
             </button>
+            <button onClick={() => setTrashOpen(true)} title="Корзина задач" className="relative rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
+              <Trash2 size={16} />
+              {trashJobs.length > 0 && <span className="absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full bg-rose-600 px-1 text-center text-[10px] font-bold leading-4 text-white">{trashJobs.length}</span>}
+            </button>
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Settings2 size={15} /> Настройки
             </button>
@@ -2476,7 +2500,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             cycleStages={prodCycle.stages}
             cycleTriggers={cycleTriggers}
             onCreateStageTask={createCycleStageTasks}
-            jobs={jobs}
+            jobs={liveJobs}
             people={profiles}
             onOpenJob={(job) => setJobEditor({ ...job })}
             onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()), _new: true, ...preset })}
@@ -2485,7 +2509,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
         {activeTab === "tasks" && (
           <TasksView
-            jobs={jobs}
+            jobs={liveJobs}
             taskLabels={taskLabels}
             taskTags={taskTags}
             people={profiles}
@@ -2513,7 +2537,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
               return id;
             }}
-            onOpenTask={(id) => { const job = jobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
+            onOpenTask={(id) => { const job = liveJobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
           />
         )}
 
@@ -2555,7 +2579,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               removeOpType(rest.id);
             }
           }}
-          onDelete={(id) => { removeJob(id); removeOpType(id); setJobEditor(null); }}
+          onDelete={(id) => { if (jobs.some((x) => x.id === id)) trashJob(id); removeOpType(id); setJobEditor(null); }}
           onOpenProduct={(pid) => { if (pid) { setJobEditor(null); setCardModal(pid); } }}
           onClose={() => setJobEditor(null)}
         />
@@ -2610,7 +2634,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             statuses={statuses}
             onSetName={(v) => updateProduct(cp.id, "name", v)}
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
-            allJobs={jobs}
+            allJobs={liveJobs}
             onCardAddTask={(title) => { const t = String(title || "").trim(); if (!t) return; upsertJob({ id: uid(), title: t.slice(0, 200), type: "product", productId: cp.id, date: null, start: null, done: false, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()) }); }}
             onOpenJob={(job) => setJobEditor({ ...job })}
             onUpdateJob={upsertJob}
@@ -2688,6 +2712,15 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           </>
         );
       })()}
+
+      {undoDel && (
+        <div className="fixed left-1/2 bottom-6 z-[96] flex -translate-x-1/2 items-center gap-3 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-xl">
+          <Trash2 size={15} className="shrink-0 text-neutral-400" />
+          <span className="max-w-[260px] truncate">«{undoDel.title}» — в корзине</span>
+          <button onClick={() => { restoreJob(undoDel.id); setUndoDel(null); }} className="shrink-0 font-bold text-amber-300 hover:underline">Вернуть</button>
+        </div>
+      )}
+      {trashOpen && <TrashPanel jobs={trashJobs} people={profiles} products={products} myId={myProfile ? myProfile.id : null} userEmail={userEmail} onRestore={restoreJob} onPurge={(ids) => setJobs((js) => js.filter((j) => !ids.includes(j.id)))} onClose={() => setTrashOpen(false)} />}
 
       {/* Всплывающее подтверждение */}
       {toast && (
@@ -6719,6 +6752,67 @@ function StageIcon({ j, size = 15 }) {
 }
 
 // Режим «Фокус»: повестка на сегодня по всем типам задач, горизонтально (под экран ноутбука).
+function TrashPanel({ jobs, people = [], products = [], myId, userEmail, onRestore, onPurge, onClose }) {
+  const [tab, setTab] = useState("all");
+  const [confirm1, setConfirm1] = useState(null); // id | "all"
+  const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
+  const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
+  const isMine = (j) => j.deletedBy && (j.deletedBy === myId || j.deletedBy === userEmail);
+  const list = jobs.filter((j) => tab === "all" ? true : tab === "mine" ? isMine(j) : tab === "project" ? jobType(j) === "project" : jobType(j) !== "project");
+  const daysLeft = (j) => Math.max(0, 30 - Math.floor((Date.now() - new Date(j.deletedAt).getTime()) / 86400000));
+  const fmtDT = (iso) => { const d = new Date(iso); const t = new Date(); const hm = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); if (d.toDateString() === t.toDateString()) return "сегодня " + hm; const y = new Date(t.getTime() - 86400000); if (d.toDateString() === y.toDateString()) return "вчера " + hm; return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }); };
+  const tabs = [["all", "Все", jobs.length], ["mine", "Мои", jobs.filter(isMine).length], ["project", "Проектные", jobs.filter((j) => jobType(j) === "project").length], ["other", "Прочие", jobs.filter((j) => jobType(j) !== "project").length]];
+  return (
+    <div className="fixed inset-0 z-[97] flex justify-end bg-black/30" onClick={onClose}>
+      <div className="flex h-full w-full max-w-[480px] flex-col bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 border-b border-neutral-100 px-4 py-3">
+          <Trash2 size={17} className="text-neutral-500" />
+          <h3 className="text-base font-bold text-neutral-800">Корзина</h3>
+          <span className="rounded-full bg-neutral-200/70 px-2 text-xs font-bold text-neutral-500">{jobs.length}</span>
+          <div className="ml-auto flex items-center gap-2">
+            {jobs.length > 0 && <button onClick={() => setConfirm1("all")} className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Очистить всё</button>}
+            <button onClick={onClose} className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><X size={18} /></button>
+          </div>
+        </div>
+        <div className="flex gap-1.5 border-b border-neutral-100 px-4 py-2">
+          {tabs.map(([k, n, c]) => <button key={k} onClick={() => setTab(k)} className={"rounded-full px-2.5 py-1 text-xs font-semibold transition " + (tab === k ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200")}>{n} {c}</button>)}
+        </div>
+        {confirm1 && (
+          <div className="m-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-neutral-700">
+            <b>Удалить навсегда?</b> {confirm1 === "all" ? `Все задачи в корзине (${jobs.length}) будут стёрты без возможности вернуть.` : "Задачу нельзя будет вернуть."}
+            <div className="mt-2 flex gap-2">
+              <button onClick={() => { onPurge(confirm1 === "all" ? jobs.map((j) => j.id) : [confirm1]); setConfirm1(null); }} className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700">Удалить навсегда</button>
+              <button onClick={() => setConfirm1(null)} className="rounded-lg border border-neutral-200 bg-white px-3 py-1 text-xs font-semibold text-neutral-600">Отмена</button>
+            </div>
+          </div>
+        )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {list.length === 0 && <div className="px-6 py-16 text-center text-sm text-neutral-400">{jobs.length ? "В этом разделе пусто" : "Корзина пуста"}</div>}
+          {list.map((j) => { const by = personById[j.deletedBy] || (j.deletedBy ? Object.values(personById).find((p) => p.email === j.deletedBy) : null); const st = STAGES[stageOf(j)]; const prod = prodById[j.productId]; const dl = daysLeft(j); return (
+            <div key={j.id} className="flex items-start gap-2.5 border-b border-neutral-50 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-neutral-500 line-through decoration-neutral-300">{(j.title || "Без названия")}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-neutral-400">
+                  <span className="rounded bg-neutral-100 px-1.5 font-semibold text-neutral-500">{(JOB_TYPES[jobType(j)] || {}).label || "Задача"}</span>
+                  <span className="rounded px-1.5 font-semibold" style={{ background: st.bg, color: st.color }}>{st.label}</span>
+                  {prod && <span>{prod.code || prod.name}</span>}
+                  <span className="inline-flex items-center gap-1">{by ? <PersonAvatar p={by} size={16} /> : null}удалил{by ? " " + profileLabel(by) : ""} · {fmtDT(j.deletedAt)}</span>
+                  <span className={"font-semibold " + (dl <= 3 ? "text-rose-500" : "text-amber-600")}>осталось {dl} дн.</span>
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-1.5">
+                <button onClick={() => onRestore(j.id)} className="rounded-lg bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-700">Вернуть</button>
+                <button onClick={() => setConfirm1(j.id)} title="Удалить навсегда" className="rounded-lg border border-rose-200 p-1.5 text-rose-500 hover:bg-rose-50"><X size={13} /></button>
+              </div>
+            </div>
+          ); })}
+        </div>
+        <div className="border-t border-neutral-100 bg-neutral-50 px-4 py-2.5 text-[11.5px] text-neutral-400">Задачи старше 30 дней удаляются автоматически. Корзина общая для всех.</div>
+      </div>
+    </div>
+  );
+}
+
 function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], myId = null, now, onUpdateJob, onOpen }) {
   const [waitOpen, setWaitOpen] = useState(false);
   const todayStr = isoYMD(now);
