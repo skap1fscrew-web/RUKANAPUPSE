@@ -919,6 +919,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
   const [productsView, setProductsView] = useState("list"); // list | tiles
+  const [tileSize, setTileSize] = useState("m"); // xs | s | m — размер плиток
   const [expanded, setExpanded] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -938,6 +939,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [supplyMenu, setSupplyMenu] = useState(null); // выбор партии для добавления товара { productId, x, y }
   const [toast, setToast] = useState(null); // всплывающее подтверждение
   const [codeFilter, setCodeFilter] = useState("");
+  const [prodSearchOpen, setProdSearchOpen] = useState(false); // лупа поиска по товарам развёрнута
   const [statusFilter, setStatusFilter] = useState([]); // выбранные статусы (мультивыбор); пусто = все
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   // настраиваемые колонки списка «Товары»: порядок, ширина, фильтры (per-device, localStorage)
@@ -998,7 +1000,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("rnp-ui");
-      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (Array.isArray(ui.rnpOrder)) setRnpOrder(ui.rnpOrder); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); if (ui.productsView) setProductsView(ui.productsView); }
+      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (Array.isArray(ui.rnpOrder)) setRnpOrder(ui.rnpOrder); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); if (ui.productsView) setProductsView(ui.productsView); if (["xs", "s", "m"].includes(ui.tileSize)) setTileSize(ui.tileSize); }
       // Разовая установка строк РНП по умолчанию: показаны только Кол-во заказов / Блогеры / Раздачи
       if (!localStorage.getItem("rnp-rows-v2")) {
         const def = {}; RNP_TASKS.forEach((t) => { if (!["orders", "bloggers", "razdachi"].includes(t.id)) def[t.id] = true; });
@@ -1008,8 +1010,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     } catch {}
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView })); } catch {}
-  }, [enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView]);
+    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView, tileSize })); } catch {}
+  }, [enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView, tileSize]);
 
   // загрузка из Supabase
   useEffect(() => {
@@ -1788,7 +1790,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   ];
 
   const filteredProducts = products.filter((p) => {
-    if (codeFilter.trim() && !(p.code || "").toLowerCase().includes(codeFilter.trim().toLowerCase())) return false;
+    if (codeFilter.trim()) { const q = codeFilter.trim().toLowerCase(); if (!(p.code || "").toLowerCase().includes(q) && !(p.name || "").toLowerCase().includes(q)) return false; }
     if (statusFilter.length && !statusFilter.includes(p.status)) return false;
     for (const id of colOrder) {
       const meta = DCOL[id];
@@ -2026,7 +2028,23 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             </div>
             <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchaseBatches.length} ${(() => { const n = purchaseBatches.length % 100, d = n % 10; return n > 10 && n < 20 ? "партий" : d === 1 ? "партия" : d >= 2 && d <= 4 ? "партии" : "партий"; })()}` : activeTab === "tasks" ? `${jobs.length} задач` : activeTab === "duties" ? `${(duties.functions || []).length} функций` : `${filteredProducts.length} товаров`}</span>
             {activeTab !== "purchases" && activeTab !== "tasks" && (
-              <input value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} placeholder="Фильтр по коду" className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-sm text-neutral-700 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ width: 140 }} />
+              (prodSearchOpen || codeFilter) ? (
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5 py-1.5" style={{ width: 230 }}>
+                  <Search size={14} className="shrink-0 text-neutral-400" />
+                  <input
+                    autoFocus
+                    value={codeFilter}
+                    onChange={(e) => setCodeFilter(e.target.value)}
+                    onBlur={() => { if (!codeFilter.trim()) setProdSearchOpen(false); }}
+                    onKeyDown={(e) => { if (e.key === "Escape") { setCodeFilter(""); setProdSearchOpen(false); } }}
+                    placeholder="Код или название…"
+                    className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs text-neutral-800 outline-none placeholder:text-neutral-400"
+                  />
+                  <button onClick={() => { setCodeFilter(""); setProdSearchOpen(false); }} className="shrink-0 text-neutral-300 hover:text-neutral-600" title="Очистить"><X size={14} /></button>
+                </div>
+              ) : (
+                <button onClick={() => setProdSearchOpen(true)} title="Поиск по коду и названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
+              )
             )}
             {activeTab !== "purchases" && activeTab !== "tasks" && (
               <div className="relative inline-block">
@@ -2149,6 +2167,16 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               <button onClick={() => setProductsView("list")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (productsView === "list" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Список</button>
               <button onClick={() => setProductsView("tiles")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (productsView === "tiles" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Плитки</button>
             </div>
+            {productsView === "tiles" && (
+              <div className="inline-flex items-center gap-2">
+                <span className="text-[11px] text-neutral-400">Размер</span>
+                <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+                  {["xs", "s", "m"].map((k) => (
+                    <button key={k} onClick={() => setTileSize(k)} className={"min-w-[34px] rounded-md px-2.5 py-1 text-xs font-semibold uppercase transition " + (tileSize === k ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{k}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             {productsView === "list" && (
               <>
                 <span className="hidden text-[11px] text-neutral-400 sm:inline">Колонки: тяните заголовок — поменять местами · правый край — ширина · <Filter size={10} className="inline" /> — фильтр</span>
@@ -2459,9 +2487,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
         {/* Товары — вид «Плитки» (акцент на фото) */}
         {activeTab === "assortment" && productsView === "tiles" && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className={tileSize === "xs" ? "grid grid-cols-4 gap-1.5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10" : tileSize === "s" ? "grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8" : "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"}>
             {filteredProducts.map((p) => {
               const sc = statusColor(p.status);
+              const compact = tileSize !== "m";
               return (
                 <div key={p.id} className="group relative overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm transition hover:shadow-md">
                   <div className="relative aspect-square w-full overflow-hidden bg-neutral-50">
@@ -2470,25 +2499,28 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                         ? <img src={p.image} alt="" className="h-full w-full object-cover transition group-hover:scale-[1.03]" />
                         : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={28} /></div>}
                     </button>
-                    {p.status && <span className="rounded-full absolute left-2 top-2 px-2 py-0.5 text-[11px] font-semibold" style={{ background: sc + "26", color: sc }}>{p.status}</span>}
-                    <button onClick={() => triggerUpload(p.id)} className="rounded-lg absolute bottom-2 left-2 bg-white/90 p-1.5 text-neutral-500 opacity-0 shadow transition hover:text-neutral-800 group-hover:opacity-100" title="Загрузить фото"><ImagePlus size={14} /></button>
+                    {p.status && (compact
+                      ? <span className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white" style={{ background: sc }} title={p.status} />
+                      : <span className="rounded-full absolute left-2 top-2 px-2 py-0.5 text-[11px] font-semibold" style={{ background: sc + "26", color: sc }}>{p.status}</span>)}
+                    {tileSize !== "xs" && <button onClick={() => triggerUpload(p.id)} className="rounded-lg absolute bottom-2 left-2 bg-white/90 p-1.5 text-neutral-500 opacity-0 shadow transition hover:text-neutral-800 group-hover:opacity-100" title="Загрузить фото"><ImagePlus size={14} /></button>}
                     {(() => { const inSupply = (purchaseBatches || []).some((b) => (b.items || []).some((it) => it.productId === p.id)); return (
                       <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setSupplyMenu({ productId: p.id, x: r.right, y: r.bottom }); }} className={"rounded-md absolute right-2 top-2 p-1 shadow transition " + (inSupply ? "bg-teal-600 text-white opacity-100" : "bg-white/90 text-neutral-500 opacity-0 hover:text-teal-700 group-hover:opacity-100")} title="Добавить в поставку"><PackagePlus size={14} /></button>
                     ); })()}
-                    <button onClick={() => removeProduct(p.id)} className="rounded-md absolute right-2 bottom-2 bg-white/90 p-1 text-neutral-400 opacity-0 shadow transition hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>
+                    {tileSize !== "xs" && <button onClick={() => removeProduct(p.id)} className="rounded-md absolute right-2 bottom-2 bg-white/90 p-1 text-neutral-400 opacity-0 shadow transition hover:text-red-500 group-hover:opacity-100" title="Удалить"><Trash2 size={14} /></button>}
+                    {tileSize === "xs" && <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-5 text-[10px] leading-tight text-white opacity-0 transition group-hover:opacity-100"><div className="font-semibold">{p.code || "—"}</div><div className="truncate">{p.name}</div></div>}
                   </div>
-                  <button onClick={() => setCardModal(p.id)} className="block w-full px-3 py-2 text-left">
-                    <div className="flex items-center gap-1.5 truncate text-[11px] text-neutral-400">
+                  {tileSize !== "xs" && <button onClick={() => setCardModal(p.id)} className={"block w-full text-left " + (tileSize === "s" ? "px-2 py-1" : "px-3 py-2")}>
+                    <div className={"flex items-center gap-1.5 truncate text-neutral-400 " + (tileSize === "s" ? "text-[10px]" : "text-[11px]")} title={p.name || ""}>
                       <span className="font-semibold text-neutral-500">{p.code || "—"}</span>
                       {p.subject && <span className="truncate">· {p.subject}</span>}
                     </div>
-                    <div className="mt-0.5 text-sm font-medium text-neutral-800 group-hover:text-orange-700" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.name || <span className="text-neutral-400">Без названия</span>}</div>
-                  </button>
+                    {tileSize === "m" && <div className="mt-0.5 text-sm font-medium text-neutral-800 group-hover:text-orange-700" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.name || <span className="text-neutral-400">Без названия</span>}</div>}
+                  </button>}
                 </div>
               );
             })}
             <button onClick={addProduct} className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-neutral-200 text-neutral-400 transition hover:border-orange-300 hover:bg-orange-50/30 hover:text-orange-600">
-              <Plus size={22} /> <span className="text-sm font-medium">Добавить товар</span>
+              <Plus size={22} /> {tileSize !== "xs" && <span className="text-sm font-medium">Добавить товар</span>}
             </button>
           </div>
         )}
