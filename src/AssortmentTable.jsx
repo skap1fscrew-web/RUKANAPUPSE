@@ -7659,11 +7659,12 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
   };
 
   const Section = ({ id, title, count, doneCount = 0, children }) => {
-    const open = !collapsed[id];
+    const isOp = id === "op"; // операционные: единственный раздел в своём виде — без заголовка и сворачивания
+    const open = isOp || !collapsed[id];
     const showDone = !!secDone[id];
     return (
       <div className="mt-2 first:mt-0">
-        <div className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1" style={{ width: LW + timelineW }}>
+        {!isOp && <div className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1" style={{ width: LW + timelineW }}>
           <button onClick={() => toggleSection(id)} className="flex items-center gap-1.5 text-left transition hover:opacity-70">
             <ChevronDown size={13} className="shrink-0 text-neutral-400 transition-transform" style={{ transform: open ? "none" : "rotate(-90deg)" }} />
             <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</span>
@@ -7674,7 +7675,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
               {showDone ? <Eye size={13} /> : <EyeOff size={13} />}{doneCount}
             </button>
           )}
-        </div>
+        </div>}
         {open && children}
       </div>
     );
