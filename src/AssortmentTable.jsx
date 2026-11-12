@@ -2081,13 +2081,17 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                 {allOpen ? "Свернуть всё" : "Развернуть всё"}
               </button>
             )}
+            {activeTab === "purchases" && (
             <button onClick={exportCsv} title={activeTab === "purchases" ? "Выгрузка партии в Excel (с фото)" : "Экспорт CSV"} className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
               <Download size={16} />
             </button>
+            )}
+            {activeTab === "tasks" && (
             <button onClick={() => setTrashOpen(true)} title="Корзина задач" className="relative rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
               <Trash2 size={16} />
               {trashJobs.length > 0 && <span className="absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full bg-rose-600 px-1 text-center text-[10px] font-bold leading-4 text-white">{trashJobs.length}</span>}
             </button>
+            )}
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Settings2 size={15} /> Настройки
             </button>
@@ -2909,8 +2913,6 @@ function normDuties(v) {
 function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
   const d = duties && duties.areas ? duties : normDuties(duties);
   const [expanded, setExpanded] = useState(() => new Set());
-  const [view, setView] = useState(() => (lsGet("rnp.dutiesView", "list") === "cols" ? "cols" : "list"));
-  useEffect(() => lsSet("rnp.dutiesView", view), [view]);
   const dragFnRef = useRef(null);
   const [overArea, setOverArea] = useState(undefined);
   const [filterArea, setFilterArea] = useState(null);
@@ -2954,14 +2956,14 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
 
   const Avatar = ({ p, sm }) => <span className={"flex items-center justify-center rounded-full font-bold text-white " + (sm ? "h-5 w-5 text-[10px]" : "h-6 w-6 text-[11px]")} style={{ background: p ? p.color : "#cfcfd6" }}>{p ? (p.name[0] || "?").toUpperCase() : "?"}</span>;
 
-  const Pill = ({ who, k, onPick }) => {
+  const Pill = ({ who, k, onPick, compact }) => {
     const p = who ? personById[who] : null; const open = asgKey === k;
     return (
       <span className="relative shrink-0">
-        <button onClick={(e) => { e.stopPropagation(); setAsgKey(open ? null : k); setRecKey(null); }} className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 py-0.5 pl-0.5 pr-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">
-          <Avatar p={p} sm /><span className={p ? "" : "text-neutral-400"}>{p ? p.name : "Не назначен"}</span><ChevronDown size={11} className="text-neutral-300" />
+        <button onClick={(e) => { e.stopPropagation(); setAsgKey(open ? null : k); setRecKey(null); }} title={compact ? (p ? p.name : "Не назначен") : undefined} className={compact ? "flex items-center rounded-full ring-offset-1 transition hover:ring-2 hover:ring-neutral-200" : "inline-flex items-center gap-1.5 rounded-full border border-neutral-200 py-0.5 pl-0.5 pr-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"}>
+          <Avatar p={p} sm />{!compact && <><span className={p ? "" : "text-neutral-400"}>{p ? p.name : "Не назначен"}</span><ChevronDown size={11} className="text-neutral-300" /></>}
         </button>
-        {open && <><div className="fixed inset-0 z-10" onClick={() => setAsgKey(null)} /><div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+        {open && <><div className="fixed inset-0 z-10" onClick={() => setAsgKey(null)} /><div className={"absolute z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg " + (compact ? "left-0" : "right-0")}>
           <button onClick={() => { onPick(null); setAsgKey(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-neutral-400 hover:bg-neutral-50"><Avatar p={null} sm />Не назначен</button>
           {d.people.map((pp) => <button key={pp.id} onClick={() => { onPick(pp.id); setAsgKey(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50"><Avatar p={pp} sm />{pp.name}</button>)}
           <div className="mt-1 border-t border-neutral-100 pt-1"><button onClick={() => { setManageOpen(true); setAsgKey(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-neutral-400 hover:bg-neutral-50"><Users size={12} /> Управление</button></div>
@@ -2988,10 +2990,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
       <div className="min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-3">
           <span className="text-sm font-bold text-neutral-800">Функциональные обязанности</span>
-          <div className="ml-auto inline-flex rounded-lg border border-neutral-200 bg-neutral-50 p-0.5">
-            {[["list", "Список"], ["cols", "Колонки"]].map(([k, n]) => <button key={k} onClick={() => setView(k)} className={"rounded-md px-2.5 py-1 text-xs font-semibold transition " + (view === k ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}>{n}</button>)}
-          </div>
-          <button onClick={addFunction} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Функция</button>
+          <button onClick={addFunction} className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Функция</button>
           <button onClick={() => setManageOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"><Users size={14} /> Управление</button>
         </div>
         {/* фильтры */}
@@ -3008,7 +3007,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
         </div>
 
         {/* группы по областям */}
-        {view === "cols" ? (
+        {(
           <div className="grid gap-3 p-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))" }}>
             {groups.map((g) => {
               const aid = g.area ? g.area.id : null; const fns = g.fns.filter(fpMatch);
@@ -3028,35 +3027,28 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
                   <div className="flex min-h-[40px] flex-col gap-2">
                     {fns.map((f) => {
                       const isOpen = expanded.has(f.id); const asg = f.assignee ? personById[f.assignee] : null;
+                      const toggle = () => setExpanded((st) => { const n = new Set(st); n.has(f.id) ? n.delete(f.id) : n.add(f.id); return n; });
                       return (
-                        <div key={f.id} id={"fncard-" + f.id} className="rounded-xl border bg-white p-2.5 shadow-sm" style={{ borderColor: "#e5e5e5", borderLeft: `3px solid ${asg ? asg.color : accent}` }}>
-                          <div className="flex items-start gap-1.5">
-                            <span draggable onDragStart={(e) => { dragFnRef.current = f.id; const el = document.getElementById("fncard-" + f.id); if (el && e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setDragImage(el, 12, 12); } }} onDragEnd={() => { dragFnRef.current = null; setOverArea(undefined); }} className="mt-0.5 shrink-0 cursor-grab text-neutral-300 hover:text-neutral-500" title="Перетащить в другую область"><GripVertical size={14} /></span>
-                            <textarea value={f.name} rows={1} onChange={(e) => patchFn(f.id, { name: e.target.value })} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} placeholder="Название функции…" className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" />
-                            <button onClick={() => removeFunction(f.id)} className="shrink-0 text-neutral-300 hover:text-red-500" title="Удалить функцию"><X size={13} /></button>
+                        <div key={f.id} id={"fncard-" + f.id} onClick={(e) => { if (e.target.closest("input,textarea,button,[draggable=true]")) return; toggle(); }} className="group relative cursor-pointer rounded-xl border bg-white px-2.5 py-2 shadow-sm transition hover:shadow-md" style={{ borderColor: "#e8e8ea", borderLeft: `3px solid ${asg ? asg.color : accent}` }}>
+                          <div className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded bg-white pl-1 opacity-0 transition group-hover:opacity-100">
+                            <span draggable onDragStart={(e) => { dragFnRef.current = f.id; const el = document.getElementById("fncard-" + f.id); if (el && e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setDragImage(el, 12, 12); } }} onDragEnd={() => { dragFnRef.current = null; setOverArea(undefined); }} className="cursor-grab text-neutral-300 hover:text-neutral-500" title="Перетащить в другую область"><GripVertical size={14} /></span>
+                            <button onClick={() => removeFunction(f.id)} className="text-neutral-300 hover:text-red-500" title="Удалить функцию"><X size={13} /></button>
                           </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                            <RecBadge recur={f.recur} k={`f:${f.id}`} onChange={(r) => patchFn(f.id, { recur: r })} />
-                            <Pill who={f.assignee} k={`f:${f.id}`} onPick={(pid) => patchFn(f.id, { assignee: pid })} />
+                          <textarea value={f.name} rows={1} onChange={(e) => patchFn(f.id, { name: e.target.value })} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} placeholder="Название функции…" className="block w-full resize-none overflow-hidden bg-transparent pr-12 text-[13.5px] font-semibold leading-snug text-neutral-800 focus:outline-none" />
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <Pill compact who={f.assignee} k={`f:${f.id}`} onPick={(pid) => patchFn(f.id, { assignee: pid })} />
+                            <button onClick={toggle} className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-neutral-100 px-2 text-[11px] font-bold text-neutral-500 hover:bg-neutral-200" title="Подфункции">{f.subs.length > 0 ? f.subs.length : <Plus size={11} />}{isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</button>
                           </div>
-                          <button onClick={() => setExpanded((st) => { const n = new Set(st); n.has(f.id) ? n.delete(f.id) : n.add(f.id); return n; })} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400 hover:text-neutral-600">
-                            {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Подфункции{f.subs.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-[10px] font-bold text-neutral-500">{f.subs.length}</span>}
-                          </button>
                           {isOpen && (
-                            <div className="mt-1.5 flex flex-col gap-1.5">
+                            <div className="mt-2 flex flex-col gap-0.5 border-t border-dashed border-neutral-200 pt-1.5">
                               {f.subs.map((sb) => (
-                                <div key={sb.id} className="rounded-lg bg-neutral-50 p-2">
-                                  <div className="flex items-start gap-1.5">
-                                    <input value={sb.name} onChange={(e) => patchSub(f.id, sb.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-700 focus:outline-none" />
-                                    <button onClick={() => removeSub(f.id, sb.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={12} /></button>
-                                  </div>
-                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                                    <RecBadge recur={sb.recur} k={`s:${f.id}:${sb.id}`} onChange={(r) => patchSub(f.id, sb.id, { recur: r })} />
-                                    <Pill who={sb.assignee} k={`s:${f.id}:${sb.id}`} onPick={(pid) => patchSub(f.id, sb.id, { assignee: pid })} />
-                                  </div>
+                                <div key={sb.id} className="flex items-center gap-1.5 py-1">
+                                  <input value={sb.name} onChange={(e) => patchSub(f.id, sb.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[12.5px] text-neutral-700 focus:outline-none" />
+                                  <Pill compact who={sb.assignee} k={`s:${f.id}:${sb.id}`} onPick={(pid) => patchSub(f.id, sb.id, { assignee: pid })} />
+                                  <button onClick={() => removeSub(f.id, sb.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={12} /></button>
                                 </div>
                               ))}
-                              <button onClick={() => addSub(f.id)} className="inline-flex w-fit items-center gap-1 text-[12px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={12} /> Подфункция</button>
+                              <button onClick={() => addSub(f.id)} className="inline-flex w-fit items-center gap-1 pt-0.5 text-[12px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={12} /> Подфункция</button>
                             </div>
                           )}
                         </div>
@@ -3068,47 +3060,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
               );
             })}
           </div>
-        ) : groups.map((g) => {
-          const fns = g.fns.filter(fpMatch);
-          const subCount = g.fns.reduce((a, f) => a + f.subs.length, 0);
-          return (
-            <div key={g.area ? g.area.id : "none"}>
-              <div className="flex items-center gap-2 px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: g.area ? g.area.color : "#a3a3a3" }}>
-                <span className="h-2.5 w-2.5 rounded" style={{ background: g.area ? g.area.color : "#cfcfd6" }} />{g.area ? g.area.name : "Без области"}
-                <span className="font-semibold text-neutral-300">· {g.fns.length} функ. · {subCount} подф.</span>
-              </div>
-              {fns.map((f) => {
-                const isOpen = expanded.has(f.id);
-                return (
-                  <div key={f.id} className="border-t border-neutral-100">
-                    <div className="flex items-center gap-2 px-4 py-2">
-                      <button onClick={() => setExpanded((s) => { const n = new Set(s); n.has(f.id) ? n.delete(f.id) : n.add(f.id); return n; })} className="shrink-0 text-neutral-300 hover:text-neutral-600" title={isOpen ? "Свернуть" : "Подфункции"}>{isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button>
-                      <input value={f.name} onChange={(e) => patchFn(f.id, { name: e.target.value })} placeholder="Название функции…" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-neutral-800 focus:outline-none" />
-                      {f.subs.length > 0 && <span className="shrink-0 rounded-full bg-neutral-100 px-1.5 text-[10px] font-semibold text-neutral-400">{f.subs.length}</span>}
-                      <RecBadge recur={f.recur} k={`f:${f.id}`} onChange={(r) => patchFn(f.id, { recur: r })} />
-                      <Pill who={f.assignee} k={`f:${f.id}`} onPick={(pid) => patchFn(f.id, { assignee: pid })} />
-                      <button onClick={() => removeFunction(f.id)} className="shrink-0 text-neutral-300 hover:text-red-500" title="Удалить функцию"><X size={14} /></button>
-                    </div>
-                    {isOpen && (
-                      <div className="flex flex-col gap-1 pb-2 pl-11 pr-4">
-                        {f.subs.map((s) => (
-                          <div key={s.id} className="flex items-center gap-2 border-t border-dashed border-neutral-100 py-1.5">
-                            <input value={s.name} onChange={(e) => patchSub(f.id, s.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-600 focus:outline-none" />
-                            <RecBadge recur={s.recur} k={`s:${f.id}:${s.id}`} onChange={(r) => patchSub(f.id, s.id, { recur: r })} />
-                            <Pill who={s.assignee} k={`s:${f.id}:${s.id}`} onPick={(pid) => patchSub(f.id, s.id, { assignee: pid })} />
-                            <button onClick={() => removeSub(f.id, s.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={13} /></button>
-                          </div>
-                        ))}
-                        <button onClick={() => addSub(f.id)} className="mt-0.5 inline-flex w-fit items-center gap-1 text-[12px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={12} /> Подфункция</button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {g.area && !filterPerson && <button onClick={() => addFunctionTo(g.area.id)} className="m-3 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-400 hover:border-neutral-300 hover:text-neutral-600"><Plus size={13} /> Функция в «{g.area.name}»</button>}
-            </div>
-          );
-        })}
+        )}
         {d.areas.length === 0 && d.functions.length === 0 && <div className="px-4 py-12 text-center text-sm text-neutral-400">Нет областей. Откройте «Управление», чтобы добавить области и исполнителей.</div>}
       </div>
 
