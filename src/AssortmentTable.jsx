@@ -2107,7 +2107,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             {activeTab === "tasks" && (
             <button onClick={() => setTrashOpen(true)} title="Корзина задач" className="relative rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
               <Trash2 size={16} />
-              {trashJobs.length > 0 && <span className="absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full bg-rose-600 px-1 text-center text-[10px] font-bold leading-4 text-white">{trashJobs.length}</span>}
             </button>
             )}
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
@@ -7077,9 +7076,9 @@ function OpTodayView({ opTypes = [], opDone = {}, onToggleDone, people = [], now
 // Вид «Товары» для задач по товарам: товар (фото·код·название) + все его задачи. Раскладки: строки | колонки.
 function ProductTasksView({ jobs, products, onOpen }) {
   const [hideDone, setHideDone] = useState(() => lsGet("rnp.prodHideDone", false));
-  const [groupMode, setGroupMode] = useState(() => lsGet("rnp.prodGroup", "prod")); // prod: товар→задачи | task: задача→товары
+  const [groupMode, setGroupMode] = useState(() => lsGet("rnp.prodGroup2", "task")); // prod: товар→задачи | task: задача→товары
   useEffect(() => lsSet("rnp.prodHideDone", hideDone), [hideDone]);
-  useEffect(() => lsSet("rnp.prodGroup", groupMode), [groupMode]);
+  useEffect(() => lsSet("rnp.prodGroup2", groupMode), [groupMode]);
 
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
   const byProd = new Map();
