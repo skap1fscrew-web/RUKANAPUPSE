@@ -6704,7 +6704,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], myId = null, 
     fltType === "product" ? [["kanban", Columns3, "Канбан"], ["gantt", GanttChart, "Гант"], ["prod", Box, "Товары"]]
     : fltType === "op" ? [["gantt", GanttChart, "Гант"], ["today", CalendarCheck, "Сегодня"]] // операционные — Гант + Сегодня
     : [["kanban", Columns3, "Канбан"], ["gantt", GanttChart, "Гант"]]; // Календарь/Список убраны
-  useEffect(() => { if (!viewOptions.some(([id]) => id === view)) setView(viewOptions[0][0]); }, [fltType]);
+  useEffect(() => { if (fltType === "product") setView("prod"); /* товары — сразу вид «Товары» (по задачам) */ else if (!viewOptions.some(([id]) => id === view)) setView(viewOptions[0][0]); }, [fltType]);
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
   const activeFilters = (fltPrio ? 1 : 0) + (fltAssignee ? 1 : 0) + (fltMark ? 1 : 0) + (fltStatus ? 1 : 0);
   const typeOf = (j) => (j && j.type === "op") ? "op" : jobType(j);
