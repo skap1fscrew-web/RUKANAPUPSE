@@ -2990,22 +2990,24 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
       <div className="min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-3">
           <span className="text-sm font-bold text-neutral-800">Функциональные обязанности</span>
-          <button onClick={addFunction} className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Функция</button>
-          <button onClick={() => setManageOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"><Users size={14} /> Управление</button>
-        </div>
-        {/* фильтры */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-100 px-4 py-2.5">
-          <button onClick={() => setFilterArea(null)} className={"rounded-full px-3 py-1 text-xs font-semibold " + (!filterArea ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200")}>Все области</button>
-          {d.areas.map((a) => <button key={a.id} onClick={() => setFilterArea(filterArea === a.id ? null : a.id)} className={"inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold " + (filterArea === a.id ? "text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200")} style={filterArea === a.id ? { background: a.color } : undefined}><span className="h-2 w-2 rounded-full" style={{ background: a.color }} />{a.name}</button>)}
-          <div className="relative ml-2">
-            <button onClick={() => setFpOpen((o) => !o)} className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">{filterPerson ? (personById[filterPerson]?.name || "Исполнитель") : "Все исполнители"} <ChevronDown size={11} /></button>
-            {fpOpen && <><div className="fixed inset-0 z-10" onClick={() => setFpOpen(false)} /><div className="absolute left-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
-              <button onClick={() => { setFilterPerson(null); setFpOpen(false); }} className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-neutral-600 hover:bg-neutral-50">Все исполнители</button>
-              {d.people.map((pp) => <button key={pp.id} onClick={() => { setFilterPerson(pp.id); setFpOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50"><Avatar p={pp} sm />{pp.name}</button>)}
+          <div className="relative ml-auto">
+            <button onClick={() => setFpOpen((o) => !o)} title="Фильтры: области и исполнители" className={"relative inline-flex items-center justify-center rounded-lg border p-2 transition " + ((filterArea || filterPerson) ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
+              <Filter size={15} />
+              {(filterArea || filterPerson) && <span className="absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full bg-orange-500 px-1 text-center text-[10px] font-bold leading-4 text-white">{(filterArea ? 1 : 0) + (filterPerson ? 1 : 0)}</span>}
+            </button>
+            {fpOpen && <><div className="fixed inset-0 z-10" onClick={() => setFpOpen(false)} /><div className="absolute right-0 z-20 mt-1.5 w-60 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl">
+              <div className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Область</div>
+              <button onClick={() => setFilterArea(null)} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-neutral-50 " + (!filterArea ? "font-semibold text-neutral-900" : "text-neutral-600")}>Все области{!filterArea && <Check size={13} className="ml-auto text-neutral-500" />}</button>
+              {d.areas.map((a) => <button key={a.id} onClick={() => setFilterArea(filterArea === a.id ? null : a.id)} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-neutral-50 " + (filterArea === a.id ? "font-semibold text-neutral-900" : "text-neutral-600")}><span className="h-2.5 w-2.5 rounded-sm" style={{ background: a.color }} />{a.name}{filterArea === a.id && <Check size={13} className="ml-auto text-neutral-500" />}</button>)}
+              <div className="mt-1 border-t border-neutral-100 px-2 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Исполнитель</div>
+              <button onClick={() => setFilterPerson(null)} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-neutral-50 " + (!filterPerson ? "font-semibold text-neutral-900" : "text-neutral-600")}>Все исполнители{!filterPerson && <Check size={13} className="ml-auto text-neutral-500" />}</button>
+              {d.people.map((pp) => <button key={pp.id} onClick={() => setFilterPerson(filterPerson === pp.id ? null : pp.id)} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-neutral-50 " + (filterPerson === pp.id ? "font-semibold text-neutral-900" : "text-neutral-600")}><Avatar p={pp} sm />{pp.name}{filterPerson === pp.id && <Check size={13} className="ml-auto text-neutral-500" />}</button>)}
+              {(filterArea || filterPerson) && <button onClick={() => { setFilterArea(null); setFilterPerson(null); }} className="mt-1 w-full rounded-lg border-t border-neutral-100 px-2 pt-2 text-left text-xs font-semibold text-neutral-400 hover:text-neutral-700">Сбросить фильтры</button>}
             </div></>}
           </div>
+          <button onClick={addFunction} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Функция</button>
+          <button onClick={() => setManageOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"><Users size={14} /> Управление</button>
         </div>
-
         {/* группы по областям */}
         {(
           <div className="grid gap-3 p-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))" }}>
@@ -3024,27 +3026,27 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
                     <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{fns.length}</span>
                     {g.area && !filterPerson && <button onClick={() => addFunctionTo(aid)} title="Добавить функцию" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-700"><Plus size={15} /></button>}
                   </div>
-                  <div className="flex min-h-[40px] flex-col gap-2">
+                  <div className="flex min-h-[40px] flex-col gap-1.5">
                     {fns.map((f) => {
-                      const isOpen = expanded.has(f.id); const asg = f.assignee ? personById[f.assignee] : null;
+                      const isOpen = expanded.has(f.id);
                       const toggle = () => setExpanded((st) => { const n = new Set(st); n.has(f.id) ? n.delete(f.id) : n.add(f.id); return n; });
                       return (
-                        <div key={f.id} id={"fncard-" + f.id} onClick={(e) => { if (e.target.closest("input,textarea,button,[draggable=true]")) return; toggle(); }} className="group relative cursor-pointer rounded-xl border bg-white px-2.5 py-2 shadow-sm transition hover:shadow-md" style={{ borderColor: "#e8e8ea", borderLeft: `3px solid ${asg ? asg.color : accent}` }}>
-                          <div className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded bg-white pl-1 opacity-0 transition group-hover:opacity-100">
-                            <span draggable onDragStart={(e) => { dragFnRef.current = f.id; const el = document.getElementById("fncard-" + f.id); if (el && e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setDragImage(el, 12, 12); } }} onDragEnd={() => { dragFnRef.current = null; setOverArea(undefined); }} className="cursor-grab text-neutral-300 hover:text-neutral-500" title="Перетащить в другую область"><GripVertical size={14} /></span>
-                            <button onClick={() => removeFunction(f.id)} className="text-neutral-300 hover:text-red-500" title="Удалить функцию"><X size={13} /></button>
+                        <div key={f.id} id={"fncard-" + f.id} onClick={(e) => { if (e.target.closest("input,textarea,button,[draggable=true]")) return; toggle(); }} className="group relative cursor-pointer rounded-[10px] border border-neutral-200 bg-white px-2.5 py-1.5 transition hover:shadow-md">
+                          <div className="absolute -right-1.5 -top-2 z-[1] flex items-center gap-0.5 rounded-full border border-neutral-200 bg-white px-1 py-0.5 opacity-0 shadow-sm transition group-hover:opacity-100">
+                            <span draggable onDragStart={(e) => { dragFnRef.current = f.id; const el = document.getElementById("fncard-" + f.id); if (el && e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setDragImage(el, 12, 12); } }} onDragEnd={() => { dragFnRef.current = null; setOverArea(undefined); }} className="cursor-grab text-neutral-400 hover:text-neutral-700" title="Перетащить в другую область"><GripVertical size={13} /></span>
+                            <button onClick={() => removeFunction(f.id)} className="text-neutral-400 hover:text-red-500" title="Удалить функцию"><X size={12} /></button>
                           </div>
-                          <textarea value={f.name} rows={1} onChange={(e) => patchFn(f.id, { name: e.target.value })} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} placeholder="Название функции…" className="block w-full resize-none overflow-hidden bg-transparent pr-12 text-[13.5px] font-semibold leading-snug text-neutral-800 focus:outline-none" />
-                          <div className="mt-1.5 flex items-center gap-2">
+                          <div className="flex items-center gap-2">
                             <Pill compact who={f.assignee} k={`f:${f.id}`} onPick={(pid) => patchFn(f.id, { assignee: pid })} />
-                            <button onClick={toggle} className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-neutral-100 px-2 text-[11px] font-bold text-neutral-500 hover:bg-neutral-200" title="Подфункции">{f.subs.length > 0 ? f.subs.length : <Plus size={11} />}{isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</button>
+                            <textarea value={f.name} rows={1} onChange={(e) => patchFn(f.id, { name: e.target.value })} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} placeholder="Название функции…" className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-0.5 text-[13px] font-semibold leading-snug text-neutral-800 focus:outline-none" />
+                            <button onClick={toggle} className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-neutral-100 px-1.5 text-[11px] font-bold text-neutral-500 hover:bg-neutral-200" title="Подфункции">{f.subs.length > 0 ? f.subs.length : <Plus size={11} />}{isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</button>
                           </div>
                           {isOpen && (
-                            <div className="mt-2 flex flex-col gap-0.5 border-t border-dashed border-neutral-200 pt-1.5">
+                            <div className="mt-1.5 flex flex-col gap-0.5 border-t border-dashed border-neutral-200 pt-1.5">
                               {f.subs.map((sb) => (
-                                <div key={sb.id} className="flex items-center gap-1.5 py-1">
-                                  <input value={sb.name} onChange={(e) => patchSub(f.id, sb.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[12.5px] text-neutral-700 focus:outline-none" />
+                                <div key={sb.id} className="flex items-center gap-1.5 py-0.5">
                                   <Pill compact who={sb.assignee} k={`s:${f.id}:${sb.id}`} onPick={(pid) => patchSub(f.id, sb.id, { assignee: pid })} />
+                                  <input value={sb.name} onChange={(e) => patchSub(f.id, sb.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[12.5px] text-neutral-700 focus:outline-none" />
                                   <button onClick={() => removeSub(f.id, sb.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={12} /></button>
                                 </div>
                               ))}
@@ -5769,6 +5771,12 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
   const [promoDay, setPromoDay] = useState(null); // открытый день в календаре продвижения
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const pu = product.purchase || {};
+  const photoRef = useRef(null);
+  const onPhoto = async (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f || !onSetField) return;
+    try { onSetField("image", await fileToThumb(f, 360)); } catch (err) { console.error("[Фото] не удалось обработать:", err); }
+  };
   const setPu = (k, v) => onSetField && onSetField("purchase", { ...(product.purchase || {}), [k]: v });
   // ссылки закупки: несколько, одна отмечена звёздочкой как главная (по ней переход)
   const puLinks = (Array.isArray(pu.links) && pu.links.length) ? pu.links : (pu.link && String(pu.link).trim() ? [{ id: "l0", url: pu.link, main: true }] : []);
@@ -5977,10 +5985,15 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-50" onClick={(e) => e.stopPropagation()}>
       {/* Шапка */}
       <div className="flex items-center gap-3 border-b border-neutral-200 bg-white px-5 py-2.5 sm:px-8">
-        <div className="h-20 w-[60px] shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 shadow-sm">
+        <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={onPhoto} />
+        <div className="group relative h-20 w-[60px] shrink-0 cursor-pointer overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 shadow-sm" onClick={() => photoRef.current && photoRef.current.click()} title={product.image ? "Заменить фото" : "Добавить фото"}>
           {product.image
             ? <img src={product.image} alt="" className="h-full w-full object-cover" />
             : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={20} /></div>}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-black/45 text-white opacity-0 transition group-hover:opacity-100">
+            <ImagePlus size={18} /><span className="text-[10px] font-semibold leading-none">{product.image ? "Заменить" : "Добавить"}</span>
+          </div>
+          {product.image && <button onClick={(e) => { e.stopPropagation(); onSetField && onSetField("image", null); }} title="Удалить фото" className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/55 p-0.5 text-white hover:bg-red-600 group-hover:block"><X size={11} /></button>}
         </div>
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
           <div className="flex items-center gap-2 pl-1.5 text-[12px] text-neutral-400">
