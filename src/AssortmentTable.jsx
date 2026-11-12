@@ -784,42 +784,63 @@ function _b64bytes(b64) { const bin = atob(b64); const a = new Uint8Array(bin.le
 const _xe = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 function _colRef(n) { let s = ""; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
 // header: [строки], rows: [[ячейки]] (число → числовая, иначе текст), images: [{row(0-based data), col, dataUrl}]
-function buildXlsx({ sheetName = "Лист1", header = [], rows = [], images = [], colWidths = [], imgColWidthPx = 64, imgRowHeightPx = 56 }) {
+function buildXlsx({ sheetName = "Лист1", title = "", subtitle = "", header = [], rows = [], totalsRow = null, images = [], colWidths = [], imgColWidthPx = 64, imgRowHeightPx = 56 }) {
   const EMU = 9525; // px → EMU
   const ncols = Math.max(header.length, ...rows.map((r) => r.length), 1);
-  const imgRows = new Set(images.map((im) => im.row));
-  const cell = (r, c, v) => {
-    const ref = _colRef(c) + (r + 1);
-    if (typeof v === "number" && isFinite(v)) return `<c r="${ref}"><v>${v}</v></c>`;
+  // Стили: 1=заголовок(крупный жирный), 2=подзаголовок(серый), 3=шапка(жирн+заливка+рамка), 4=итоги(жирн+верх.рамка)
+  const cell = (ref, v, s) => {
+    const sa = s ? ` s="${s}"` : "";
+    if (typeof v === "number" && isFinite(v)) return `<c r="${ref}"${sa}><v>${v}</v></c>`;
     const t = v == null ? "" : String(v);
-    if (t === "") return `<c r="${ref}"/>`;
-    return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${_xe(t)}</t></is></c>`;
+    if (t === "") return `<c r="${ref}"${sa}/>`;
+    return `<c r="${ref}"${sa} t="inlineStr"><is><t xml:space="preserve">${_xe(t)}</t></is></c>`;
   };
-  let sd = `<row r="1">` + header.map((h, c) => cell(0, c, h)).join("") + `</row>`;
+  // Порядок строк: [заголовок][подзаголовок] шапка данные [итоги]
+  const pre = [];
+  if (title) pre.push({ text: title, style: 1, ht: 26 });
+  if (subtitle) pre.push({ text: subtitle, style: 2, ht: 17 });
+  const preRows = pre.length;
+  const headerRow0 = preRows;            // 0-based индекс строки шапки
+  const dataStart0 = preRows + 1;        // 0-based индекс первой строки данных
+  const imgRows = new Set(images.map((im) => dataStart0 + im.row));
+  let sd = "";
+  // заголовок/подзаголовок (сливаются по всем колонкам)
+  pre.forEach((p, i) => { sd += `<row r="${i + 1}" ht="${p.ht}" customHeight="1">` + cell(_colRef(0) + (i + 1), p.text, p.style) + `</row>`; });
+  // шапка
+  sd += `<row r="${headerRow0 + 1}" ht="20" customHeight="1">` + header.map((h, c) => cell(_colRef(c) + (headerRow0 + 1), h, 3)).join("") + `</row>`;
+  // данные
   rows.forEach((row, ri) => {
-    const r = ri + 1;
-    const ht = imgRows.has(ri) ? ` ht="${Math.round(imgRowHeightPx * 0.75)}" customHeight="1"` : "";
-    sd += `<row r="${r + 1}"${ht}>` + row.map((v, c) => cell(r, c, v)).join("") + `</row>`;
+    const r0 = dataStart0 + ri;
+    const ht = imgRows.has(r0) ? ` ht="${Math.round(imgRowHeightPx * 0.75)}" customHeight="1"` : "";
+    sd += `<row r="${r0 + 1}"${ht}>` + row.map((v, c) => cell(_colRef(c) + (r0 + 1), v)).join("") + `</row>`;
   });
+  // итоги
+  if (totalsRow) {
+    const r0 = dataStart0 + rows.length;
+    sd += `<row r="${r0 + 1}" ht="20" customHeight="1">` + totalsRow.map((v, c) => cell(_colRef(c) + (r0 + 1), v, 4)).join("") + `</row>`;
+  }
+  const merges = pre.length
+    ? `<mergeCells count="${pre.length}">` + pre.map((p, i) => `<mergeCell ref="A${i + 1}:${_colRef(ncols - 1)}${i + 1}"/>`).join("") + `</mergeCells>`
+    : "";
   const cols = colWidths.length
     ? `<cols>` + colWidths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("") + `</cols>`
     : "";
-  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${cols}<sheetData>${sd}</sheetData>${images.length ? '<drawing r:id="rId1"/>' : ""}</worksheet>`;
+  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${cols}<sheetData>${sd}</sheetData>${merges}${images.length ? '<drawing r:id="rId1"/>' : ""}</worksheet>`;
 
   const media = images.map((im, i) => ({ name: `xl/media/image${i + 1}.jpeg`, data: _b64bytes(im.dataUrl.slice(im.dataUrl.indexOf(",") + 1)) }));
   const anchors = images.map((im, i) => {
     const cx = imgColWidthPx * EMU, cy = imgRowHeightPx * EMU;
-    return `<xdr:oneCellAnchor><xdr:from><xdr:col>${im.col}</xdr:col><xdr:colOff>${Math.round(4 * EMU)}</xdr:colOff><xdr:row>${im.row + 1}</xdr:row><xdr:rowOff>${Math.round(2 * EMU)}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${i + 2}" name="img${i + 1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId${i + 1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
+    return `<xdr:oneCellAnchor><xdr:from><xdr:col>${im.col}</xdr:col><xdr:colOff>${Math.round(4 * EMU)}</xdr:colOff><xdr:row>${dataStart0 + im.row}</xdr:row><xdr:rowOff>${Math.round(2 * EMU)}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${i + 2}" name="img${i + 1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId${i + 1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
   }).join("");
   const drawingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${anchors}</xdr:wsDr>`;
   const drawingRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${images.map((im, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${i + 1}.jpeg"/>`).join("")}</Relationships>`;
 
   const files = [
-    { name: "[Content_Types].xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+    { name: "[Content_Types].xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${images.length ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : ""}</Types>` },
     { name: "_rels/.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
     { name: "xl/workbook.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${_xe(sheetName).slice(0, 31)}" sheetId="1" r:id="rId1"/></sheets></workbook>` },
     { name: "xl/_rels/workbook.xml.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
-    { name: "xl/styles.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>` },
+    { name: "xl/styles.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="15"/><name val="Calibri"/></font><font><sz val="10"/><color rgb="FF8A8A90"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F4"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="3"><border/><border><bottom style="thin"><color rgb="FFBFBFBF"/></bottom></border><border><top style="medium"><color rgb="FF333333"/></top></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1"/></cellXfs></styleSheet>` },
     { name: "xl/worksheets/sheet1.xml", data: sheetXml },
   ];
   if (images.length) {
@@ -1766,10 +1787,13 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     });
     const header = ["Фото", "Код", "Товар", "Предмет", "Примечание", "Цена ¥/ед", "Вес, г", "Цена ₽/ед", ...sizeCols, "Кол-во", "Сумма ¥", "Сумма ₽", "Ссылка"];
     const rows = []; const images = [];
+    let totQty = 0, totWeightKg = 0, totCny = 0, totRub = 0;
     items.forEach((it, ri) => {
       const p = products.find((x) => x.id === it.productId) || {}; const pl = p.plan || {};
       const w = toNum(p?.purchase?.weightG), pc = toNum(it.priceCny), q = toNum(it.qty);
       const rubUnit = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) * feeMul + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
+      const qn = isNaN(q) ? 0 : q, pcn = isNaN(pc) ? 0 : pc, wn = isNaN(w) ? 0 : w;
+      totQty += qn; totWeightKg += (wn * qn) / 1000; totCny += pcn * qn; totRub += Math.round(rubUnit) * qn;
       const sizeMap = {};
       if (pl.oneSize) sizeMap[pl.oneLabel || "One size"] = isNaN(q) ? "" : q;
       else (pl.sizes || []).forEach((s) => { const v = toNum((it.qtyBySize || {})[s.id]); sizeMap[s.name || "—"] = isNaN(v) ? "" : v; });
@@ -1785,7 +1809,18 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       if (p.image && typeof p.image === "string" && p.image.startsWith("data:image")) images.push({ row: ri, col: 0, dataUrl: p.image });
     });
     const colWidths = [10, 10, 34, 16, 22, 10, 8, 10, ...sizeCols.map(() => 6), 8, 10, 11, 26];
-    const bytes = buildXlsx({ sheetName: (b.name || "Заказ").slice(0, 31), header, rows, images, colWidths, imgColWidthPx: 64, imgRowHeightPx: 56 });
+    // строка «Итого»
+    const totalsRow = new Array(header.length).fill("");
+    totalsRow[1] = "Итого";
+    totalsRow[6] = Math.round(totWeightKg * 10) / 10; // вес, кг (сумма) — в колонке «Вес, г», подпись в заголовке
+    const qtyCol = 8 + sizeCols.length;
+    totalsRow[qtyCol] = totQty;
+    totalsRow[qtyCol + 1] = Math.round(totCny);
+    totalsRow[qtyCol + 2] = Math.round(totRub);
+    const fmtNum = (n) => new Intl.NumberFormat("ru-RU").format(Math.round(n));
+    const title = `Закупка · ${b.name || "Партия"}`;
+    const subtitle = `${items.length} поз. · ${fmtNum(totQty)} шт · ${fmtNum(totWeightKg)} кг · ${fmtNum(totCny)} ¥ · ${fmtNum(totRub)} ₽ · выгружено ${new Date().toLocaleDateString("ru-RU")}`;
+    const bytes = buildXlsx({ sheetName: (b.name || "Заказ").slice(0, 31), title, subtitle, header, rows, totalsRow, images, colWidths, imgColWidthPx: 64, imgRowHeightPx: 56 });
     const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
     a.download = "zakaz_" + (String(b.name || "").replace(/[^0-9A-Za-zА-Яа-яЁё-]+/g, "_") || "partiya") + ".xlsx";
@@ -1996,7 +2031,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                 {allOpen ? "Свернуть всё" : "Развернуть всё"}
               </button>
             )}
-            <button onClick={exportCsv} title="Экспорт CSV" className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
+            <button onClick={exportCsv} title={activeTab === "purchases" ? "Выгрузка партии в Excel (с фото)" : "Экспорт CSV"} className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
               <Download size={16} />
             </button>
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
