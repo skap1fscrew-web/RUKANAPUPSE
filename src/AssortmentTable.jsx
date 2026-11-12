@@ -3311,14 +3311,14 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
             return (
               <div className="relative">
                 <button onClick={() => setTasksOpen((o) => !o)} title="Задачи по партии" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (tasksOpen ? "border-cyan-400 bg-cyan-50 text-cyan-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
-                  <ShoppingCart size={14} className={tasksOpen ? "text-cyan-600" : "text-neutral-400"} /> Задачи
+                  <ListChecks size={15} className={tasksOpen ? "text-cyan-600" : "text-neutral-400"} />
                   <span className={"inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold " + (batchJobs.length ? "bg-cyan-600 text-white" : "bg-neutral-200 text-neutral-500")}>{batchJobs.length}</span>
                   <ChevronDown size={12} className={"transition " + (tasksOpen ? "rotate-180" : "")} />
                 </button>
                 {tasksOpen && (<><div className="fixed inset-0 z-10" onClick={() => setTasksOpen(false)} />
                   <div className="absolute left-0 z-20 mt-1.5 w-[420px] max-w-[88vw] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
                     <div className="flex items-center gap-2.5 border-b border-neutral-100 px-4 py-3">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600"><ShoppingCart size={15} /></span>
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600"><ListChecks size={15} /></span>
                       <div className="min-w-0"><div className="text-[13px] font-bold text-neutral-900">Задачи по партии</div><div className="truncate text-[11px] text-neutral-400">{active.name || "Партия"} · {batchJobs.length} {batchJobs.length === 1 ? "задача" : batchJobs.length >= 2 && batchJobs.length <= 4 ? "задачи" : "задач"}</div></div>
                       <button onClick={() => setTasksOpen(false)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><X size={16} /></button>
                     </div>
