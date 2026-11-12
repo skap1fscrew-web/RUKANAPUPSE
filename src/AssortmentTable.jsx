@@ -5859,11 +5859,9 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
   const fmtDM = (d) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : "");
   const renderJobRow = (j) => {
     const isDone = stageOf(j) === "done";
-    const pr = PRIORITIES[j.priority];
     return (
       <div key={j.id} className="group flex items-center gap-2 rounded-lg border border-neutral-100 px-2 py-1.5 hover:border-neutral-200">
         <input type="checkbox" checked={isDone} onChange={() => toggleJob(j)} className="h-4 w-4 shrink-0 accent-green-600" />
-        {!isDone && pr && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: pr.color }} title={pr.name} />}
         {Array.isArray(j.files) && j.files.length > 0 && <Paperclip size={13} className="shrink-0 text-neutral-400" />}
         <button onClick={() => onOpenJob && onOpenJob(j)} className="min-w-0 flex-1 truncate text-left text-sm hover:underline" style={isDone ? { textDecoration: "line-through", color: "#a3a3a3" } : { color: "#171717" }} title={j.title || "Без названия"}>{stripProdSuffix(j.title, product && product.name) || "Без названия"}</button>
         {j.date && <span className="shrink-0 text-[11px] tabular-nums text-neutral-400">{fmtDM(j.date)}</span>}
