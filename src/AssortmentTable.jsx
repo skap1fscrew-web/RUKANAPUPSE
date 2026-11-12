@@ -2908,9 +2908,11 @@ function normDuties(v) {
 
 function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
   const d = duties && duties.areas ? duties : normDuties(duties);
-  const inTasks = new Set((opNames || []).map((n) => (n || "").trim()).filter(Boolean));
   const [expanded, setExpanded] = useState(() => new Set());
-  const [toast, setToast] = useState("");
+  const [view, setView] = useState(() => (lsGet("rnp.dutiesView", "list") === "cols" ? "cols" : "list"));
+  useEffect(() => lsSet("rnp.dutiesView", view), [view]);
+  const dragFnRef = useRef(null);
+  const [overArea, setOverArea] = useState(undefined);
   const [filterArea, setFilterArea] = useState(null);
   const [filterPerson, setFilterPerson] = useState(null);
   const [fpOpen, setFpOpen] = useState(false);
@@ -2918,12 +2920,6 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
   const [recKey, setRecKey] = useState(null);
   const [manageOpen, setManageOpen] = useState(false);
   const personById = Object.fromEntries(d.people.map((p) => [p.id, p]));
-  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 1800); return () => clearTimeout(t); }, [toast]);
-  const addToTasks = (sub) => {
-    const r = onAddOp ? onAddOp(sub.name, sub.recur) : "empty";
-    setToast(r === "added" ? "Добавлено в Задачи" : r === "exists" ? "Уже в Задачах" : "Введите название подзадачи");
-  };
-
   // Все мутации читают АКТУАЛЬНОЕ состояние из рефа, а не из устаревшего замыкания —
   // иначе быстрый ввод и перерисовки от облачного эха могли бы затирать правки.
   const stateRef = useRef(d); stateRef.current = d;
@@ -2992,7 +2988,10 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
       <div className="min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-3">
           <span className="text-sm font-bold text-neutral-800">Функциональные обязанности</span>
-          <button onClick={addFunction} className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Функция</button>
+          <div className="ml-auto inline-flex rounded-lg border border-neutral-200 bg-neutral-50 p-0.5">
+            {[["list", "Список"], ["cols", "Колонки"]].map(([k, n]) => <button key={k} onClick={() => setView(k)} className={"rounded-md px-2.5 py-1 text-xs font-semibold transition " + (view === k ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}>{n}</button>)}
+          </div>
+          <button onClick={addFunction} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Функция</button>
           <button onClick={() => setManageOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"><Users size={14} /> Управление</button>
         </div>
         {/* фильтры */}
@@ -3009,7 +3008,67 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
         </div>
 
         {/* группы по областям */}
-        {groups.map((g) => {
+        {view === "cols" ? (
+          <div className="grid gap-3 p-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))" }}>
+            {groups.map((g) => {
+              const aid = g.area ? g.area.id : null; const fns = g.fns.filter(fpMatch);
+              const accent = g.area ? g.area.color : "#a3a3a3";
+              return (
+                <div key={aid || "none"}
+                  onDragOver={(e) => { if (dragFnRef.current && g.area) { e.preventDefault(); setOverArea(aid); } }}
+                  onDragLeave={() => setOverArea((o) => (o === aid ? undefined : o))}
+                  onDrop={(e) => { e.preventDefault(); if (dragFnRef.current && g.area) patchFn(dragFnRef.current, { areaId: aid }); dragFnRef.current = null; setOverArea(undefined); }}
+                  className="flex min-w-0 flex-col rounded-2xl border p-2.5 transition" style={{ borderColor: overArea === aid ? accent : "#ececef", background: overArea === aid ? accent + "14" : "#fafafa" }}>
+                  <div className="mb-2 flex items-center gap-2 px-1">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: accent }} />
+                    <span className="truncate text-xs font-bold uppercase tracking-wide text-neutral-600">{g.area ? g.area.name : "Без области"}</span>
+                    <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{fns.length}</span>
+                    {g.area && !filterPerson && <button onClick={() => addFunctionTo(aid)} title="Добавить функцию" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-700"><Plus size={15} /></button>}
+                  </div>
+                  <div className="flex min-h-[40px] flex-col gap-2">
+                    {fns.map((f) => {
+                      const isOpen = expanded.has(f.id); const asg = f.assignee ? personById[f.assignee] : null;
+                      return (
+                        <div key={f.id} id={"fncard-" + f.id} className="rounded-xl border bg-white p-2.5 shadow-sm" style={{ borderColor: "#e5e5e5", borderLeft: `3px solid ${asg ? asg.color : accent}` }}>
+                          <div className="flex items-start gap-1.5">
+                            <span draggable onDragStart={(e) => { dragFnRef.current = f.id; const el = document.getElementById("fncard-" + f.id); if (el && e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setDragImage(el, 12, 12); } }} onDragEnd={() => { dragFnRef.current = null; setOverArea(undefined); }} className="mt-0.5 shrink-0 cursor-grab text-neutral-300 hover:text-neutral-500" title="Перетащить в другую область"><GripVertical size={14} /></span>
+                            <textarea value={f.name} rows={1} onChange={(e) => patchFn(f.id, { name: e.target.value })} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} placeholder="Название функции…" className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent text-sm font-semibold leading-snug text-neutral-800 focus:outline-none" />
+                            <button onClick={() => removeFunction(f.id)} className="shrink-0 text-neutral-300 hover:text-red-500" title="Удалить функцию"><X size={13} /></button>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <RecBadge recur={f.recur} k={`f:${f.id}`} onChange={(r) => patchFn(f.id, { recur: r })} />
+                            <Pill who={f.assignee} k={`f:${f.id}`} onPick={(pid) => patchFn(f.id, { assignee: pid })} />
+                          </div>
+                          <button onClick={() => setExpanded((st) => { const n = new Set(st); n.has(f.id) ? n.delete(f.id) : n.add(f.id); return n; })} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400 hover:text-neutral-600">
+                            {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Подфункции{f.subs.length > 0 && <span className="rounded-full bg-neutral-100 px-1.5 text-[10px] font-bold text-neutral-500">{f.subs.length}</span>}
+                          </button>
+                          {isOpen && (
+                            <div className="mt-1.5 flex flex-col gap-1.5">
+                              {f.subs.map((sb) => (
+                                <div key={sb.id} className="rounded-lg bg-neutral-50 p-2">
+                                  <div className="flex items-start gap-1.5">
+                                    <input value={sb.name} onChange={(e) => patchSub(f.id, sb.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-700 focus:outline-none" />
+                                    <button onClick={() => removeSub(f.id, sb.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={12} /></button>
+                                  </div>
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                    <RecBadge recur={sb.recur} k={`s:${f.id}:${sb.id}`} onChange={(r) => patchSub(f.id, sb.id, { recur: r })} />
+                                    <Pill who={sb.assignee} k={`s:${f.id}:${sb.id}`} onPick={(pid) => patchSub(f.id, sb.id, { assignee: pid })} />
+                                  </div>
+                                </div>
+                              ))}
+                              <button onClick={() => addSub(f.id)} className="inline-flex w-fit items-center gap-1 text-[12px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={12} /> Подфункция</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {fns.length === 0 && <div className="rounded-xl border border-dashed border-neutral-200 px-3 py-4 text-center text-xs text-neutral-300">Пусто</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : groups.map((g) => {
           const fns = g.fns.filter(fpMatch);
           const subCount = g.fns.reduce((a, f) => a + f.subs.length, 0);
           return (
@@ -3037,9 +3096,6 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
                             <input value={s.name} onChange={(e) => patchSub(f.id, s.id, { name: e.target.value })} placeholder="Подфункция…" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-600 focus:outline-none" />
                             <RecBadge recur={s.recur} k={`s:${f.id}:${s.id}`} onChange={(r) => patchSub(f.id, s.id, { recur: r })} />
                             <Pill who={s.assignee} k={`s:${f.id}:${s.id}`} onPick={(pid) => patchSub(f.id, s.id, { assignee: pid })} />
-                            {(() => { const inT = inTasks.has((s.name || "").trim()); return (
-                              <button onClick={() => addToTasks(s)} className={"shrink-0 rounded-md p-1 " + (inT ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "text-neutral-300 hover:bg-neutral-100 hover:text-neutral-700")} title={inT ? "Уже в Задачах" : "Добавить в Задачи (операционная задача)"}><CalendarPlus size={14} /></button>
-                            ); })()}
                             <button onClick={() => removeSub(f.id, s.id)} className="shrink-0 text-neutral-300 hover:text-red-500"><X size={13} /></button>
                           </div>
                         ))}
@@ -3104,7 +3160,6 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
         </div>
       )}
 
-      {toast && <div className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">{toast}</div>}
     </div>
   );
 }
