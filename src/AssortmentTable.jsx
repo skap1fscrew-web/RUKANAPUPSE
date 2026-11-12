@@ -1019,7 +1019,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       try {
         const { products: prods, settings, jobs: jobRows } = await fetchAll();
         const norm = (prods || []).map(normalizeProduct);
-        setProducts(norm);
+        // у старых товаров нет даты добавления — проставляем по текущему порядку списка (сверху самый старый)
+        const base = Date.now() - (norm.length + 1) * 1000;
+        const stamped = norm.map((p, i) => (p.createdAt ? p : { ...p, createdAt: base + i * 1000 }));
+        setProducts(stamped);
         norm.forEach((p) => syncedRef.current.products.set(p.id, JSON.stringify(p)));
         if (Array.isArray(settings.statuses) && settings.statuses.length) { setStatuses(settings.statuses); syncedRef.current.settings.statuses = JSON.stringify(settings.statuses); }
         if (Array.isArray(settings.warehouses) && settings.warehouses.length) { setWarehouses(settings.warehouses); syncedRef.current.settings.warehouses = JSON.stringify(settings.warehouses); }
@@ -1419,7 +1422,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const addProduct = () =>
     setProducts((p) => [
       ...p,
-      normalizeProduct({ status: statuses[0]?.name || "" }),
+      normalizeProduct({ status: statuses[0]?.name || "", createdAt: Date.now() }),
     ]);
 
   // добавить товар в выбранную партию закупки
@@ -1564,7 +1567,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const transferPurchase = (id) => {
     const item = purchases.find((x) => x.id === id);
     if (!item) return;
-    setProducts((ps) => [...ps, normalizeProduct({ image: item.image, name: item.name, status: statuses[0]?.name || "" })]);
+    setProducts((ps) => [...ps, normalizeProduct({ image: item.image, name: item.name, status: statuses[0]?.name || "", createdAt: Date.now() })]);
     setPurchases((p) => p.filter((x) => x.id !== id));
   };
 
@@ -1797,7 +1800,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       if (meta.filter === "text") { const q = (colFilters[id] || "").trim().toLowerCase(); if (q && !String(p[meta.field] || "").toLowerCase().includes(q)) return false; }
     }
     return true;
-  });
+  }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); // новые товары сверху, старые снизу
 
   const lefts = [];
   let acc = 0;
