@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment } from "react";
-import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, subscribe } from "./lib/cloud";
+import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow, deleteJobRow, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
@@ -934,6 +934,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const syncedRef = useRef({ products: new Map(), settings: {} });
   const dirtyRef = useRef({ products: new Set(), settings: new Set() });
   const desiredRef = useRef({ settings: {} }); // последнее желаемое значение каждого ключа (для защиты от гонки эха)
+  // Задачи хранятся построчно (таблица jobs). Рефы для diff-записи и защиты от эха.
+  const syncedJobsRef = useRef({}); // id -> JSON последней синхронизированной версии задачи
+  const desiredJobsRef = useRef({}); // id -> JSON последнего желаемого значения
+  const dirtyJobsRef = useRef(new Set()); // id задач с несохранённой локальной правкой
   const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], purchaseBatches: [], jobs: [], opTypes: [], subjects: [], customDBs: [] });
   listSettingsRef.current = { bloggerDB, razdachDB, purchases, purchaseBatches, jobs, opTypes, subjects, customDBs };
 
@@ -958,7 +962,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   useEffect(() => {
     (async () => {
       try {
-        const { products: prods, settings } = await fetchAll();
+        const { products: prods, settings, jobs: jobRows } = await fetchAll();
         const norm = (prods || []).map(normalizeProduct);
         setProducts(norm);
         norm.forEach((p) => syncedRef.current.products.set(p.id, JSON.stringify(p)));
@@ -966,7 +970,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (Array.isArray(settings.warehouses) && settings.warehouses.length) { setWarehouses(settings.warehouses); syncedRef.current.settings.warehouses = JSON.stringify(settings.warehouses); }
         if (Array.isArray(settings.purchases)) { setPurchases(settings.purchases); syncedRef.current.settings.purchases = JSON.stringify(settings.purchases); }
         if (Array.isArray(settings.purchaseBatches)) { setPurchaseBatches(settings.purchaseBatches); syncedRef.current.settings.purchaseBatches = JSON.stringify(settings.purchaseBatches); }
-        if (Array.isArray(settings.jobs)) { setJobs(settings.jobs); syncedRef.current.settings.jobs = JSON.stringify(settings.jobs); }
+        // Задачи: из таблицы jobs, если там есть строки; иначе фолбэк на старый блоб settings.jobs (до миграции).
+        const loadedJobs = (Array.isArray(jobRows) && jobRows.length) ? jobRows : (Array.isArray(settings.jobs) ? settings.jobs : []);
+        setJobs(loadedJobs);
+        syncedJobsRef.current = {}; loadedJobs.forEach((j) => { if (j && j.id) syncedJobsRef.current[j.id] = JSON.stringify(j); });
         if (Array.isArray(settings.bloggerDB)) { setBloggerDB(settings.bloggerDB); syncedRef.current.settings.bloggerDB = JSON.stringify(settings.bloggerDB); }
         if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = JSON.stringify(settings.razdachDB); }
         if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
@@ -1159,7 +1166,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1202,7 +1209,49 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, jobs, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+
+  // Построчное сохранение задач (таблица jobs). Пишем только изменённые строки,
+  // удаляем только исчезнувшие — чужая старая копия массива больше не затирает соседние задачи.
+  useEffect(() => {
+    if (!loaded) return;
+    // синхронно помечаем изменённые/удалённые задачи «грязными» (защита от realtime-эха)
+    const cur = {};
+    (jobs || []).forEach((j) => { if (j && j.id) cur[j.id] = JSON.stringify(j); });
+    desiredJobsRef.current = cur;
+    for (const id in cur) { if (syncedJobsRef.current[id] !== cur[id]) dirtyJobsRef.current.add(id); }
+    for (const id in syncedJobsRef.current) { if (!(id in cur)) dirtyJobsRef.current.add(id); }
+
+    const t = setTimeout(async () => {
+      // upsert изменённых/новых
+      for (const j of (jobs || [])) {
+        if (!j || !j.id) continue;
+        const js = JSON.stringify(j);
+        if (syncedJobsRef.current[j.id] === js) continue;
+        try {
+          const { error } = await upsertJobRow(j);
+          if (!error) { syncedJobsRef.current[j.id] = js; if (desiredJobsRef.current[j.id] === js) dirtyJobsRef.current.delete(j.id); }
+          else console.error("[Задачи] не сохранилась", j.id, error.message || error);
+        } catch (e) { console.error("[Задачи] сбой сохранения", j.id, e); }
+      }
+      // удаление исчезнувших строк — с барьером против катастрофического обнуления
+      const prevCount = Object.keys(syncedJobsRef.current).length;
+      const nowCount = Object.keys(desiredJobsRef.current).length;
+      if (prevCount > 0 && nowCount === 0) {
+        console.warn("[Задачи] пропускаю удаление всех строк — список внезапно пуст (вероятно сбой стейта).");
+      } else {
+        for (const id of Object.keys(syncedJobsRef.current)) {
+          if (id in desiredJobsRef.current) continue;
+          try {
+            const { error } = await deleteJobRow(id);
+            if (!error) { delete syncedJobsRef.current[id]; dirtyJobsRef.current.delete(id); }
+            else console.error("[Задачи] не удалилась", id, error.message || error);
+          } catch (e) { console.error("[Задачи] сбой удаления", id, e); }
+        }
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [jobs, loaded]);
 
   // Миграция/привязка профилей: создаём профили известных пользователей (по раскладке),
   // переиспользуя id существующих исполнителей (чтобы уже проставленные назначения задач не слетели),
@@ -1240,6 +1289,15 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         setProducts((prev) => { const i = prev.findIndex((x) => x.id === np.id); if (i === -1) return [...prev, np]; const c = prev.slice(); c[i] = np; return c; });
       },
       onProductDelete: (id) => { if (dirtyRef.current.products.has(id)) return; syncedRef.current.products.delete(id); setProducts((prev) => prev.filter((x) => x.id !== id)); },
+      onJob: (j) => {
+        if (!j || !j.id) return;
+        const js = JSON.stringify(j);
+        if (syncedJobsRef.current[j.id] === js) return;
+        if (dirtyJobsRef.current.has(j.id)) return; // своя несохранённая правка — не трогаем
+        syncedJobsRef.current[j.id] = js;
+        setJobs((prev) => { const i = prev.findIndex((x) => x.id === j.id); if (i === -1) return [...prev, j]; const c = prev.slice(); c[i] = j; return c; });
+      },
+      onJobDelete: (id) => { if (dirtyJobsRef.current.has(id)) return; delete syncedJobsRef.current[id]; setJobs((prev) => prev.filter((x) => x.id !== id)); },
       onSetting: (key, value) => {
         const js = JSON.stringify(value);
         if (syncedRef.current.settings[key] === js) return;
@@ -1265,7 +1323,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         else if (key === "warehouses") setWarehouses(value);
         else if (key === "purchases") setPurchases(value);
         else if (key === "purchaseBatches") setPurchaseBatches(value || []);
-        else if (key === "jobs") setJobs(value || []);
         else if (key === "bloggerDB") setBloggerDB(value);
         else if (key === "razdachDB") setRazdachDB(value);
         else if (key === "defaultTasks") setDefaultTasks(value || []);
@@ -2434,7 +2491,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             }
           }}
           onDelete={(id) => { removeJob(id); removeOpType(id); setJobEditor(null); }}
-          onOpenProduct={(pid) => pid && setCardModal(pid)}
+          onOpenProduct={(pid) => { if (pid) { setJobEditor(null); setCardModal(pid); } }}
           onClose={() => setJobEditor(null)}
         />
       )}
@@ -2483,7 +2540,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         const cp = products.find((x) => x.id === cardModal);
         if (!cp) return null;
         return (
-          <div className="relative z-[95]">
           <CardTasksModal
             product={withConst(cp)}
             statuses={statuses}
@@ -2535,7 +2591,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             onFetchWb={fetchWbOrders}
             onClose={() => setCardModal(null)}
           />
-          </div>
         );
       })()}
 
