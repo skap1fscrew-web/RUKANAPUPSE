@@ -7028,8 +7028,8 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const dragRef = useRef(null);
   const [overCol, setOverCol] = useState(null);
-  const [doneCollapsed, setDoneCollapsed] = useState(() => lsGet("rnp.kanbanDoneCollapsed", true));
-  useEffect(() => lsSet("rnp.kanbanDoneCollapsed", doneCollapsed), [doneCollapsed]);
+  const [colsCollapsed, setColsCollapsed] = useState(() => { const v = lsGet("rnp.kanbanColsCollapsed", null); return v && typeof v === "object" ? v : { done: lsGet("rnp.kanbanDoneCollapsed", true) }; });
+  useEffect(() => lsSet("rnp.kanbanColsCollapsed", colsCollapsed), [colsCollapsed]);
   const tagById = Object.fromEntries((tags || []).map((t) => [t.id, t]));
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
   const labelColor = (id) => (taskLabels || []).find((l) => l.id === id)?.color;
@@ -7082,7 +7082,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
 
   return (
     <div className="flex min-h-full gap-3 pb-1">
-      {columns.map((col) => { const isDoneCol = groupBy === "status" && col.key === "done"; const collapsed = isDoneCol && doneCollapsed; const wideCol = wide && groupBy === "status" && !collapsed; return (
+      {columns.map((col) => { const isDoneCol = groupBy === "status"; const collapsed = isDoneCol && (col.key in colsCollapsed ? !!colsCollapsed[col.key] : false); const wideCol = wide && groupBy === "status" && !collapsed; return (
         <div key={col.key}
           onDragOver={(e) => { e.preventDefault(); setOverCol(col.key); }}
           onDragLeave={() => setOverCol((o) => (o === col.key ? null : o))}
@@ -7090,7 +7090,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
           className={"flex shrink-0 flex-col rounded-2xl border p-2.5 transition " + (collapsed ? "w-auto self-start" : (wideCol ? "w-[30rem]" : "w-72"))}
           style={{ borderColor: overCol === col.key ? "#fdba74" : "#ececef", background: overCol === col.key ? "#fff7ed" : "#fafafa" }}>
           <div className={"flex items-center gap-2 px-1 " + (collapsed ? "" : "mb-2")}>
-            {isDoneCol && <button onClick={() => setDoneCollapsed((v) => !v)} title={collapsed ? "Раскрыть" : "Свернуть"} className="-ml-0.5 shrink-0 text-neutral-400 transition hover:text-neutral-700"><ChevronRight size={15} className={"transition " + (collapsed ? "" : "rotate-90")} /></button>}
+            {isDoneCol && <button onClick={() => setColsCollapsed((o) => ({ ...o, [col.key]: !collapsed }))} title={collapsed ? "Раскрыть" : "Свернуть"} className="-ml-0.5 shrink-0 text-neutral-400 transition hover:text-neutral-700"><ChevronRight size={15} className={"transition " + (collapsed ? "" : "rotate-90")} /></button>}
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: col.color }} />
             <span className="truncate text-xs font-bold uppercase tracking-wide text-neutral-600">{col.name}</span>
             <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{byCol[col.key].length}</span>
