@@ -3128,8 +3128,22 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const [factOpen, setFactOpen] = useState(false);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false); // поповер «Задачи по партии»
-  const [qtyOpen, setQtyOpen] = useState({}); // раскрытые ячейки «Кол-во» по id позиции
-  const toggleQty = (iid) => setQtyOpen((o) => ({ ...o, [iid]: !o[iid] }));
+  const [qtyPop, setQtyPop] = useState(null); // мини-окно размеров: {id, top, right, up}
+  const qtyOpen = qtyPop ? { [qtyPop.id]: true } : {};
+  const toggleQty = (iid, el) => setQtyPop((cur) => {
+    if (cur && cur.id === iid) return null;
+    const r = el ? el.getBoundingClientRect() : { bottom: 0, top: 0, right: 0 };
+    const below = window.innerHeight - r.bottom;
+    return { id: iid, right: Math.max(8, window.innerWidth - r.right), top: r.bottom + 6, bottom: window.innerHeight - r.top + 6, up: below < 260 && r.top > below };
+  });
+  useEffect(() => {
+    if (!qtyPop) return;
+    const close = () => setQtyPop(null);
+    const key = (e) => { if (e.key === "Escape") close(); };
+    const arm = setTimeout(() => window.addEventListener("scroll", close, true), 250); // не реагируем на скролл от автофокуса
+    window.addEventListener("resize", close); window.addEventListener("keydown", key);
+    return () => { clearTimeout(arm); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); window.removeEventListener("keydown", key); };
+  }, [qtyPop]);
   const active = list.find((b) => b.id === activeId) || list[0] || null;
   useEffect(() => { onActiveChange && onActiveChange(active ? active.id : null); }, [active && active.id]);
 
@@ -3415,10 +3429,42 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                   <td className="px-3 py-2 text-right text-neutral-500">{isNaN(w) ? "—" : w}</td>
                   <td className="px-3 py-2 text-right text-neutral-500">{fmtRub(rubUnit)}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => toggleQty(it.id)} title="Количество по размерам" className={"inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold transition " + (open ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-800 hover:border-neutral-300")}>
+                    <button onClick={(e) => toggleQty(it.id, e.currentTarget)} title="Количество по размерам" className={"inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold transition " + (open ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-800 hover:border-neutral-300")}>
                       {qTotal ? qTotal.toLocaleString("ru-RU") : "0"}
                       {open ? <ChevronUp size={12} className="text-neutral-400" /> : <ChevronDown size={12} className="text-neutral-400" />}
                     </button>
+                    {open && qtyPop && (<>
+                      <div className="fixed inset-0 z-40" onClick={() => setQtyPop(null)} />
+                      <div className="fixed z-50 w-[300px] rounded-2xl border border-neutral-200 bg-white p-3.5 text-left shadow-2xl" style={{ right: qtyPop.right, ...(qtyPop.up ? { bottom: qtyPop.bottom } : { top: qtyPop.top }) }}>
+                        <div className="mb-2.5 flex items-center gap-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">{pOne || pSizes.length > 0 ? "Количество по размерам" : "Количество"}</span>
+                          <button onClick={() => setQtyPop(null)} className="ml-auto text-neutral-300 hover:text-neutral-600"><X size={14} /></button>
+                        </div>
+                        {pOne ? (
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-teal-100 bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-700"><Target size={13} /> {p.plan?.oneLabel || "One size"}</span>
+                            <input autoFocus value={it.qty} onChange={(e) => setItem(it.id, "qty", e.target.value)} inputMode="numeric" placeholder="0" className="w-20 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                          </div>
+                        ) : pSizes.length > 0 ? (
+                          <div className="flex flex-wrap gap-2.5">
+                            {pSizes.map((s, si) => (
+                              <div key={s.id} className="flex flex-col items-center gap-1">
+                                <span className="text-xs font-bold text-teal-700">{s.name || "—"}</span>
+                                <input autoFocus={si === 0} value={(it.qtyBySize || {})[s.id] ?? ""} onChange={(e) => setItemSizeQty(it.id, s.id, e.target.value)} inputMode="numeric" placeholder="0" className="w-14 rounded-lg border border-neutral-200 px-1 py-1.5 text-center text-[15px] font-bold focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-neutral-500">
+                            <div>У товара не задан размерный ряд. <button onClick={() => { setQtyPop(null); onOpenCard && onOpenCard(it.productId); }} className="text-blue-600 hover:underline">Задать в карточке →</button></div>
+                            <div className="mt-2.5 flex items-center gap-2"><span>Общее кол-во:</span><input autoFocus value={it.qty} onChange={(e) => setItem(it.id, "qty", e.target.value)} inputMode="numeric" placeholder="0" className="w-24 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" /></div>
+                          </div>
+                        )}
+                        <div className="mt-3 flex items-center border-t border-neutral-100 pt-2.5 text-xs text-neutral-500">Итого: <b className="ml-1 text-[13px] text-neutral-900">{qTotal || 0} шт</b>
+                          <button onClick={() => setQtyPop(null)} className="ml-auto rounded-lg bg-neutral-900 px-3 py-1 text-xs font-semibold text-white hover:bg-neutral-700">Готово</button>
+                        </div>
+                      </div>
+                    </>)}
                   </td>
                   <td className="px-3 py-2 text-right">{fmtCny(sumCny)}</td>
                   <td className="px-3 py-2 text-right font-semibold text-neutral-900">{fmtRub(sumRub)}</td>
@@ -3426,39 +3472,6 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                   <td className="px-3 py-2 text-center"><input type="checkbox" checked={!!it.ordered} onChange={(e) => setItem(it.id, "ordered", e.target.checked)} title={it.ordered ? "Заказан" : "Ещё не заказан"} className="h-4 w-4 cursor-pointer accent-green-600" /></td>
                   <td className="px-3 py-2 text-right"><button onClick={() => removeItem(it.id)} className="text-neutral-300 hover:text-red-500" title="Убрать из партии"><X size={14} /></button></td>
                 </tr>
-                {open && (
-                  <tr className="text-sm">
-                    <td colSpan={12} className="bg-neutral-50/70 px-4 py-3" style={{ borderTop: "1px dashed #e5e5e5" }}>
-                      {pOne ? (
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-teal-100 bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-700"><Target size={13} /> {p.plan?.oneLabel || "One size"}</span>
-                          <input value={it.qty} onChange={(e) => setItem(it.id, "qty", e.target.value)} inputMode="numeric" placeholder="0" className="w-20 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                          <span className="text-xs text-neutral-400">единый размер — одно число</span>
-                        </div>
-                      ) : pSizes.length > 0 ? (
-                        <>
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Количество по размерам</div>
-                          <div className="flex flex-wrap gap-3">
-                            {pSizes.map((s) => (
-                              <div key={s.id} className="flex flex-col items-center gap-1">
-                                <span className="text-xs font-bold text-teal-700">{s.name || "—"}</span>
-                                <input value={(it.qtyBySize || {})[s.id] ?? ""} onChange={(e) => setItemSizeQty(it.id, s.id, e.target.value)} inputMode="numeric" placeholder="0" className="w-16 rounded-md border border-neutral-200 px-2 py-1.5 text-center font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                              </div>
-                            ))}
-                          </div>
-                          <div className="mt-2.5 text-xs text-neutral-500">Итого: <b className="text-neutral-800">{qTotal || 0} шт</b> · подставляется в «Кол-во» и суммы</div>
-                        </>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-1.5 text-sm text-neutral-500">
-                          <span>У товара не задан размерный ряд.</span>
-                          <button onClick={() => onOpenCard && onOpenCard(it.productId)} className="text-blue-600 hover:underline">Задать размеры в карточке →</button>
-                          <span>или введите общее количество:</span>
-                          <input value={it.qty} onChange={(e) => setItem(it.id, "qty", e.target.value)} inputMode="numeric" placeholder="0" className="ml-1 w-20 rounded-md border border-neutral-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                )}
                 </Fragment>
                 );
               })}
