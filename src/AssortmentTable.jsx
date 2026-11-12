@@ -3237,13 +3237,13 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
             <ChevronDown size={11} className={"transition " + (cycOpen ? "rotate-180" : "")} />
           </button>
           <div className="relative">
-            <button onClick={() => setRatesOpen((o) => !o)} title="Курсы и комиссии партии" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (ratesOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
-              <Settings2 size={14} className={ratesOpen ? "text-white" : "text-neutral-400"} /> Курсы и комиссии
+            <button onClick={() => setRatesOpen((o) => !o)} title="Ставки партии" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (ratesOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
+              <Settings2 size={14} className={ratesOpen ? "text-white" : "text-neutral-400"} /> Ставки
               <ChevronDown size={12} className={"transition " + (ratesOpen ? "rotate-180" : "")} />
             </button>
             {ratesOpen && (<><div className="fixed inset-0 z-10" onClick={() => setRatesOpen(false)} />
               <div className="absolute left-0 z-20 mt-1.5 w-60 rounded-xl border border-neutral-200 bg-white p-2.5 shadow-xl">
-                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Курсы и комиссии партии</div>
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Ставки партии</div>
                 <div className="space-y-1.5">{rate("Курс ¥", "cny", "₽")}{rate("Курс $", "usd", "₽")}{rate("Карго", "cargo", "$/кг")}{rate("Комиссия", "commission", "%")}{rate("Страховка", "insurance", "%")}</div>
               </div></>)}
           </div>
@@ -3391,6 +3391,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
               <th className="px-3 py-2 text-right font-semibold">Сумма ¥</th>
               <th className="px-3 py-2 text-right font-semibold">Сумма ₽</th>
               <th className="px-3 py-2 text-left font-semibold">Ссылка</th>
+              <th className="px-3 py-2 text-center font-semibold" title="Отметьте, когда товар заказан у поставщика">Заказан <span className="font-bold text-neutral-400">{rows.filter((r) => r.it.ordered).length}/{rows.length}</span></th>
               <th className="px-3 py-2" />
             </tr></thead>
             <tbody>
@@ -3422,11 +3423,12 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                   <td className="px-3 py-2 text-right">{fmtCny(sumCny)}</td>
                   <td className="px-3 py-2 text-right font-semibold text-neutral-900">{fmtRub(sumRub)}</td>
                   <td className="px-3 py-2 text-left">{p?.purchase?.link ? <a href={p.purchase.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">ссылка <ExternalLink size={11} /></a> : <span className="text-xs text-neutral-300">—</span>}</td>
+                  <td className="px-3 py-2 text-center"><input type="checkbox" checked={!!it.ordered} onChange={(e) => setItem(it.id, "ordered", e.target.checked)} title={it.ordered ? "Заказан" : "Ещё не заказан"} className="h-4 w-4 cursor-pointer accent-green-600" /></td>
                   <td className="px-3 py-2 text-right"><button onClick={() => removeItem(it.id)} className="text-neutral-300 hover:text-red-500" title="Убрать из партии"><X size={14} /></button></td>
                 </tr>
                 {open && (
                   <tr className="text-sm">
-                    <td colSpan={11} className="bg-neutral-50/70 px-4 py-3" style={{ borderTop: "1px dashed #e5e5e5" }}>
+                    <td colSpan={12} className="bg-neutral-50/70 px-4 py-3" style={{ borderTop: "1px dashed #e5e5e5" }}>
                       {pOne ? (
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="inline-flex items-center gap-1.5 rounded-lg border border-teal-100 bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-700"><Target size={13} /> {p.plan?.oneLabel || "One size"}</span>
