@@ -742,6 +742,31 @@ function fileToThumb(file, max = 240) {
     img.src = url;
   });
 }
+// Любое изображение (data URL/ссылка) → чистый JPEG data URL + размеры. null, если не удалось (битое/CORS).
+function imgToJpeg(src, maxSide = 220) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      if (!/^data:/.test(src)) img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+          if (!iw || !ih) return resolve(null);
+          const k = Math.min(1, maxSide / Math.max(iw, ih));
+          const cv = document.createElement("canvas");
+          cv.width = Math.max(1, Math.round(iw * k)); cv.height = Math.max(1, Math.round(ih * k));
+          const ctx = cv.getContext("2d");
+          ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, cv.width, cv.height);
+          ctx.drawImage(img, 0, 0, cv.width, cv.height);
+          const dataUrl = cv.toDataURL("image/jpeg", 0.85);
+          resolve(/^data:image\/jpeg/.test(dataUrl) ? { dataUrl, w: cv.width, h: cv.height } : null);
+        } catch { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    } catch { resolve(null); }
+  });
+}
 function fileToDataURL(file) {
   return new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
 }
@@ -786,12 +811,13 @@ function _colRef(n) { let s = ""; n++; while (n > 0) { const m = (n - 1) % 26; s
 // header: [строки], rows: [[ячейки]] (число → числовая, иначе текст), images: [{row(0-based data), col, dataUrl}]
 function buildXlsx({ sheetName = "Лист1", title = "", subtitle = "", header = [], rows = [], totalsRow = null, images = [], colWidths = [], imgColWidthPx = 64, imgRowHeightPx = 56 }) {
   const EMU = 9525; // px → EMU
+  sheetName = (String(sheetName || "").replace(/[\\/?*\[\]:]/g, " ").replace(/^'+|'+$/g, "").trim().slice(0, 31)) || "Лист1"; // Excel запрещает \ / ? * [ ] : в имени листа
   const ncols = Math.max(header.length, ...rows.map((r) => r.length), 1);
   // Стили: 1=заголовок(крупный жирный), 2=подзаголовок(серый), 3=шапка(жирн+заливка+рамка), 4=итоги(жирн+верх.рамка)
   const cell = (ref, v, s) => {
     const sa = s ? ` s="${s}"` : "";
     if (typeof v === "number" && isFinite(v)) return `<c r="${ref}"${sa}><v>${v}</v></c>`;
-    const t = v == null ? "" : String(v);
+    const t = v == null ? "" : String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, "");
     if (t === "") return `<c r="${ref}"${sa}/>`;
     return `<c r="${ref}"${sa} t="inlineStr"><is><t xml:space="preserve">${_xe(t)}</t></is></c>`;
   };
@@ -829,8 +855,10 @@ function buildXlsx({ sheetName = "Лист1", title = "", subtitle = "", header 
 
   const media = images.map((im, i) => ({ name: `xl/media/image${i + 1}.jpeg`, data: _b64bytes(im.dataUrl.slice(im.dataUrl.indexOf(",") + 1)) }));
   const anchors = images.map((im, i) => {
-    const cx = imgColWidthPx * EMU, cy = imgRowHeightPx * EMU;
-    return `<xdr:oneCellAnchor><xdr:from><xdr:col>${im.col}</xdr:col><xdr:colOff>${Math.round(4 * EMU)}</xdr:colOff><xdr:row>${dataStart0 + im.row}</xdr:row><xdr:rowOff>${Math.round(2 * EMU)}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${i + 2}" name="img${i + 1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId${i + 1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
+    const boxW = imgColWidthPx - 8, boxH = imgRowHeightPx - 4;
+    const k = (im.w && im.h) ? Math.min(boxW / im.w, boxH / im.h) : 1;
+    const cx = Math.round(((im.w && im.h) ? im.w * k : boxW) * EMU), cy = Math.round(((im.w && im.h) ? im.h * k : boxH) * EMU);
+    return `<xdr:oneCellAnchor><xdr:from><xdr:col>${im.col}</xdr:col><xdr:colOff>${Math.round(4 * EMU)}</xdr:colOff><xdr:row>${dataStart0 + im.row}</xdr:row><xdr:rowOff>${Math.round(2 * EMU)}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${i + 2}" name="img${i + 1}"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId${i + 1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
   }).join("");
   const drawingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${anchors}</xdr:wsDr>`;
   const drawingRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${images.map((im, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${i + 1}.jpeg"/>`).join("")}</Relationships>`;
@@ -840,7 +868,7 @@ function buildXlsx({ sheetName = "Лист1", title = "", subtitle = "", header 
     { name: "_rels/.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
     { name: "xl/workbook.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${_xe(sheetName).slice(0, 31)}" sheetId="1" r:id="rId1"/></sheets></workbook>` },
     { name: "xl/_rels/workbook.xml.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
-    { name: "xl/styles.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="15"/><name val="Calibri"/></font><font><sz val="10"/><color rgb="FF8A8A90"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F4"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="3"><border/><border><bottom style="thin"><color rgb="FFBFBFBF"/></bottom></border><border><top style="medium"><color rgb="FF333333"/></top></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1"/></cellXfs></styleSheet>` },
+    { name: "xl/styles.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="15"/><name val="Calibri"/></font><font><sz val="10"/><color rgb="FF8A8A90"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F4"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="3"><border/><border><bottom style="thin"><color rgb="FFBFBFBF"/></bottom></border><border><top style="medium"><color rgb="FF333333"/></top></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1"/></cellXfs></styleSheet>` },
     { name: "xl/worksheets/sheet1.xml", data: sheetXml },
   ];
   if (images.length) {
@@ -1772,7 +1800,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
   /* --- экспорт --- */
   // Экспорт текущей партии закупки в .xlsx (с картинками и кол-вом по размерам)
-  const exportPurchaseXlsx = () => {
+  const exportPurchaseXlsx = async () => {
     const b = (purchaseBatches || []).find((x) => x.id === purchActiveId) || (purchaseBatches || [])[0];
     if (!b) return;
     const cny = toNum(b.cny), usd = toNum(b.usd), cargo = toNum(b.cargo);
@@ -1786,14 +1814,14 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       else (pl.sizes || []).forEach((s) => { const nm = s.name || "—"; if (!seen.has(nm)) { seen.add(nm); sizeCols.push(nm); } });
     });
     const header = ["Фото", "Код", "Товар", "Предмет", "Примечание", "Цена ¥/ед", "Вес, г", "Цена ₽/ед", ...sizeCols, "Кол-во", "Сумма ¥", "Сумма ₽", "Ссылка"];
-    const rows = []; const images = [];
+    const rows = []; const images = []; const imgSrc = [];
     let totQty = 0, totWeightKg = 0, totCny = 0, totRub = 0;
     items.forEach((it, ri) => {
       const p = products.find((x) => x.id === it.productId) || {}; const pl = p.plan || {};
       const w = toNum(p?.purchase?.weightG), pc = toNum(it.priceCny), q = toNum(it.qty);
       const rubUnit = (isNaN(cny) ? 0 : cny) * (isNaN(pc) ? 0 : pc) * feeMul + (isNaN(cargo) ? 0 : cargo) * ((isNaN(w) ? 0 : w) / 1000) * (isNaN(usd) ? 0 : usd);
       const qn = isNaN(q) ? 0 : q, pcn = isNaN(pc) ? 0 : pc, wn = isNaN(w) ? 0 : w;
-      totQty += qn; totWeightKg += (wn * qn) / 1000; totCny += pcn * qn; totRub += Math.round(rubUnit) * qn;
+      totQty += qn; totWeightKg += (wn * qn) / 1000; totCny += pcn * qn; totRub += Math.round(rubUnit * qn);
       const sizeMap = {};
       if (pl.oneSize) sizeMap[pl.oneLabel || "One size"] = isNaN(q) ? "" : q;
       else (pl.sizes || []).forEach((s) => { const v = toNum((it.qtyBySize || {})[s.id]); sizeMap[s.name || "—"] = isNaN(v) ? "" : v; });
@@ -1806,8 +1834,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         (isNaN(pc) || isNaN(q)) ? "" : Math.round(rubUnit * q),
         p?.purchase?.link || "",
       ]);
-      if (p.image && typeof p.image === "string" && p.image.startsWith("data:image")) images.push({ row: ri, col: 0, dataUrl: p.image });
+      if (p.image && typeof p.image === "string") imgSrc.push({ row: ri, src: p.image });
     });
+    // Каждое фото перекодируем в настоящий JPEG (в базе могут быть PNG/WebP — Excel их под видом jpeg удаляет как «нечитаемое»)
+    for (const c of imgSrc) { const j = await imgToJpeg(c.src); if (j) images.push({ row: c.row, col: 0, dataUrl: j.dataUrl, w: j.w, h: j.h }); }
     const colWidths = [10, 10, 34, 16, 22, 10, 8, 10, ...sizeCols.map(() => 6), 8, 10, 11, 26];
     // строка «Итого»
     const totalsRow = new Array(header.length).fill("");
