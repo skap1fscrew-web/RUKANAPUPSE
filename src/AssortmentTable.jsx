@@ -7721,16 +7721,17 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
 
   const Section = ({ id, title, count, doneCount = 0, children }) => {
     const isOp = id === "op"; // операционные: единственный раздел в своём виде — без заголовка и сворачивания
-    const open = isOp || !collapsed[id];
+    const bare = !isOp && (onlyType === "purchase" || onlyType === "project"); // единственный раздел вида: без названия и стрелки раскрытия
+    const open = isOp || bare || !collapsed[id];
     const showDone = !!secDone[id];
     return (
       <div className="mt-2 first:mt-0">
-        {!isOp && <div className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1" style={{ width: LW + timelineW }}>
-          <button onClick={() => toggleSection(id)} className="flex items-center gap-1.5 text-left transition hover:opacity-70">
+        {!isOp && !(bare && !(doneCount > 0)) && <div className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1" style={{ width: LW + timelineW }}>
+          {!bare && <button onClick={() => toggleSection(id)} className="flex items-center gap-1.5 text-left transition hover:opacity-70">
             <ChevronDown size={13} className="shrink-0 text-neutral-400 transition-transform" style={{ transform: open ? "none" : "rotate(-90deg)" }} />
             <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</span>
             <span className="rounded-full bg-neutral-200/80 px-1.5 text-[10px] font-semibold leading-[16px] text-neutral-500">{count}</span>
-          </button>
+          </button>}
           {doneCount > 0 && (
             <button onClick={() => toggleSecDone(id)} title={showDone ? "Скрыть выполненные" : "Показать выполненные"} className={"ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-semibold transition " + (showDone ? "text-neutral-600 hover:bg-neutral-200/70" : "text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-600")}>
               {showDone ? <Eye size={13} /> : <EyeOff size={13} />}{doneCount}
