@@ -162,7 +162,7 @@ const TABS = [
   { id: "assortment", label: "Товары" },
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
-  { id: "strategy", label: "Стратегия" },
+  { id: "strategy", label: "Карты" },
   { id: "duties", label: "Функционал" },
 ];
 
@@ -8487,14 +8487,14 @@ function normStrategy(v) {
     const ids = new Set(nodes.map((n) => n.id));
     const edges = m && Array.isArray(m.edges) ? m.edges.filter((e) => e && ids.has(e.from) && ids.has(e.to)).map((e) => ({ id: e.id || uid(), from: e.from, to: e.to })) : [];
     const rootId = m && m.rootId && ids.has(m.rootId) ? m.rootId : nodes[0].id;
-    return { id: m && m.id ? m.id : uid(), name: (m && m.name) || `Стратегия ${i + 1}`, template, rootId, nodes, edges };
+    return { id: m && m.id ? m.id : uid(), name: (m && m.name) || `Карта ${i + 1}`, template, rootId, nodes, edges };
   };
   if (!v || typeof v !== "object" || v.__v !== 2 || !Array.isArray(v.maps)) {
-    const m = makeTemplatedMap("mind", "Стратегия 1");
+    const m = makeTemplatedMap("mind", "Карта 1");
     return { __v: 2, maps: [m], activeId: m.id };
   }
   let maps = v.maps.filter((m) => m && typeof m === "object").map(normMap);
-  if (!maps.length) { const m = makeTemplatedMap("mind", "Стратегия 1"); maps = [m]; }
+  if (!maps.length) { const m = makeTemplatedMap("mind", "Карта 1"); maps = [m]; }
   const activeId = maps.some((m) => m.id === v.activeId) ? v.activeId : maps[0].id;
   return { __v: 2, maps, activeId };
 }
@@ -8570,7 +8570,7 @@ function StrategySection({ strategy, onChange, onCreateTask, onOpenTask }) {
   const save = (next) => onChange({ __v: 2, ...next });
   const updateActive = (next) => save({ maps: maps.map((m) => (m.id === active.id ? { ...m, nodes: next.nodes, edges: next.edges } : m)), activeId: active.id });
   const selectMap = (id) => { setEditingId(null); save({ maps, activeId: id }); };
-  const addMap = (template) => { const m = makeTemplatedMap(template, `Стратегия ${maps.length + 1}`); setTplOpen(false); save({ maps: [...maps, m], activeId: m.id }); };
+  const addMap = (template) => { const m = makeTemplatedMap(template, `Карта ${maps.length + 1}`); setTplOpen(false); save({ maps: [...maps, m], activeId: m.id }); };
   const dupMap = (id) => {
     const src = maps.find((m) => m.id === id); if (!src) return;
     const copy = JSON.parse(JSON.stringify(src)); copy.id = uid(); copy.name = `${src.name} (копия)`;
@@ -8582,7 +8582,7 @@ function StrategySection({ strategy, onChange, onCreateTask, onOpenTask }) {
   };
   const renameMap = (id, name) => save({ maps: maps.map((m) => (m.id === id ? { ...m, name: name.trim() || "Без названия" } : m)), activeId: st.activeId });
   const removeMap = (id) => {
-    if (maps.length <= 1) { const m = makeTemplatedMap("mind", "Стратегия 1"); save({ maps: [m], activeId: m.id }); return; }
+    if (maps.length <= 1) { const m = makeTemplatedMap("mind", "Карта 1"); save({ maps: [m], activeId: m.id }); return; }
     const rest = maps.filter((m) => m.id !== id);
     save({ maps: rest, activeId: id === st.activeId ? rest[0].id : st.activeId });
   };
@@ -8840,7 +8840,7 @@ function StrategyDoc({ strategy, rootId, onChange }) {
         </div>
       </nav>
       <article className="px-10 py-8">
-        <div className="mb-1 flex items-center gap-2 text-[12px] text-neutral-400"><span className="h-[9px] w-[9px] rounded-full bg-neutral-300" />Стратегия · {cnt} {word}</div>
+        <div className="mb-1 flex items-center gap-2 text-[12px] text-neutral-400"><span className="h-[9px] w-[9px] rounded-full bg-neutral-300" />Карты · {cnt} {word}</div>
         <div id={"stratsec-" + rootId} className="group/h flex items-center gap-2">{renderTitle(rootId, "text-[28px] font-extrabold tracking-tight text-neutral-900")}{renderHeadActions(rootId, { color: false })}</div>
         {noteVisible(rootId) && <div className="mb-4 mt-1 max-w-[680px]">{renderNote(rootId)}</div>}
         {childrenAllSimple(rootId)
