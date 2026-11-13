@@ -1002,6 +1002,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [razdachDB, setRazdachDB] = useState([]);
   const [dbOpen, setDbOpen] = useState(false);
   const [dbActive, setDbActive] = useState("blogger"); // blogger | razdach | <customId>
+  const [dbColumns, setDbColumns] = useState({}); // свои колонки базы: {typeId: [...]}
   const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
   const [strategy, setStrategy] = useState(() => normStrategy(null)); // блок «Стратегия» — карты холстов
   const [duties, setDuties] = useState(() => normDuties(null)); // блок «Обязанности» — области/функции/подфункции/исполнители (СПРАВОЧНИК, не связан с назначением задач)
@@ -1030,8 +1031,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const syncedJobsRef = useRef({}); // id -> JSON последней синхронизированной версии задачи
   const desiredJobsRef = useRef({}); // id -> JSON последнего желаемого значения
   const dirtyJobsRef = useRef(new Set()); // id задач с несохранённой локальной правкой
-  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], purchaseBatches: [], jobs: [], opTypes: [], subjects: [], customDBs: [] });
-  listSettingsRef.current = { bloggerDB, razdachDB, purchases, purchaseBatches, jobs, opTypes, subjects, customDBs };
+  const listSettingsRef = useRef({ bloggerDB: [], razdachDB: [], purchases: [], purchaseBatches: [], jobs: [], opTypes: [], subjects: [], customDBs: [], dbColumns: {} });
+  listSettingsRef.current = { bloggerDB, razdachDB, purchases, purchaseBatches, jobs, opTypes, subjects, customDBs, dbColumns };
 
   // UI-настройки (личные) — localStorage
   useEffect(() => {
@@ -1080,6 +1081,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = JSON.stringify(settings.opTypes); }
         if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = JSON.stringify(settings.opDone); }
         if (Array.isArray(settings.subjects)) { setSubjects(settings.subjects); syncedRef.current.settings.subjects = JSON.stringify(settings.subjects); }
+        if (settings.dbColumns && typeof settings.dbColumns === "object") { setDbColumns(settings.dbColumns); syncedRef.current.settings.dbColumns = JSON.stringify(settings.dbColumns); }
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
         if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
@@ -1261,7 +1263,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1304,7 +1306,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
 
   // Построчное сохранение задач (таблица jobs). Пишем только изменённые строки,
   // удаляем только исчезнувшие — чужая старая копия массива больше не затирает соседние задачи.
@@ -1431,6 +1433,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         else if (key === "opDone") setOpDone(value || {});
         else if (key === "subjects") setSubjects(value || []);
         else if (key === "customDBs") setCustomDBs(value || []);
+        else if (key === "dbColumns") setDbColumns(value || {});
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
         else if (key === "wbOrders") setWbOrders(value || {});
@@ -2840,7 +2843,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               state={{ task: ganttModal.task, dateKey: ganttModal.dateKey }}
               cells={gp.rnp.cells || {}}
               entries={gp.rnp.entries || {}}
-              refSources={{ bloggerDB, razdachDB }}
+              refSources={{ bloggerDB: bloggerDB.filter((r) => !r.deletedAt), razdachDB: razdachDB.filter((r) => !r.deletedAt) }}
               onSetCell={(k, v) => setRnpCell(gp.id, k, v)}
               onSetEntries={(k, arr) => setRnpEntries(gp.id, k, arr)}
               onClose={close}
@@ -2851,7 +2854,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             task={ganttModal.task}
             entries={gp.rnp.entries || {}}
             startDate={rnpStartDate}
-            refSources={{ bloggerDB, razdachDB }}
+            refSources={{ bloggerDB: bloggerDB.filter((r) => !r.deletedAt), razdachDB: razdachDB.filter((r) => !r.deletedAt) }}
             onSetEntries={(k, arr) => setRnpEntries(gp.id, k, arr)}
             onClose={close}
           />
@@ -2901,28 +2904,41 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             };
         const addType = () => { const n = (typeof window !== "undefined" && window.prompt("Название нового вида базы:") || "").trim(); if (!n) return; const id = uid(); setCustomDBs((list) => [...(list || []), { id, name: n, rows: [] }]); setDbActive(id); };
         const removeType = (id) => { if (typeof window !== "undefined" && !window.confirm("Удалить этот вид базы со всеми записями?")) return; setCustomDBs((list) => (list || []).filter((c) => c.id !== id)); setDbActive("blogger"); };
-        const TabChip = ({ id, name, custom }) => (
-          <span className={"group/chip inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-sm font-semibold transition " + (active === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>
-            <button onClick={() => setDbActive(id)}>{name}</button>
-            {custom && active === id && <button onClick={() => removeType(id)} className="rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить вид"><X size={12} /></button>}
-          </span>
-        );
-        const tabs = (
-          <div className="mt-2 inline-flex flex-wrap items-center gap-1 rounded-lg bg-neutral-100 p-0.5">
-            <TabChip id="blogger" name="Блогеры" />
-            <TabChip id="razdach" name="Раздачницы" />
-            {(customDBs || []).map((c) => <TabChip key={c.id} id={c.id} name={c.name} custom />)}
-            <button onClick={addType} className="rounded-md px-2 py-1 text-sm font-semibold text-neutral-400 hover:text-neutral-700" title="Добавить вид">+ Вид</button>
-          </div>
-        );
+        const types = [
+          { id: "blogger", name: "Блогеры", count: bloggerDB.filter((r) => !r.deletedAt).length },
+          { id: "razdach", name: "Раздачницы", count: razdachDB.filter((r) => !r.deletedAt).length },
+          ...(customDBs || []).map((c) => ({ id: c.id, name: c.name, custom: true, count: (c.rows || []).filter((r) => !r.deletedAt).length })),
+        ];
+        const usage = active === "blogger" ? (r) => {
+          const nm = (r.name || "").trim(); if (!nm) return [];
+          const out = [];
+          for (const pr of products) {
+            const entries = pr.rnp?.entries || {};
+            for (const [k, arr] of Object.entries(entries)) {
+              if (!k.startsWith("bloggers:") || k.endsWith(":_ranges")) continue;
+              for (const e of arr || []) if ((e.who || "").trim() === nm) out.push({ id: pr.id + k + (e.id || ""), name: pr.name || "", code: pr.code || "", image: pr.photo || "", date: k.slice(9), cost: calcRecordCost(BLOGGER_FIELDS, e) || 0 });
+            }
+          }
+          return out.sort((x, y) => String(y.date).localeCompare(String(x.date)));
+        } : null;
+        const createDbTask = (title) => upsertJob({ id: uid(), title, date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "Из базы", checklist: [], createdAt: isoYMD(new Date()) });
         return (
           <RefDB
             key={active}
+            typeId={active}
             title={cfg.title}
-            tabs={tabs}
+            types={types}
+            activeId={active}
+            onSelect={setDbActive}
+            onAddType={addType}
+            onRemoveType={removeType}
             fields={cfg.fields}
             rows={cfg.rows}
             setRows={cfg.setRows}
+            extraCols={dbColumns[active] || []}
+            setExtraCols={(cols) => setDbColumns((d) => ({ ...d, [active]: cols }))}
+            usage={usage}
+            onCreateTask={createDbTask}
             onClose={() => setDbOpen(false)}
           />
         );
@@ -4925,17 +4941,45 @@ function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, on
    Справочная база (Блогеры / Раздачницы)
 ---------------------------------------------------------------------------- */
 
-function RefDB({ title, fields, rows, setRows, tabs, onClose }) {
+function RefDB({ title, typeId, fields, rows, setRows, types = [], activeId, onSelect, onAddType, onRemoveType, extraCols = [], setExtraCols, usage, onCreateTask, onClose }) {
   const fileRef = useRef(null);
+  const csvRef = useRef(null);
   const target = useRef(null);
+  const ymd = (iso) => (iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(8, 10) + "." + iso.slice(5, 7) + "." + iso.slice(0, 4) : "");
+  const money = (n) => Math.round(n).toLocaleString("ru-RU") + " ₽";
+  // колонки: базовые + свои
+  const allFields = useMemo(() => [...fields, ...(extraCols || []).map((c) => ({ id: c.id, label: c.label, type: c.type, custom: true, options: c.type === "select" ? (c.options || []).map((v, i) => ({ value: v, color: ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#0ea5e9", "#a3a3a3"][i % 6] })) : undefined }))], [fields, extraCols]);
+  const [hidden, setHidden] = useState(() => lsGet("rnp.dbHidden." + typeId, []));
+  useEffect(() => lsSet("rnp.dbHidden." + typeId, hidden), [hidden]); // eslint-disable-line
+  const vis = allFields.filter((f) => f.id === "image" || f.id === "name" || !hidden.includes(f.id));
+  const statusField = fields.find((f) => f.type === "select");
+  const starsField = fields.find((f) => f.type === "stars");
+  const nameField = fields.find((f) => f.id === "name");
+  const [q, setQ] = useState("");
+  const [stSel, setStSel] = useState([]);
+  const [minStar, setMinStar] = useState(0);
+  const [sort, setSort] = useState({ id: null, dir: 1 });
+  const [sel, setSel] = useState([]);
+  const [openId, setOpenId] = useState(null);
+  const [trashView, setTrashView] = useState(false);
+  const [menu, setMenu] = useState(null); // status | rating | cols | addcol | bulkstatus
+  const [msg, setMsg] = useState("");
+  const [newCol, setNewCol] = useState({ label: "", type: "text", options: "" });
+  const flash = (t) => { setMsg(t); setTimeout(() => setMsg(""), 3200); };
 
+  const live = rows.filter((r) => !r.deletedAt);
+  const trashed = rows.filter((r) => r.deletedAt);
   const add = () => {
     const r = { id: uid() };
     fields.forEach((f) => { if (f.type === "calc") return; r[f.id] = f.type === "select" ? (f.options[0]?.value ?? "") : ""; });
-    setRows((prev) => [...prev, r]);
+    setRows((prev) => [r, ...prev]); setQ(""); setStSel([]); setMinStar(0); setSort({ id: null, dir: 1 }); setOpenId(r.id);
   };
   const set = (id, field, val) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: val } : r)));
-  const remove = (id) => setRows((prev) => prev.filter((r) => r.id !== id));
+  const toTrash = (ids) => { const t = new Date().toISOString(); setRows((prev) => prev.map((r) => (ids.includes(r.id) ? { ...r, deletedAt: t } : r))); setSel((s) => s.filter((x) => !ids.includes(x))); if (ids.includes(openId)) setOpenId(null); flash(ids.length === 1 ? "Запись перемещена в корзину" : "В корзину перемещено: " + ids.length); };
+  const restore = (id) => setRows((prev) => prev.map((r) => { if (r.id !== id) return r; const { deletedAt, ...rest } = r; return rest; }));
+  const purge = (ids) => setRows((prev) => prev.filter((r) => !ids.includes(r.id)));
+  // автоочистка корзины старше 30 дней
+  useEffect(() => { const lim = Date.now() - 30 * 86400000; const old = rows.filter((r) => r.deletedAt && new Date(r.deletedAt).getTime() < lim).map((r) => r.id); if (old.length) purge(old); }, []); // eslint-disable-line
 
   const pickImage = (id) => { target.current = id; fileRef.current?.click(); };
   const onFile = async (e) => {
@@ -4944,94 +4988,223 @@ function RefDB({ title, fields, rows, setRows, tabs, onClose }) {
     try { set(id, "image", await fileToThumb(f, 96)); } catch (err) { console.error("[Фото] не удалось обработать:", err); }
   };
 
+  const valOf = (r, f) => f.type === "calc" ? (f.fn(r) || 0) : f.type === "stars" || f.type === "num" ? (toNum(r[f.id]) || 0) : String(r[f.id] ?? "").toLowerCase();
+  const list = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    let out = live.filter((r) => {
+      if (qq && !allFields.some((f) => f.type !== "image" && f.type !== "calc" && String(r[f.id] ?? "").toLowerCase().includes(qq)) && !String(r.notes || "").toLowerCase().includes(qq)) return false;
+      if (statusField && stSel.length && !stSel.includes(r[statusField.id])) return false;
+      if (starsField && minStar && (toNum(r[starsField.id]) || 0) < minStar) return false;
+      return true;
+    });
+    if (sort.id) { const f = allFields.find((x) => x.id === sort.id); if (f) out = out.slice().sort((a, b) => { const x = valOf(a, f), y = valOf(b, f); return (typeof x === "number" ? x - y : String(x).localeCompare(String(y), "ru")) * sort.dir; }); }
+    return out;
+  }, [rows, q, stSel, minStar, sort, allFields]); // eslint-disable-line
+  const clickSort = (id) => setSort((s) => s.id !== id ? { id, dir: 1 } : s.dir === 1 ? { id, dir: -1 } : { id: null, dir: 1 });
+  const allSel = list.length > 0 && list.every((r) => sel.includes(r.id));
+
+  // ---- CSV ----
+  const csvEsc = (v) => { const s = String(v == null ? "" : v); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const exportCsv = () => {
+    const cols = vis.filter((f) => f.type !== "image");
+    const lines = [cols.map((f) => csvEsc(f.label)).join(";")];
+    list.forEach((r) => lines.push(cols.map((f) => csvEsc(f.type === "calc" ? f.fn(r) : r[f.id])).join(";")));
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = (title || "база") + ".csv"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  const parseCsv = (text) => {
+    const t = text.replace(/^﻿/, ""); const delim = (t.split("\n")[0].match(/;/g) || []).length >= (t.split("\n")[0].match(/,/g) || []).length ? ";" : ",";
+    const out = []; let row = [], cur = "", inq = false;
+    for (let i = 0; i < t.length; i++) { const c = t[i];
+      if (inq) { if (c === '"') { if (t[i + 1] === '"') { cur += '"'; i++; } else inq = false; } else cur += c; }
+      else if (c === '"') inq = true; else if (c === delim) { row.push(cur); cur = ""; }
+      else if (c === "\n") { row.push(cur.replace(/\r$/, "")); out.push(row); row = []; cur = ""; } else cur += c; }
+    if (cur !== "" || row.length) { row.push(cur.replace(/\r$/, "")); out.push(row); }
+    return out.filter((r) => r.some((x) => String(x).trim()));
+  };
+  const onCsv = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+    try {
+      const data = parseCsv(await f.text()); if (data.length < 2) { flash("В файле нет строк для импорта"); return; }
+      const head = data[0].map((h) => String(h).trim().toLowerCase());
+      const map = allFields.map((fl) => ({ fl, i: head.indexOf(String(fl.label).toLowerCase()) })).filter((m) => m.i >= 0 && m.fl.type !== "image" && m.fl.type !== "calc");
+      if (!map.length) { flash("Названия колонок не совпали. Скачайте экспорт и используйте его как образец"); return; }
+      const names = new Set(live.map((r) => String(r.name || "").trim().toLowerCase()));
+      const add2 = []; let dup = 0;
+      data.slice(1).forEach((cells) => {
+        const r = { id: uid() };
+        fields.forEach((fl) => { if (fl.type === "select") r[fl.id] = fl.options[0]?.value ?? ""; });
+        map.forEach(({ fl, i }) => { let v = String(cells[i] ?? "").trim(); if (fl.type === "select" && !fl.options.some((o) => o.value === v)) v = fl.options[0]?.value ?? ""; r[fl.id] = v; });
+        const nm = String(r.name || "").trim().toLowerCase();
+        if (nameField && nm && names.has(nm)) { dup++; return; }
+        if (nm) names.add(nm); add2.push(r);
+      });
+      setRows((prev) => [...add2, ...prev]); flash("Импортировано: " + add2.length + (dup ? ", пропущено дублей: " + dup : ""));
+    } catch (err) { flash("Не удалось прочитать файл"); }
+  };
+
   const inp = "w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200";
+  const Menu = ({ id, label, active, width = 230, children }) => (
+    <div className="relative">
+      <button onClick={() => setMenu(menu === id ? null : id)} className={"inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition " + (active ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50")}>{label}<ChevronDown size={13} className="opacity-60" /></button>
+      {menu === id && (<><div className="fixed inset-0 z-10" onClick={() => setMenu(null)} /><div className="absolute left-0 z-20 mt-1.5 max-h-80 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl" style={{ width }}>{children}</div></>)}
+    </div>
+  );
+  const Opt = ({ on, onClick, children }) => (
+    <button onClick={onClick} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-neutral-50 " + (on ? "font-semibold text-neutral-900" : "text-neutral-600")}>
+      <span className={"flex h-4 w-4 shrink-0 items-center justify-center rounded border " + (on ? "border-orange-500 bg-orange-500 text-white" : "border-neutral-300")}>{on && <Check size={11} strokeWidth={3.4} />}</span><span className="min-w-0 flex-1 truncate">{children}</span>
+    </button>
+  );
+  const selOpt = (f, r) => (f.options || []).find((o) => o.value === r[f.id]) || (f.options || [])[0];
+  const cell = (r, f) => {
+    if (f.type === "image") return <button onClick={() => pickImage(r.id)} className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50 text-neutral-400 hover:border-neutral-300">{r.image ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={14} />}</button>;
+    if (f.type === "stars") return <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map((star) => <button key={star} onClick={() => set(r.id, f.id, (toNum(r[f.id]) === star ? 0 : star).toString())} className="text-lg leading-none transition" style={{ color: star <= (toNum(r[f.id]) || 0) ? "#f59e0b" : "#e5e5e5" }}>★</button>)}</div>;
+    if (f.type === "link") return <div className="flex items-center gap-1"><input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} placeholder="https://…" className={inp} />{r[f.id] && <a href={r[f.id]} target="_blank" rel="noopener noreferrer" className="shrink-0 text-orange-600 hover:text-orange-800"><ArrowRight size={13} /></a>}</div>;
+    if (f.type === "select") { const opt = selOpt(f, r); return <select value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} className="w-full cursor-pointer rounded-lg border-0 px-2 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ background: (opt?.color || "#a3a3a3") + "1f", color: opt?.color || "#a3a3a3" }}>{(f.options || []).map((o) => <option key={o.value} value={o.value} style={{ color: "#171717" }}>{o.value}</option>)}</select>; }
+    if (f.type === "calc") return <div className="px-1.5 py-1 text-right text-sm font-semibold text-neutral-700" style={{ fontVariantNumeric: "tabular-nums" }}>{f.fn(r) || <span className="font-normal text-neutral-300">0</span>}</div>;
+    if (f.type === "num") return <input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} inputMode="decimal" className={inp + " text-right"} style={{ fontVariantNumeric: "tabular-nums" }} />;
+    if (f.type === "date") return <input type="date" value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} className={inp} />;
+    return <input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} className={inp} />;
+  };
+  const colW = (f) => f.type === "image" ? 64 : f.type === "link" ? 190 : f.type === "stars" ? 120 : f.type === "select" ? 130 : f.type === "calc" ? 110 : f.type === "date" ? 140 : 150;
+  const addCol = () => { const label = newCol.label.trim(); if (!label || !setExtraCols) return; const c = { id: "x_" + uid().slice(0, 8), label, type: newCol.type }; if (newCol.type === "select") c.options = newCol.options.split(",").map((s) => s.trim()).filter(Boolean); if (newCol.type === "select" && !c.options.length) c.options = ["да", "нет"]; setExtraCols([...(extraCols || []), c]); setNewCol({ label: "", type: "text", options: "" }); setMenu(null); };
+  const delCol = (id) => { if (!window.confirm("Удалить колонку? Значения в ней пропадут из таблицы.")) return; setExtraCols((extraCols || []).filter((c) => c.id !== id)); };
+
+  // ---- карточка записи ----
+  const openRow = openId ? rows.find((r) => r.id === openId) : null;
+  const use = openRow && usage ? usage(openRow) : null;
+  const useTotal = use ? use.reduce((s, u) => s + u.cost, 0) : 0;
+  const card = openRow && (
+    <div className="flex w-[380px] shrink-0 flex-col overflow-y-auto border-l border-neutral-200 bg-white">
+      <div className="flex items-center gap-3 border-b border-neutral-100 p-4">
+        <button onClick={() => pickImage(openRow.id)} className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50 text-neutral-400">{openRow.image ? <img src={openRow.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={16} />}</button>
+        <div className="min-w-0 flex-1"><input value={openRow.name ?? ""} onChange={(e) => set(openRow.id, "name", e.target.value)} placeholder="Название" className="w-full border-0 bg-transparent p-0 text-base font-extrabold text-neutral-900 outline-none placeholder:text-neutral-300" />{starsField && cell(openRow, starsField)}</div>
+        <button onClick={() => setOpenId(null)} className="self-start rounded-lg p-1 text-neutral-400 hover:bg-neutral-100"><X size={16} /></button>
+      </div>
+      {use && (
+        <div className="grid grid-cols-3 gap-2 p-4 pb-2">
+          {[[use.length, "интеграций"], [money(useTotal), "потрачено всего"], [use.length ? money(useTotal / use.length) : "—", "средняя цена"]].map(([v, l], i) => <div key={i} className="rounded-xl border border-neutral-100 bg-neutral-50 px-2.5 py-2"><b className="block text-[15px] font-extrabold leading-tight">{v}</b><span className="text-[10.5px] text-neutral-400">{l}</span></div>)}
+        </div>
+      )}
+      <div className="px-4 pb-1 pt-3 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">Данные</div>
+      <div className="flex flex-col gap-1.5 px-4 pb-2">
+        {allFields.filter((f) => f.id !== "image" && f.id !== "name" && f.type !== "stars" && f.type !== "calc").map((f) => <label key={f.id} className="flex items-center gap-2"><span className="w-[92px] shrink-0 text-xs text-neutral-400">{f.label}</span><div className="min-w-0 flex-1">{cell(openRow, f)}</div></label>)}
+        <label className="flex items-center gap-2"><span className="w-[92px] shrink-0 text-xs text-neutral-400">Посл. контакт</span><div className="min-w-0 flex-1"><input type="date" value={openRow.lastContact || ""} onChange={(e) => set(openRow.id, "lastContact", e.target.value)} className={inp} /></div></label>
+      </div>
+      {use && (<>
+        <div className="px-4 pb-1 pt-3 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">Интеграции (из РНП товаров)</div>
+        {use.length === 0 && <div className="px-4 pb-3 text-xs text-neutral-400">Пока нет записей в РНП</div>}
+        {use.map((u) => <div key={u.id} className="flex items-center gap-2.5 border-t border-neutral-50 px-4 py-1.5"><span className="flex h-[34px] w-[26px] shrink-0 items-center justify-center overflow-hidden rounded-md border border-neutral-200 bg-neutral-50">{u.image ? <img src={u.image} alt="" className="h-full w-full object-cover" /> : null}</span><div className="min-w-0 flex-1 text-[13px] font-semibold leading-tight">{u.name}<span className="block text-[11px] font-normal text-neutral-400">{u.code} · {ymd(u.date) || "без даты"}</span></div><b className="text-[13px]">{money(u.cost)}</b></div>)}
+      </>)}
+      <div className="px-4 pb-1 pt-3 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">Заметки</div>
+      <textarea value={openRow.notes || ""} onChange={(e) => set(openRow.id, "notes", e.target.value)} rows={4} placeholder="Условия, договорённости, что заходит лучше…" className="mx-4 mb-3 rounded-xl border border-neutral-200 p-2.5 text-sm outline-none focus:ring-2 focus:ring-orange-200" />
+      <div className="mt-auto flex gap-2 border-t border-neutral-100 p-4">
+        {onCreateTask && <button onClick={() => { onCreateTask("Связаться: " + (openRow.name || "без названия")); flash("Задача создана"); }} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-neutral-800"><Plus size={13} />Задача</button>}
+        <button onClick={() => toTrash([openRow.id])} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-bold text-neutral-600 hover:bg-neutral-50">В корзину</button>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="w-full overflow-auto rounded-2xl bg-white p-5 shadow-xl" style={{ maxWidth: "min(1100px, 95vw)", maxHeight: "88vh" }} onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={onClose}>
+      <div className="flex h-full w-full overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxWidth: 1360, maxHeight: "94vh" }} onClick={(e) => e.stopPropagation()}>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-neutral-900">База <span className="text-neutral-400">· {title}</span></h2>
-            <p className="text-sm text-neutral-400">{rows.length} записей</p>
-            {tabs}
+        <input ref={csvRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onCsv} />
+        <div className="hidden w-[200px] shrink-0 flex-col border-r border-neutral-100 bg-neutral-50 p-3 md:flex">
+          <div className="px-2 pb-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">Виды базы</div>
+          {types.map((t) => (
+            <div key={t.id} className={"group/t mb-0.5 flex items-center gap-1 rounded-lg px-2.5 py-2 text-sm font-semibold transition " + (activeId === t.id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:bg-white/70")}>
+              <button onClick={() => onSelect && onSelect(t.id)} className="min-w-0 flex-1 truncate text-left">{t.name}</button>
+              <span className="text-[11px] font-bold text-neutral-400">{t.count}</span>
+              {t.custom && activeId === t.id && <button onClick={() => onRemoveType && onRemoveType(t.id)} className="rounded p-0.5 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить вид"><X size={12} /></button>}
+            </div>
+          ))}
+          <button onClick={() => onAddType && onAddType()} className="mt-2 flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-2.5 py-2 text-sm font-semibold text-neutral-400 hover:text-neutral-700"><Plus size={13} />Новый вид</button>
+          <div className="mt-auto border-t border-neutral-200 pt-2">
+            <button onClick={() => { setTrashView((v) => !v); setSel([]); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold " + (trashView ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:bg-white/70")}><Trash2 size={14} />Корзина<span className="ml-auto text-[11px] font-bold text-neutral-400">{trashed.length}</span></button>
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
         </div>
-
-        <div className="overflow-auto rounded-xl border border-neutral-200">
-          <table className="text-sm" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
-            <thead>
-              <tr>
-                {fields.map((f) => (
-                  <th key={f.id} className="bg-neutral-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500" style={{ borderBottom: "1px solid #e5e5e5", minWidth: f.type === "image" ? 64 : f.type === "link" ? 160 : f.type === "text" ? 160 : f.type === "select" ? 130 : 110 }}>{f.label}</th>
-                ))}
-                <th className="bg-neutral-50 px-2 py-2" style={{ borderBottom: "1px solid #e5e5e5", width: 40 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="group">
-                  {fields.map((f) => (
-                    <td key={f.id} className="px-2 py-1.5" style={{ borderBottom: "1px solid #f5f5f5" }}>
-                      {f.type === "image" ? (
-                        <button onClick={() => pickImage(r.id)} className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-400 hover:border-neutral-300">
-                          {r.image ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={14} />}
-                        </button>
-                      ) : f.type === "stars" ? (
-                        <div className="flex gap-0.5">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <button key={star} onClick={() => set(r.id, f.id, (toNum(r[f.id]) === star ? 0 : star).toString())} className="text-lg leading-none transition" style={{ color: star <= (toNum(r[f.id]) || 0) ? "#f59e0b" : "#e5e5e5" }}>★</button>
-                          ))}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-3">
+            <h2 className="mr-1 text-[17px] font-extrabold tracking-tight text-neutral-900">{trashView ? "Корзина · " + title : title}</h2>
+            <span className="text-xs text-neutral-400">{trashView ? trashed.length : list.length + (list.length !== live.length ? " из " + live.length : "")} записей</span>
+            {!trashView && (<>
+              <div className="ml-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5"><Search size={13} className="text-neutral-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск" className="w-36 border-0 bg-transparent p-0 text-xs outline-none placeholder:text-neutral-400" />{q && <button onClick={() => setQ("")} className="text-neutral-300 hover:text-neutral-600"><X size={12} /></button>}</div>
+              {statusField && <Menu id="status" label={stSel.length ? statusField.label + ": " + stSel.length : statusField.label} active={stSel.length > 0}>{statusField.options.map((o) => <Opt key={o.value} on={stSel.includes(o.value)} onClick={() => setStSel(stSel.includes(o.value) ? stSel.filter((x) => x !== o.value) : [...stSel, o.value])}><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: o.color }} />{o.value}</Opt>)}{stSel.length > 0 && <button onClick={() => setStSel([])} className="mt-1 w-full border-t border-neutral-100 px-2.5 pt-2 text-left text-xs font-semibold text-neutral-400 hover:text-neutral-700">Сбросить</button>}</Menu>}
+              {starsField && <Menu id="rating" label={minStar ? "Рейтинг от " + minStar : "Рейтинг"} active={minStar > 0} width={170}>{[0, 1, 2, 3, 4, 5].map((n) => <button key={n} onClick={() => { setMinStar(n); setMenu(null); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-neutral-50 " + (minStar === n ? "font-semibold text-neutral-900" : "text-neutral-600")}>{n === 0 ? "Любой" : <span className="text-amber-500">{"★".repeat(n)}<span className="text-neutral-300">{"★".repeat(5 - n)}</span></span>}</button>)}</Menu>}
+              <Menu id="cols" label="Колонки" active={hidden.length > 0} width={250}>
+                {allFields.filter((f) => f.id !== "image" && f.id !== "name").map((f) => <div key={f.id} className="flex items-center"><div className="min-w-0 flex-1"><Opt on={!hidden.includes(f.id)} onClick={() => setHidden(hidden.includes(f.id) ? hidden.filter((x) => x !== f.id) : [...hidden, f.id])}>{f.label}</Opt></div>{f.custom && <button onClick={() => delCol(f.id)} className="rounded p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить колонку"><Trash2 size={12} /></button>}</div>)}
+              </Menu>
+            </>)}
+            <span className="flex-1" />
+            {!trashView && (<>
+              <button onClick={() => csvRef.current && csvRef.current.click()} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 text-xs font-bold text-neutral-600 hover:bg-neutral-50"><Download size={13} className="rotate-180" />Импорт</button>
+              <button onClick={exportCsv} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 text-xs font-bold text-neutral-600 hover:bg-neutral-50"><Download size={13} />Экспорт</button>
+              <button onClick={add} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-bold text-white hover:bg-neutral-800"><Plus size={13} />Запись</button>
+            </>)}
+            <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><X size={18} /></button>
+          </div>
+          {msg && <div className="mx-4 mt-3 rounded-lg bg-neutral-900 px-3 py-2 text-xs font-semibold text-white">{msg}</div>}
+          {!trashView && sel.length > 0 && (
+            <div className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-neutral-900 px-3.5 py-2 text-xs font-bold text-white">
+              <span>Выбрано {sel.length}</span>
+              {statusField && <div className="relative"><button onClick={() => setMenu(menu === "bulkstatus" ? null : "bulkstatus")} className="text-amber-300 hover:underline">Сменить статус</button>
+                {menu === "bulkstatus" && (<><div className="fixed inset-0 z-10" onClick={() => setMenu(null)} /><div className="absolute left-0 top-full z-20 mt-2 w-44 rounded-xl border border-neutral-200 bg-white p-1.5 text-neutral-700 shadow-xl">{statusField.options.map((o) => <button key={o.value} onClick={() => { setRows((prev) => prev.map((r) => (sel.includes(r.id) ? { ...r, [statusField.id]: o.value } : r))); setMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-semibold hover:bg-neutral-50"><span className="h-2 w-2 rounded-full" style={{ background: o.color }} />{o.value}</button>)}</div></>)}</div>}
+              {onCreateTask && <button onClick={() => { const names = live.filter((r) => sel.includes(r.id)).map((r) => r.name || "без названия").join(", "); onCreateTask("Связаться: " + names); flash("Задача создана"); }} className="text-amber-300 hover:underline">Создать задачу</button>}
+              <button onClick={() => toTrash(sel)} className="text-red-300 hover:underline">В корзину</button>
+              <button onClick={() => setSel([])} className="ml-auto text-neutral-400 hover:text-white">Снять выбор</button>
+            </div>
+          )}
+          <div className="flex min-h-0 flex-1">
+            <div className="min-w-0 flex-1 overflow-auto">
+              {trashView ? (
+                <div>
+                  {trashed.length === 0 && <div className="px-6 py-16 text-center text-sm text-neutral-400">Корзина пуста</div>}
+                  {trashed.map((r) => { const dl = Math.max(0, 30 - Math.floor((Date.now() - new Date(r.deletedAt).getTime()) / 86400000)); return (
+                    <div key={r.id} className="flex items-center gap-3 border-b border-neutral-50 px-4 py-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50 text-neutral-300">{r.image ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={14} />}</span>
+                      <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-neutral-500 line-through decoration-neutral-300">{r.name || "Без названия"}</div><div className={"text-[11.5px] font-semibold " + (dl <= 3 ? "text-rose-500" : "text-amber-600")}>осталось {dl} дн.</div></div>
+                      <button onClick={() => restore(r.id)} className="rounded-lg bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-700">Вернуть</button>
+                      <button onClick={() => { if (window.confirm("Удалить навсегда? Вернуть будет нельзя.")) purge([r.id]); }} className="rounded-lg border border-rose-200 p-1.5 text-rose-500 hover:bg-rose-50" title="Удалить навсегда"><X size={13} /></button>
+                    </div>
+                  ); })}
+                </div>
+              ) : (
+                <table className="text-sm" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th className="sticky top-0 z-[5] w-8 border-b border-neutral-200 bg-white px-2 py-2"><input type="checkbox" checked={allSel} onChange={() => setSel(allSel ? [] : list.map((r) => r.id))} className="h-4 w-4 accent-orange-500" /></th>
+                      {vis.map((f) => (
+                        <th key={f.id} onClick={() => f.type !== "image" && clickSort(f.id)} className={"sticky top-0 z-[5] border-b border-neutral-200 bg-white px-2 py-2 text-left text-[10px] font-extrabold uppercase tracking-wider " + (f.type !== "image" ? "cursor-pointer select-none hover:text-neutral-800 " : "") + (sort.id === f.id ? "text-neutral-900" : "text-neutral-400")} style={{ minWidth: colW(f) }}>{f.label}{sort.id === f.id ? (sort.dir === 1 ? " ↑" : " ↓") : ""}</th>
+                      ))}
+                      <th className="sticky top-0 z-[5] border-b border-neutral-200 bg-white px-2 py-2 text-left">
+                        <div className="relative inline-block"><button onClick={() => setMenu(menu === "addcol" ? null : "addcol")} className="whitespace-nowrap rounded-md border border-dashed border-neutral-300 px-2 py-0.5 text-[11px] font-bold text-neutral-400 hover:text-neutral-700">＋ колонка</button>
+                          {menu === "addcol" && (<><div className="fixed inset-0 z-10" onClick={() => setMenu(null)} /><div className="absolute right-0 top-full z-20 mt-1.5 w-64 rounded-xl border border-neutral-200 bg-white p-3 text-left normal-case tracking-normal shadow-xl">
+                            <div className="mb-1.5 text-xs font-bold text-neutral-700">Новая колонка</div>
+                            <input value={newCol.label} onChange={(e) => setNewCol({ ...newCol, label: e.target.value })} placeholder="Название" className={inp + " mb-2"} />
+                            <select value={newCol.type} onChange={(e) => setNewCol({ ...newCol, type: e.target.value })} className={inp + " mb-2"}>{[["text", "Текст"], ["num", "Число"], ["link", "Ссылка"], ["date", "Дата"], ["select", "Список"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                            {newCol.type === "select" && <input value={newCol.options} onChange={(e) => setNewCol({ ...newCol, options: e.target.value })} placeholder="Варианты через запятую" className={inp + " mb-2"} />}
+                            <button onClick={addCol} disabled={!newCol.label.trim()} className="w-full rounded-lg bg-neutral-900 py-1.5 text-xs font-bold text-white disabled:opacity-40">Добавить</button>
+                          </div></>)}
                         </div>
-                      ) : f.type === "link" ? (
-                        <div className="flex items-center gap-1">
-                          <input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} placeholder="https://…" className={inp} />
-                          {r[f.id] && <a href={r[f.id]} target="_blank" rel="noopener noreferrer" className="shrink-0 text-orange-600 hover:text-orange-800"><ArrowRight size={13} /></a>}
-                        </div>
-                      ) : f.type === "select" ? (
-                        (() => {
-                          const opt = f.options.find((o) => o.value === r[f.id]) || f.options[0];
-                          return (
-                            <select
-                              value={r[f.id] ?? ""}
-                              onChange={(e) => set(r.id, f.id, e.target.value)}
-                              className="w-full cursor-pointer rounded-lg border-0 px-2 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-200"
-                              style={{ background: (opt?.color || "#a3a3a3") + "1f", color: opt?.color || "#a3a3a3" }}
-                            >
-                              {f.options.map((o) => (
-                                <option key={o.value} value={o.value} style={{ color: "#171717" }}>{o.value}</option>
-                              ))}
-                            </select>
-                          );
-                        })()
-                      ) : f.type === "calc" ? (
-                        <div className="px-1.5 py-1 text-right text-sm font-semibold text-neutral-700" style={{ fontVariantNumeric: "tabular-nums" }}>
-                          {f.fn(r) || <span className="font-normal text-neutral-300">0</span>}
-                        </div>
-                      ) : f.type === "num" ? (
-                        <input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} inputMode="decimal" className={inp + " text-right"} style={{ fontVariantNumeric: "tabular-nums" }} />
-                      ) : (
-                        <input value={r[f.id] ?? ""} onChange={(e) => set(r.id, f.id, e.target.value)} className={inp} />
-                      )}
-                    </td>
-                  ))}
-                  <td className="px-1 text-center" style={{ borderBottom: "1px solid #f5f5f5" }}>
-                    <button onClick={() => remove(r.id)} className="rounded-md p-1 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"><Trash2 size={14} /></button>
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={fields.length + 1} className="px-3 py-8 text-center text-sm text-neutral-400">Пока нет записей</td></tr>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.map((r) => (
+                      <tr key={r.id} className={"group " + (openId === r.id ? "bg-orange-50/60" : sel.includes(r.id) ? "bg-orange-50/40" : "hover:bg-neutral-50/60")}>
+                        <td className="px-2 py-1.5" style={{ borderBottom: "1px solid #f5f5f5" }}><input type="checkbox" checked={sel.includes(r.id)} onChange={() => setSel(sel.includes(r.id) ? sel.filter((x) => x !== r.id) : [...sel, r.id])} className="h-4 w-4 accent-orange-500" /></td>
+                        {vis.map((f) => <td key={f.id} className="px-2 py-1.5" style={{ borderBottom: "1px solid #f5f5f5" }}>{f.id === "name" ? <div className="flex items-center gap-1">{cell(r, f)}<button onClick={() => setOpenId(openId === r.id ? null : r.id)} title="Открыть карточку" className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-700"><Maximize2 size={13} /></button></div> : cell(r, f)}</td>)}
+                        <td className="px-1 text-center" style={{ borderBottom: "1px solid #f5f5f5" }}><button onClick={() => toTrash([r.id])} title="В корзину" className="rounded-md p-1 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"><Trash2 size={14} /></button></td>
+                      </tr>
+                    ))}
+                    {list.length === 0 && <tr><td colSpan={vis.length + 2} className="px-3 py-12 text-center text-sm text-neutral-400">{live.length ? "Под фильтры ничего не подходит" : "Пока нет записей — нажмите «Запись»"}</td></tr>}
+                  </tbody>
+                </table>
               )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-3">
-          <button onClick={add} className="rounded-lg inline-flex items-center gap-1.5 border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-50">
-            <Plus size={14} /> Добавить
-          </button>
+            </div>
+            {!trashView && card}
+          </div>
         </div>
       </div>
     </div>
