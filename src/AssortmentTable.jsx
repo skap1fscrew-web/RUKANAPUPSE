@@ -2077,8 +2077,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                 );
               })}
             </div>
-            <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchaseBatches.length} ${(() => { const n = purchaseBatches.length % 100, d = n % 10; return n > 10 && n < 20 ? "партий" : d === 1 ? "партия" : d >= 2 && d <= 4 ? "партии" : "партий"; })()}` : activeTab === "tasks" ? `${jobs.length} задач` : activeTab === "duties" ? `${(duties.functions || []).length} функций` : `${filteredProducts.length} товаров`}</span>
-            {activeTab !== "purchases" && activeTab !== "tasks" && (
+            <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchaseBatches.length} ${(() => { const n = purchaseBatches.length % 100, d = n % 10; return n > 10 && n < 20 ? "партий" : d === 1 ? "партия" : d >= 2 && d <= 4 ? "партии" : "партий"; })()}` : activeTab === "tasks" ? `${jobs.length} задач` : activeTab === "duties" ? `${(duties.functions || []).filter((f) => !f.deletedAt).length} функций` : activeTab === "assortment" ? `${filteredProducts.length} товаров` : ""}</span>
+            {activeTab === "assortment" && (
               (prodSearchOpen || codeFilter) ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5 py-1.5" style={{ width: 230 }}>
                   <Search size={14} className="shrink-0 text-neutral-400" />
@@ -2097,7 +2097,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                 <button onClick={() => setProdSearchOpen(true)} title="Поиск по коду и названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
               )
             )}
-            {activeTab !== "purchases" && activeTab !== "tasks" && (
+            {activeTab === "assortment" && (
               <div className="relative inline-block">
                 <button
                   onClick={() => setStatusFilterOpen((v) => !v)}
