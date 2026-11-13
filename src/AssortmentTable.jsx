@@ -8021,6 +8021,10 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
       <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
         {/* Шапка: компактный переключатель типа + создано + действия */}
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
+          {/* тип выбирается только при создании; у созданной задачи — справочный бейдж без смены */}
+          {!job._new ? (() => { const m = TASK_TYPE_META.find((x) => x.key === curType) || TASK_TYPE_META[0]; const MI = m.Icon; return (
+            <span title="Тип задачи (после создания не меняется)" className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold" style={{ background: m.bg, color: m.tint }}><MI size={13} />{m.label}</span>
+          ); })() : (
           <div className="inline-flex rounded-xl bg-neutral-100 p-0.5">
             {TASK_TYPE_META.map(({ key, label, short, Icon, tint, bg }) => { const on = curType === key; return (
               <button key={key} onClick={() => setType(key)} title={label}
@@ -8030,6 +8034,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
               </button>
             ); })}
           </div>
+          )}
           <span className="ml-auto flex items-center gap-1">
             {curType !== "op" && <>
               <button onClick={() => setShowLog((v) => !v)} title={showLog ? "К деталям" : "История"} className={"rounded-md p-1 transition " + (showLog ? "bg-sky-50 text-sky-600" : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700")}><History size={17} /></button>
