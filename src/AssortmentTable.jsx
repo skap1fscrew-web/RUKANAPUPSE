@@ -926,7 +926,9 @@ const SubjectsDatalist = memo(function SubjectsDatalist({ subjects }) {
 });
 
 export default function AssortmentTable({ userEmail = null, onSignOut }) {
-  const [products, setProducts] = useState([]);
+  const [allProducts, setProducts] = useState([]); // все товары, включая лежащие в корзине (для синхронизации)
+  const products = useMemo(() => allProducts.filter((p) => p && !p.deletedAt), [allProducts]); // без корзины
+  const trashProducts = useMemo(() => allProducts.filter((p) => p && p.deletedAt).sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt))), [allProducts]);
   const [statuses, setStatuses] = useState(DEFAULT_STATUSES);
   const [metricsByGroup, setMetricsByGroup] = useState(DEFAULT_METRICS_BY_GROUP);
   const [warehouses, setWarehouses] = useState(DEFAULT_WAREHOUSES);
@@ -936,7 +938,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const liveJobs = useMemo(() => jobs.filter((j) => j && !j.deletedAt), [jobs]); // без корзины
   const trashJobs = useMemo(() => jobs.filter((j) => j && j.deletedAt).sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt))), [jobs]);
   const [trashOpen, setTrashOpen] = useState(false);
-  const [undoDel, setUndoDel] = useState(null); // {id,title} — плашка «Вернуть»
+  const [trashSec, setTrashSec] = useState("jobs"); // раздел корзины при открытии
+  const [undoDel, setUndoDel] = useState(null); // {id,title,kind} — плашка «Вернуть»; kind: job | product | function
   const [jobEditor, setJobEditor] = useState(null); // {id?...} открытое окно задачи
   const meRef = useRef(userEmail); meRef.current = userEmail; // автор ручных правок в логах задач — логин авторизованного пользователя
   const [rnpStartDate, setRnpStartDate] = useState(() => {
@@ -1122,8 +1125,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   useEffect(() => {
     if (!loaded) return;
     const t = setTimeout(async () => {
-      const cur = new Map(products.map((p) => [p.id, p]));
-      for (const p of products) {
+      const cur = new Map(allProducts.map((p) => [p.id, p]));
+      for (const p of allProducts) {
         const js = JSON.stringify(p);
         if (syncedRef.current.products.get(p.id) !== js) {
           dirtyRef.current.products.add(p.id);
@@ -1139,7 +1142,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [products, loaded]);
+  }, [allProducts, loaded]);
 
   // авто-создание задач по триггеру «этап партии» (производственный цикл)
   // несколько правил на этап; дедуп на партии: batch.cycle.fired[ruleId] = true
@@ -1221,7 +1224,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       return p;
     });
     if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
-    if (changed) setProducts(next);
+    if (changed) { const byId = Object.fromEntries(next.map((x) => [x.id, x])); setProducts((ps) => ps.map((x) => byId[x.id] || x)); } // сливаем в полный список — товары из корзины не теряем
   }, [products, taskTriggers, loaded]);
 
   // ручное создание задач по этапу (кнопка «создать задачу» в цикле) — в обход дедупа
@@ -1520,14 +1523,27 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     const lim = Date.now() - 30 * 86400000;
     const old = jobs.filter((j) => j && j.deletedAt && new Date(j.deletedAt).getTime() < lim).map((j) => j.id);
     if (old.length) setJobs((js) => js.filter((j) => !old.includes(j.id)));
+    const oldP = allProducts.filter((p) => p && p.deletedAt && new Date(p.deletedAt).getTime() < lim).map((p) => p.id);
+    if (oldP.length) setProducts((ps) => ps.filter((p) => !oldP.includes(p.id)));
+    setDuties((d0) => { const keep = (d0.functions || []).filter((f) => !(f.deletedAt && new Date(f.deletedAt).getTime() < lim)); return keep.length === (d0.functions || []).length ? d0 : { ...d0, functions: keep }; });
   }, [loaded]); // eslint-disable-line
   const upsertOpType = (o) => setOpTypes((list) => { const i = (list || []).findIndex((x) => x.id === o.id); if (i === -1) return [...(list || []), o]; const c = list.slice(); c[i] = o; return c; });
   const removeOpType = (id) => setOpTypes((list) => (list || []).filter((x) => x.id !== id));
   const toggleOpDone = (opId, ds) => setOpDone((m) => { const day = { ...((m || {})[opId] || {}) }; if (day[ds]) delete day[ds]; else day[ds] = true; return { ...(m || {}), [opId]: day }; });
+  // Корзина товаров: не стираем, а помечаем deletedAt (хранится 30 дней, видна всем)
   const removeProduct = (id) => {
-    if (!confirm("Вы точно хотите удалить товар?")) return;
-    setProducts((p) => p.filter((x) => x.id !== id));
+    const pr = allProducts.find((x) => x.id === id);
+    setProducts((p) => p.map((x) => (x.id === id ? { ...x, deletedAt: new Date().toISOString(), deletedBy: (myProfile && myProfile.id) || userEmail || null } : x)));
+    if (pr) setUndoDel({ id, title: pr.name || "Товар", kind: "product" });
   };
+  const restoreProduct = (id) => setProducts((p) => p.map((x) => { if (x.id !== id) return x; const { deletedAt, deletedBy, ...rest } = x; return rest; }));
+  const purgeProducts = (ids) => setProducts((p) => p.filter((x) => !ids.includes(x.id)));
+  // Корзина функций (лежат внутри справочника обязанностей)
+  const trashFunctions = useMemo(() => ((duties && duties.functions) || []).filter((f) => f && f.deletedAt).sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt))), [duties]);
+  const restoreFunction = (id) => setDuties((d0) => ({ ...d0, functions: d0.functions.map((f) => { if (f.id !== id) return f; const { deletedAt, deletedBy, ...rest } = f; return { ...rest, areaId: d0.areas.some((a) => a.id === rest.areaId) ? rest.areaId : null }; }) }));
+  const purgeFunctions = (ids) => setDuties((d0) => ({ ...d0, functions: d0.functions.filter((f) => !ids.includes(f.id)) }));
+  const openTrash = (sec) => { setTrashSec(sec); setTrashOpen(true); };
+  const trashTotal = trashJobs.length + trashProducts.length + trashFunctions.length;
 
   /* --- картинки --- */
   const triggerUpload = (id) => {
@@ -1922,7 +1938,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       head = ["Область", "Функция", "Подфункция", "Исполнитель", "Периодичность"];
       const areaName = (id) => (duties.areas.find((a) => a.id === id) || {}).name || "";
       const personName = (id) => (duties.people.find((p) => p.id === id) || {}).name || "Не назначен";
-      rows = (duties.functions || []).flatMap((f) => {
+      rows = (duties.functions || []).filter((f) => !f.deletedAt).flatMap((f) => {
         const base = [[areaName(f.areaId), f.name, "", personName(f.assignee), describeRecur(f.recur)]];
         const subs = (f.subs || []).map((s) => [areaName(f.areaId), f.name, s.name, personName(s.assignee), describeRecur(s.recur)]);
         return [...base, ...subs];
@@ -2140,9 +2156,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               <Download size={16} />
             </button>
             )}
-            {activeTab === "tasks" && (
-            <button onClick={() => setTrashOpen(true)} title="Корзина задач" className="relative rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
+            {(activeTab === "tasks" || activeTab === "assortment" || activeTab === "duties") && (
+            <button onClick={() => openTrash(activeTab === "assortment" ? "products" : activeTab === "duties" ? "functions" : "jobs")} title="Корзина" className="relative rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
               <Trash2 size={16} />
+              {trashTotal > 0 && <span className="absolute -right-1.5 -top-1.5 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-neutral-600 px-1 text-[10px] font-extrabold text-white">{trashTotal}</span>}
             </button>
             )}
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
@@ -2616,6 +2633,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           <DutiesBoard
             duties={duties}
             onChange={setDuties}
+            deletedBy={(myProfile && myProfile.id) || userEmail || null}
+            onTrashed={(f) => setUndoDel({ id: f.id, title: f.name || "Функция", kind: "function" })}
             opNames={(opTypes || []).map((o) => o.name)}
             onAddOp={(name, recur) => {
               const t = (name || "").trim();
@@ -2788,10 +2807,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         <div className="fixed left-1/2 bottom-6 z-[96] flex -translate-x-1/2 items-center gap-3 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-xl">
           <Trash2 size={15} className="shrink-0 text-neutral-400" />
           <span className="max-w-[260px] truncate">«{undoDel.title}» — в корзине</span>
-          <button onClick={() => { restoreJob(undoDel.id); setUndoDel(null); }} className="shrink-0 font-bold text-amber-300 hover:underline">Вернуть</button>
+          <button onClick={() => { (undoDel.kind === "product" ? restoreProduct : undoDel.kind === "function" ? restoreFunction : restoreJob)(undoDel.id); setUndoDel(null); }} className="shrink-0 font-bold text-amber-300 hover:underline">Вернуть</button>
         </div>
       )}
-      {trashOpen && <TrashPanel jobs={trashJobs} people={profiles} products={products} myId={myProfile ? myProfile.id : null} userEmail={userEmail} onRestore={restoreJob} onPurge={(ids) => setJobs((js) => js.filter((j) => !ids.includes(j.id)))} onClose={() => setTrashOpen(false)} />}
+      {trashOpen && <TrashPanel jobs={trashJobs} people={profiles} products={allProducts} trashProducts={trashProducts} trashFunctions={trashFunctions} areas={duties.areas} startSection={trashSec} onRestoreProduct={restoreProduct} onPurgeProducts={purgeProducts} onRestoreFunction={restoreFunction} onPurgeFunctions={purgeFunctions} myId={myProfile ? myProfile.id : null} userEmail={userEmail} onRestore={restoreJob} onPurge={(ids) => setJobs((js) => js.filter((j) => !ids.includes(j.id)))} onClose={() => setTrashOpen(false)} />}
 
       {/* Всплывающее подтверждение */}
       {toast && (
@@ -2973,12 +2992,13 @@ function normDuties(v) {
   const areas = Array.isArray(v.areas) ? v.areas.filter((a) => a && typeof a === "object").map((a) => ({ id: a.id || uid(), name: a.name || "Область", color: a.color || "#6366f1" })) : [];
   const people = Array.isArray(v.people) ? v.people.filter((p) => p && typeof p === "object").map((p) => ({ id: p.id || uid(), name: p.name || "Исполнитель", color: p.color || "#64748b" })) : [];
   const normSub = (s) => ({ id: s.id || uid(), name: s.name || "", assignee: s.assignee || null, recur: normRecur(s.recur) });
-  const functions = Array.isArray(v.functions) ? v.functions.filter((f) => f && typeof f === "object").map((f) => ({ id: f.id || uid(), areaId: f.areaId || null, name: f.name || "", assignee: f.assignee || null, recur: normRecur(f.recur), subs: Array.isArray(f.subs) ? f.subs.map(normSub) : [] })) : [];
+  const functions = Array.isArray(v.functions) ? v.functions.filter((f) => f && typeof f === "object").map((f) => ({ id: f.id || uid(), areaId: f.areaId || null, name: f.name || "", assignee: f.assignee || null, recur: normRecur(f.recur), subs: Array.isArray(f.subs) ? f.subs.map(normSub) : [], ...(f.deletedAt ? { deletedAt: f.deletedAt, deletedBy: f.deletedBy || null } : {}) })) : [];
   return { areas, people, functions };
 }
 
-function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
-  const d = duties && duties.areas ? duties : normDuties(duties);
+function DutiesBoard({ duties, onChange, onAddOp, opNames, deletedBy = null, onTrashed }) {
+  const dAll = duties && duties.areas ? duties : normDuties(duties);
+  const d = useMemo(() => ({ ...dAll, functions: dAll.functions.filter((f) => !f.deletedAt) }), [dAll]); // без корзины
   const [expanded, setExpanded] = useState(() => new Set());
   const dragFnRef = useRef(null);
   const [overArea, setOverArea] = useState(undefined);
@@ -2991,13 +3011,13 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
   const personById = Object.fromEntries(d.people.map((p) => [p.id, p]));
   // Все мутации читают АКТУАЛЬНОЕ состояние из рефа, а не из устаревшего замыкания —
   // иначе быстрый ввод и перерисовки от облачного эха могли бы затирать правки.
-  const stateRef = useRef(d); stateRef.current = d;
+  const stateRef = useRef(dAll); stateRef.current = dAll;
   const save = (next) => { stateRef.current = next; onChange(next); };
   const patchFn = (fid, p) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, ...p } : f)) }); };
   const patchSub = (fid, sid, p) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: f.subs.map((s) => (s.id === sid ? { ...s, ...p } : s)) } : f)) }); };
   const addFunction = () => { const c = stateRef.current; const areaId = filterArea || c.areas[0]?.id || null; const id = uid(); save({ ...c, functions: [...c.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
   const addFunctionTo = (areaId) => { const c = stateRef.current; const id = uid(); save({ ...c, functions: [...c.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
-  const removeFunction = (fid) => { const c = stateRef.current; save({ ...c, functions: c.functions.filter((f) => f.id !== fid) }); };
+  const removeFunction = (fid) => { const c = stateRef.current; const fn = c.functions.find((f) => f.id === fid); save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, deletedAt: new Date().toISOString(), deletedBy } : f)) }); if (fn && onTrashed) onTrashed(fn); };
   const addSub = (fid) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: [...f.subs, { id: uid(), name: "", assignee: f.assignee, recur: normRecur(f.recur) }] } : f)) }); setExpanded((s) => new Set(s).add(fid)); };
   const removeSub = (fid, sid) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: f.subs.filter((s) => s.id !== sid) } : f)) }); };
   const addArea = () => { const c = stateRef.current; save({ ...c, areas: [...c.areas, { id: uid(), name: "Новая область", color: SWATCHES[c.areas.length % SWATCHES.length] }] }); };
@@ -7033,43 +7053,95 @@ function StageIcon({ j, size = 15 }) {
 }
 
 // Режим «Фокус»: повестка на сегодня по всем типам задач, горизонтально (под экран ноутбука).
-function TrashPanel({ jobs, people = [], products = [], myId, userEmail, onRestore, onPurge, onClose }) {
+function TrashPanel({ jobs, people = [], products = [], trashProducts = [], trashFunctions = [], areas = [], startSection = "jobs", myId, userEmail, onRestore, onPurge, onRestoreProduct, onPurgeProducts, onRestoreFunction, onPurgeFunctions, onClose }) {
+  const [sec, setSec] = useState(startSection); // products | functions | jobs
   const [tab, setTab] = useState("all");
   const [confirm1, setConfirm1] = useState(null); // id | "all"
+  useEffect(() => { setConfirm1(null); }, [sec]);
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
+  const areaById = Object.fromEntries((areas || []).map((a) => [a.id, a]));
   const isMine = (j) => j.deletedBy && (j.deletedBy === myId || j.deletedBy === userEmail);
   const list = jobs.filter((j) => tab === "all" ? true : tab === "mine" ? isMine(j) : tab === "project" ? jobType(j) === "project" : jobType(j) !== "project");
   const daysLeft = (j) => Math.max(0, 30 - Math.floor((Date.now() - new Date(j.deletedAt).getTime()) / 86400000));
   const fmtDT = (iso) => { const d = new Date(iso); const t = new Date(); const hm = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); if (d.toDateString() === t.toDateString()) return "сегодня " + hm; const y = new Date(t.getTime() - 86400000); if (d.toDateString() === y.toDateString()) return "вчера " + hm; return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }); };
   const tabs = [["all", "Все", jobs.length], ["mine", "Мои", jobs.filter(isMine).length], ["project", "Проектные", jobs.filter((j) => jobType(j) === "project").length], ["other", "Прочие", jobs.filter((j) => jobType(j) !== "project").length]];
+  const byOf = (x) => personById[x.deletedBy] || (x.deletedBy ? Object.values(personById).find((p) => p.email === x.deletedBy) : null);
+  const total = jobs.length + trashProducts.length + trashFunctions.length;
+  const curItems = sec === "products" ? trashProducts : sec === "functions" ? trashFunctions : jobs;
+  const purgeIds = (ids) => { if (sec === "products") onPurgeProducts(ids); else if (sec === "functions") onPurgeFunctions(ids); else onPurge(ids); };
+  const noun = sec === "products" ? "товары" : sec === "functions" ? "функции" : "задачи";
+  const metaLine = (x) => { const by = byOf(x); const dl = daysLeft(x); return (<>
+    <span className="inline-flex items-center gap-1">{by ? <PersonAvatar p={by} size={16} /> : null}удалил{by ? " " + profileLabel(by) : ""} · {fmtDT(x.deletedAt)}</span>
+    <span className={"font-semibold " + (dl <= 3 ? "text-rose-500" : "text-amber-600")}>осталось {dl} дн.</span>
+  </>); };
+  const actions = (id, onBack) => (
+    <div className="flex shrink-0 gap-1.5">
+      <button onClick={() => onBack(id)} className="rounded-lg bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-700">Вернуть</button>
+      <button onClick={() => setConfirm1(id)} title="Удалить навсегда" className="rounded-lg border border-rose-200 p-1.5 text-rose-500 hover:bg-rose-50"><X size={13} /></button>
+    </div>
+  );
   return (
     <div className="fixed inset-0 z-[97] flex justify-end bg-black/30" onClick={onClose}>
       <div className="flex h-full w-full max-w-[480px] flex-col bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-neutral-100 px-4 py-3">
           <Trash2 size={17} className="text-neutral-500" />
           <h3 className="text-base font-bold text-neutral-800">Корзина</h3>
-          <span className="rounded-full bg-neutral-200/70 px-2 text-xs font-bold text-neutral-500">{jobs.length}</span>
+          <span className="rounded-full bg-neutral-200/70 px-2 text-xs font-bold text-neutral-500">{total}</span>
           <div className="ml-auto flex items-center gap-2">
-            {jobs.length > 0 && <button onClick={() => setConfirm1("all")} className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Очистить всё</button>}
+            {curItems.length > 0 && <button onClick={() => setConfirm1("all")} className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50">Очистить раздел</button>}
             <button onClick={onClose} className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><X size={18} /></button>
           </div>
         </div>
         <div className="flex gap-1.5 border-b border-neutral-100 px-4 py-2">
-          {tabs.map(([k, n, c]) => <button key={k} onClick={() => setTab(k)} className={"rounded-full px-2.5 py-1 text-xs font-semibold transition " + (tab === k ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200")}>{n} {c}</button>)}
+          {[["products", "Товары", trashProducts.length], ["functions", "Функции", trashFunctions.length], ["jobs", "Задачи", jobs.length]].map(([k, n, c]) => <button key={k} onClick={() => setSec(k)} className={"rounded-full px-3 py-1 text-xs font-bold transition " + (sec === k ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200")}>{n} {c}</button>)}
         </div>
+        {sec === "jobs" && (
+          <div className="flex gap-1.5 border-b border-neutral-100 px-4 py-2">
+            {tabs.map(([k, n, c]) => <button key={k} onClick={() => setTab(k)} className={"rounded-full px-2.5 py-1 text-xs font-semibold transition " + (tab === k ? "bg-neutral-200 text-neutral-800" : "bg-neutral-50 text-neutral-400 hover:bg-neutral-100")}>{n} {c}</button>)}
+          </div>
+        )}
         {confirm1 && (
           <div className="m-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-neutral-700">
-            <b>Удалить навсегда?</b> {confirm1 === "all" ? `Все задачи в корзине (${jobs.length}) будут стёрты без возможности вернуть.` : "Задачу нельзя будет вернуть."}
+            <b>Удалить навсегда?</b> {confirm1 === "all" ? `Все ${noun} в корзине (${curItems.length}) будут стёрты без возможности вернуть.` : "Вернуть будет нельзя."}
             <div className="mt-2 flex gap-2">
-              <button onClick={() => { onPurge(confirm1 === "all" ? jobs.map((j) => j.id) : [confirm1]); setConfirm1(null); }} className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700">Удалить навсегда</button>
+              <button onClick={() => { purgeIds(confirm1 === "all" ? curItems.map((x) => x.id) : [confirm1]); setConfirm1(null); }} className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700">Удалить навсегда</button>
               <button onClick={() => setConfirm1(null)} className="rounded-lg border border-neutral-200 bg-white px-3 py-1 text-xs font-semibold text-neutral-600">Отмена</button>
             </div>
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {list.length === 0 && <div className="px-6 py-16 text-center text-sm text-neutral-400">{jobs.length ? "В этом разделе пусто" : "Корзина пуста"}</div>}
-          {list.map((j) => { const by = personById[j.deletedBy] || (j.deletedBy ? Object.values(personById).find((p) => p.email === j.deletedBy) : null); const st = STAGES[stageOf(j)]; const prod = prodById[j.productId]; const dl = daysLeft(j); return (
+          {sec === "products" && trashProducts.length === 0 && <div className="px-6 py-16 text-center text-sm text-neutral-400">Удалённых товаров нет</div>}
+          {sec === "products" && trashProducts.map((p) => (
+            <div key={p.id} className="flex items-start gap-3 border-b border-neutral-50 px-4 py-3">
+              <div className="flex h-[52px] w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={16} />}</div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold leading-snug text-neutral-500 line-through decoration-neutral-300">{p.name || "Без названия"}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-neutral-400">
+                  {p.code && <span className="rounded bg-neutral-100 px-1.5 font-semibold text-neutral-500">{p.code}</span>}
+                  {p.status && <span className="rounded bg-neutral-100 px-1.5 font-semibold text-neutral-500">{p.status}</span>}
+                  {metaLine(p)}
+                </div>
+              </div>
+              {actions(p.id, onRestoreProduct)}
+            </div>
+          ))}
+          {sec === "functions" && trashFunctions.length === 0 && <div className="px-6 py-16 text-center text-sm text-neutral-400">Удалённых функций нет</div>}
+          {sec === "functions" && trashFunctions.map((f) => { const ar = areaById[f.areaId]; const n = (f.subs || []).length; return (
+            <div key={f.id} className="flex items-start gap-3 border-b border-neutral-50 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold leading-snug text-neutral-500 line-through decoration-neutral-300">{f.name || "Без названия"}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-neutral-400">
+                  {ar && <span className="rounded px-1.5 font-semibold" style={{ background: ar.color + "22", color: ar.color }}>{ar.name}</span>}
+                  <span>{n ? n + " " + plural(n, "подфункция", "подфункции", "подфункций") : "без подфункций"}</span>
+                  {metaLine(f)}
+                </div>
+              </div>
+              {actions(f.id, onRestoreFunction)}
+            </div>
+          ); })}
+          {sec === "jobs" && list.length === 0 && <div className="px-6 py-16 text-center text-sm text-neutral-400">{jobs.length ? "В этом разделе пусто" : "Корзина задач пуста"}</div>}
+          {sec === "jobs" && list.map((j) => { const st = STAGES[stageOf(j)]; const prod = prodById[j.productId]; return (
             <div key={j.id} className="flex items-start gap-2.5 border-b border-neutral-50 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-neutral-500 line-through decoration-neutral-300">{(j.title || "Без названия")}</div>
@@ -7077,18 +7149,14 @@ function TrashPanel({ jobs, people = [], products = [], myId, userEmail, onResto
                   <span className="rounded bg-neutral-100 px-1.5 font-semibold text-neutral-500">{(JOB_TYPES[jobType(j)] || {}).label || "Задача"}</span>
                   <span className="rounded px-1.5 font-semibold" style={{ background: st.bg, color: st.color }}>{st.label}</span>
                   {prod && <span>{prod.code || prod.name}</span>}
-                  <span className="inline-flex items-center gap-1">{by ? <PersonAvatar p={by} size={16} /> : null}удалил{by ? " " + profileLabel(by) : ""} · {fmtDT(j.deletedAt)}</span>
-                  <span className={"font-semibold " + (dl <= 3 ? "text-rose-500" : "text-amber-600")}>осталось {dl} дн.</span>
+                  {metaLine(j)}
                 </div>
               </div>
-              <div className="flex shrink-0 gap-1.5">
-                <button onClick={() => onRestore(j.id)} className="rounded-lg bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-700">Вернуть</button>
-                <button onClick={() => setConfirm1(j.id)} title="Удалить навсегда" className="rounded-lg border border-rose-200 p-1.5 text-rose-500 hover:bg-rose-50"><X size={13} /></button>
-              </div>
+              {actions(j.id, onRestore)}
             </div>
           ); })}
         </div>
-        <div className="border-t border-neutral-100 bg-neutral-50 px-4 py-2.5 text-[11.5px] text-neutral-400">Задачи старше 30 дней удаляются автоматически. Корзина общая для всех.</div>
+        <div className="border-t border-neutral-100 bg-neutral-50 px-4 py-2.5 text-[11.5px] text-neutral-400">Удалённое старше 30 дней стирается автоматически. Корзина общая для всех.</div>
       </div>
     </div>
   );
