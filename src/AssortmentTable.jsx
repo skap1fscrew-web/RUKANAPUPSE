@@ -3,7 +3,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow,
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
+  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -6731,6 +6731,143 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
   );
 }
 
+const plural = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return one; if (m10 >= 2 && m10 <= 4 && !(m100 >= 12 && m100 <= 14)) return few; return many; };
+// ---- Отчёты: итоги по выполненным задачам и подзадачам за день / неделю / месяц ----
+function DaySummary({ jobs = [], opTypes = [], opDone = {}, people = [], products = [], batches = [], onClose }) {
+  const [mode, setMode] = useState("day"); // day | week | month
+  const [anchor, setAnchor] = useState(() => new Date());
+  const [copied, setCopied] = useState(null);
+  const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const range = (() => {
+    const a = startOfDay(anchor);
+    if (mode === "day") return [a, a];
+    if (mode === "week") { const dow = (a.getDay() + 6) % 7; const s = new Date(a.getFullYear(), a.getMonth(), a.getDate() - dow); return [s, new Date(s.getFullYear(), s.getMonth(), s.getDate() + 6)]; }
+    return [new Date(a.getFullYear(), a.getMonth(), 1), new Date(a.getFullYear(), a.getMonth() + 1, 0)];
+  })();
+  const fromS = isoYMD(range[0]), toS = isoYMD(range[1]);
+  const inR = (iso) => iso >= fromS && iso <= toS;
+  const step = (dir) => setAnchor((a) => mode === "day" ? new Date(a.getFullYear(), a.getMonth(), a.getDate() + dir) : mode === "week" ? new Date(a.getFullYear(), a.getMonth(), a.getDate() + 7 * dir) : new Date(a.getFullYear(), a.getMonth() + dir, 1));
+  const fmtR = (d) => d.getDate() + " " + MONTHS_GEN[d.getMonth()];
+  const todayS = isoYMD(new Date());
+  const title = mode === "day"
+    ? fmtR(range[0]) + ", " + WD_LABEL[range[0].getDay()].toLowerCase()
+    : mode === "week" ? fmtR(range[0]) + " — " + fmtR(range[1]) : MONTHS_FULL[range[0].getMonth()] + " " + range[0].getFullYear();
+  const hhmm = (ts) => { const d = new Date(ts); return pad2(d.getHours()) + ":" + pad2(d.getMinutes()); };
+  const dm = (iso) => iso.slice(8, 10) + "." + iso.slice(5, 7);
+
+  // собираем записи по исполнителям
+  const per = {}; // pid -> { sections: {type: items[]}, tasks, subs }
+  const slot = (pid) => (per[pid] = per[pid] || { sections: { purchase: [], project: [], op: [], product: [] }, tasks: 0, subs: 0 });
+  let onTime = 0, late = 0, totalTasks = 0, totalSubs = 0;
+  (jobs || []).forEach((j) => {
+    if (!j || j.deletedAt) return;
+    const log = Array.isArray(j.log) ? j.log : [];
+    const doneEv = log.filter((e) => e.kind === "done" && e.ts && inR(isoYMD(new Date(e.ts)))).sort((a, b) => (a.ts < b.ts ? 1 : -1))[0];
+    const seen = {};
+    const subs = log.filter((e) => e.kind === "sub_done" && e.ts && inR(isoYMD(new Date(e.ts))) && (e.text || "").trim()).filter((e) => { const k = e.text + "|" + e.ts; if (seen[k]) return false; seen[k] = 1; return true; });
+    if (!doneEv && !subs.length) return;
+    const t = jobType(j);
+    const prod = j.productId ? (products || []).find((p) => p.id === j.productId) : null;
+    const batch = j.batchId ? (batches || []).find((b) => b.id === j.batchId) : null;
+    const ctx = t === "product" ? (prod ? [prod.code, prod.name].filter(Boolean).join(" · ") : "") : t === "purchase" ? (batch ? batch.name || "" : "") : "";
+    const doneS = doneEv ? isoYMD(new Date(doneEv.ts)) : null;
+    const lateDays = doneS && j.date && doneS > j.date ? Math.round((new Date(doneS) - new Date(j.date)) / 86400000) : 0;
+    const item = { kind: "job", id: j.id, title: t === "product" ? stripProdSuffix(j.title, prod && prod.name) : (j.title || "—"), ctx, ts: doneEv ? doneEv.ts : subs[0].ts, done: !!doneEv, lateDays, subs: subs.map((e) => e.text.trim()) };
+    const ids = jobAssignees(j); const owners = ids.length ? ids : ["__none"];
+    owners.forEach((pid) => { const s = slot(pid); s.sections[t].push(item); if (doneEv) s.tasks += 1; s.subs += subs.length; });
+    if (doneEv) { totalTasks += 1; if (lateDays > 0) late += 1; else onTime += 1; }
+    totalSubs += subs.length;
+  });
+  (opTypes || []).forEach((op) => {
+    const days = Object.keys(opDone[op.id] || {}).filter((d) => opDone[op.id][d] && inR(d)).sort();
+    if (!days.length) return;
+    const pid = op.assignee || "__none";
+    const s = slot(pid);
+    days.forEach((d) => s.sections.op.push({ kind: "op", id: op.id + d, title: op.name || "—", ctx: "", ts: d, done: true, lateDays: 0, subs: [], day: d }));
+    s.tasks += days.length; totalTasks += days.length; onTime += days.length;
+  });
+  const persons = Object.keys(per).sort((a, b) => per[b].tasks - per[a].tasks);
+  const SEC = [["purchase", "Закупки"], ["project", "Проектные"], ["op", "Операционные"], ["product", "Товары"]];
+  const nameOf = (pid) => pid === "__none" ? "Без исполнителя" : profileLabel(personById[pid]);
+  const when = (it) => it.kind === "op" ? (mode === "day" ? "" : dm(it.day)) : (mode === "day" ? hhmm(it.ts) : dm(isoYMD(new Date(it.ts))) + " " + hhmm(it.ts));
+  const textFor = (pid) => {
+    const s = per[pid]; const out = [];
+    out.push(nameOf(pid) + " — " + title + ", закрыто " + s.tasks + " " + plural(s.tasks, "задача", "задачи", "задач") + (s.subs ? " (" + s.subs + " " + plural(s.subs, "подзадача", "подзадачи", "подзадач") + ")" : ""));
+    SEC.forEach(([k, lab]) => {
+      const arr = s.sections[k]; if (!arr.length) return;
+      out.push(""); out.push(lab);
+      arr.forEach((it) => {
+        const subsTxt = it.subs.length ? " (подзадачи: " + it.subs.join(", ") + ")" : "";
+        out.push((it.done ? "✓ " : "• ") + it.title + (it.ctx ? " — " + it.ctx : "") + (it.lateDays ? " (+" + it.lateDays + " дн)" : "") + subsTxt);
+      });
+    });
+    return out.join("\n");
+  };
+  const copy = async (key, text) => { try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied((c) => (c === key ? null : c)), 1600); } catch {} };
+  const ModeBtn = ({ k, label }) => <button onClick={() => setMode(k)} className={"h-[30px] rounded-lg border px-2.5 text-xs font-bold transition " + (mode === k ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>{label}</button>;
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/35 p-3 sm:p-8" onClick={onClose}>
+      <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-wrap items-center gap-2.5 border-b border-neutral-100 px-5 py-3.5">
+          <h2 className="text-lg font-extrabold tracking-tight text-neutral-900">Отчеты</h2>
+          <div className="ml-2 flex items-center gap-1">
+            <button onClick={() => step(-1)} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /></button>
+            <span className="flex h-[30px] items-center gap-2 rounded-lg border border-neutral-200 px-3 text-[13px] font-bold capitalize text-neutral-800">{title}{mode === "day" && fromS === todayS && <span className="text-[11px] font-semibold normal-case text-neutral-400">сегодня</span>}</span>
+            <button onClick={() => step(1)} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={15} /></button>
+          </div>
+          <ModeBtn k="day" label="День" /><ModeBtn k="week" label="Неделя" /><ModeBtn k="month" label="Месяц" />
+          <span className="flex-1" />
+          {persons.length > 0 && <button onClick={() => copy("all", persons.map(textFor).join("\n\n"))} className="inline-flex h-[30px] items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 text-xs font-bold text-neutral-600 hover:bg-neutral-50"><Copy size={13} />{copied === "all" ? "Скопировано" : "Копировать всё"}</button>}
+          <button onClick={onClose} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={18} /></button>
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-2 border-b border-neutral-100 bg-neutral-50 px-5 py-3">
+          {[[totalTasks, plural(totalTasks, "задача закрыта", "задачи закрыто", "задач закрыто"), ""], [totalSubs, plural(totalSubs, "подзадача", "подзадачи", "подзадач"), ""], [onTime, "в срок", "text-emerald-600"], [late, "с опозданием", late ? "text-red-600" : ""], [persons.length, plural(persons.length, "исполнитель", "исполнителя", "исполнителей"), ""]].map(([n, l, c], i) => (
+            <div key={i} className="flex flex-col"><b className={"text-xl font-extrabold leading-tight tracking-tight " + (c || "text-neutral-900")}>{n}</b><span className="text-[11px] text-neutral-400">{l}</span></div>
+          ))}
+        </div>
+        {persons.length === 0 ? (
+          <div className="px-5 py-14 text-center text-sm text-neutral-400">За этот период закрытых задач нет</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3.5 p-4 sm:p-5 md:grid-cols-2">
+            {persons.map((pid) => { const s = per[pid]; return (
+              <div key={pid} className="overflow-hidden rounded-2xl border border-neutral-200">
+                <div className="flex items-center gap-2.5 border-b border-neutral-100 px-3.5 py-2.5">
+                  <PersonAvatar p={personById[pid]} size={32} />
+                  <div className="min-w-0 leading-tight"><div className="truncate text-sm font-extrabold text-neutral-900">{nameOf(pid)}</div><div className="mt-0.5 text-[11px] font-semibold text-neutral-400">{s.tasks} {plural(s.tasks, "задача", "задачи", "задач")}{s.subs ? " · " + s.subs + " " + plural(s.subs, "подзадача", "подзадачи", "подзадач") : ""}</div></div>
+                  <div className="ml-auto text-right leading-none"><b className="text-[22px] font-extrabold tracking-tight">{s.tasks}</b><div className="mt-0.5 text-[10px] font-semibold text-neutral-400">закрыто</div></div>
+                  <button onClick={() => copy(pid, textFor(pid))} title="Копировать отчёт" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50">{copied === pid ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}</button>
+                </div>
+                <div className="pb-2">
+                  {SEC.map(([k, lab]) => { const arr = s.sections[k]; if (!arr.length) return null; return (
+                    <div key={k}>
+                      <div className="px-3.5 pb-0.5 pt-2.5 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">{lab}</div>
+                      {arr.sort((a, b) => (a.ts < b.ts ? -1 : 1)).map((it) => (
+                        <div key={it.id + (it.day || "")} className="px-3.5 py-1">
+                          <div className="flex items-start gap-2.5">
+                            <span className={"mt-[1px] flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] " + (it.done ? "bg-green-500" : "border border-neutral-300")}>{it.done && <Check size={11} strokeWidth={3.4} className="text-white" />}</span>
+                            <div className="min-w-0 flex-1 text-[13px] font-semibold leading-snug text-neutral-800">
+                              {it.title}
+                              {(it.ctx || it.lateDays > 0) && <div className="text-[11px] font-medium text-neutral-400">{it.ctx}{it.lateDays > 0 && <span className="ml-1.5 rounded-md bg-red-50 px-1.5 py-px text-[10px] font-extrabold text-red-600">+{it.lateDays} дн</span>}</div>}
+                            </div>
+                            <span className="shrink-0 text-[11px] font-semibold text-neutral-400">{when(it)}</span>
+                          </div>
+                          {it.subs.length > 0 && <div className="mt-0.5 pl-[26px]">{it.subs.map((t, i) => <div key={i} className="flex items-center gap-1.5 py-px text-xs text-neutral-500"><span className="flex h-3 w-3 shrink-0 items-center justify-center rounded-[4px] bg-green-100"><Check size={8} strokeWidth={4} className="text-green-600" /></span>{t}</div>)}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  ); })}
+                </div>
+              </div>
+            ); })}
+          </div>
+        )}
+        <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-3 text-[11px] text-neutral-400">Считаются задачи и подзадачи, отмеченные выполненными в выбранный период. Задачи, закрытые до появления журнала событий, в отчёт не попадают.</div>
+      </div>
+    </div>
+  );
+}
+
 function TasksView({ jobs, taskLabels, taskTags = [], people = [], myId = null, onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
@@ -6748,6 +6885,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], myId = null, 
   const [fltSearch, setFltSearch] = useState(""); // поиск по названию задачи
   const [searchOpen, setSearchOpen] = useState(false); // лупа развёрнута в поле
   const [focusMode, setFocusMode] = useState(false); // режим ФОКУС (повестка на сегодня)
+  const [reportsOpen, setReportsOpen] = useState(false); // окно «Отчеты» (итоги по выполненным задачам)
   const todayStr = isoYMD(now);
   useEffect(() => lsSet("rnp.kanbanGroup", groupBy), [groupBy]);
   useEffect(() => lsSet("rnp.kanbanSort", kanbanSort), [kanbanSort]);
@@ -6800,6 +6938,8 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], myId = null, 
           ); })}
         </div>
         <button onClick={() => setFocusMode((f) => !f)} title="Фокус — повестка на сегодня" className={"inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-extrabold transition " + (focusMode ? "text-white shadow-[0_2px_8px_rgba(225,29,72,0.35)]" : "text-rose-600 hover:bg-rose-50")} style={focusMode ? { background: "#e11d48" } : { border: "1px solid #fbcfe8" }}><Target size={15} />ФОКУС</button>
+        <button onClick={() => setReportsOpen(true)} title="Отчеты — итоги по выполненным задачам" className="inline-flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-extrabold text-orange-700 transition hover:bg-orange-100"><ClipboardCheck size={15} />Отчеты</button>
+        {reportsOpen && <DaySummary jobs={jobs} opTypes={opTypes} opDone={opDone} people={people} products={products} batches={batches} onClose={() => setReportsOpen(false)} />}
         {!focusMode && <div className="ml-auto flex flex-wrap items-center gap-2">
           {searchOpen || fltSearch ? (
             <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5 py-1.5" style={{ width: 210 }}>
