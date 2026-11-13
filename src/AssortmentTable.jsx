@@ -6101,9 +6101,8 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
         </div>
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
           <div className="flex items-center gap-2 pl-1.5 text-[12px] text-neutral-400">
-            {product.code && <span className="font-bold text-neutral-600">{product.code}</span>}
             {product.wb && (
-              <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-sky-600">· {product.wb} <ExternalLink size={12} /></a>
+              <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-sky-600">{product.wb} <ExternalLink size={12} /></a>
             )}
           </div>
           <input
@@ -6113,6 +6112,10 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
             className="w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-0.5 text-xl font-bold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 pl-1.5">
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Код</span>
+              <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код товара" className="w-28 rounded-md border border-transparent bg-neutral-50 px-2 py-1 text-sm font-semibold text-neutral-700 placeholder:font-normal placeholder:text-neutral-400 hover:border-neutral-200 focus:border-neutral-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-200" />
+            </div>
             <div className="flex items-center gap-2">
               <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Предмет</span>
               <SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
