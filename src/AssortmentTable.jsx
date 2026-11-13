@@ -6090,12 +6090,12 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-50" onClick={(e) => e.stopPropagation()}>
       {/* Шапка */}
-      <div className="flex items-center gap-3.5 border-b border-neutral-200 bg-white px-5 py-2 sm:px-8">
+      <div className="flex items-stretch gap-3.5 border-b border-neutral-200 bg-white px-5 py-2 sm:px-8">
         <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={onPhoto} />
-        <div className="group relative h-[68px] w-[52px] shrink-0 cursor-pointer overflow-hidden rounded-[11px] border border-neutral-200 bg-neutral-50 shadow-sm" onClick={() => photoRef.current && photoRef.current.click()} title={product.image ? "Заменить фото" : "Добавить фото"}>
+        <div className="group relative aspect-[3/4] shrink-0 self-stretch cursor-pointer overflow-hidden rounded-[11px] border border-neutral-200 bg-neutral-50 shadow-sm" onClick={() => photoRef.current && photoRef.current.click()} title={product.image ? "Заменить фото" : "Добавить фото"}>
           {product.image
-            ? <img src={product.image} alt="" className="h-full w-full object-cover" />
-            : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={20} /></div>}
+            ? <img src={product.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            : <div className="absolute inset-0 flex items-center justify-center text-neutral-300"><ImagePlus size={20} /></div>}
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-black/45 text-white opacity-0 transition group-hover:opacity-100">
             <ImagePlus size={14} /><span className="text-[9px] font-semibold leading-none">{product.image ? "Заменить" : "Добавить"}</span>
           </div>
