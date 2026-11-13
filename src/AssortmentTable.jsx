@@ -3268,7 +3268,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   // фактическая дата окончания этапа i: пусто — вернуть в работу; дата — этап закрыт
   const setStageFact = (i, iso) => {
     const s0 = cycSt[i]; if (!s0) return;
-    if (!iso) { if (!s0.done) return; return; } // закрытый этап в работу не возвращается: дату факта можно только поменять, не стереть
+    if (!iso) { patchCyc({ stages: cycSt.map((s, j) => (j === i ? { ...s, done: false, actualDate: null } : s)) }); return; }
     const stages = cycSt.map((s, j) => (j === i ? { ...s, done: true, actualDate: iso } : j < i && !s.done ? { ...s, done: true, actualDate: s.actualDate || iso } : s));
     // какие правила «по этапам» сработают от этого действия — не создаём сами, а спрашиваем
     const fired = { ...((cyc && cyc.fired) || {}) };
@@ -3474,8 +3474,9 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                             <div className="mb-2 text-[13px] font-bold text-neutral-800">{s.name}</div>
                             <label className="mb-1.5 flex items-center justify-between gap-2 text-xs text-neutral-500">План<input type="date" value={d ? d.endISO : ""} onChange={(e) => setStagePlan(i, e.target.value)} className="w-[130px] rounded-md border border-neutral-200 px-1.5 py-1 text-[13px] text-neutral-700 focus:outline-none focus:ring-2 focus:ring-orange-200" /></label>
                             <label className="flex items-center justify-between gap-2 text-xs text-neutral-500">Факт<input type="date" value={s.actualDate || ""} onChange={(e) => setStageFact(i, e.target.value)} className="w-[130px] rounded-md border border-neutral-200 px-1.5 py-1 text-[13px] text-neutral-700 focus:outline-none focus:ring-2 focus:ring-orange-200" /></label>
-                            {!s.done && <div className="mt-1 text-[11px] text-neutral-400">Пусто — этап ещё идёт</div>}
+                            <div className="mt-1 text-[11px] text-neutral-400">Пусто — этап ещё идёт</div>
                             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                              {s.done && <button onClick={() => { setStageFact(i, ""); setStagePop(null); }} className="text-[11px] font-semibold text-red-600 hover:underline">Вернуть в работу</button>}
                               {(cycleTriggers || []).some((r) => r.stageId === s.id && r.enabled && String(r.text || "").trim()) && <button onClick={() => { onCreateStageTask && onCreateStageTask(active.id, s.id); setStagePop(null); }} className="text-[11px] font-semibold text-sky-600 hover:underline">Создать задачи этапа</button>}
                             </div>
                           </div>
@@ -6089,12 +6090,12 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-50" onClick={(e) => e.stopPropagation()}>
       {/* Шапка */}
-      <div className="flex items-center gap-3.5 border-b border-neutral-200 bg-white px-5 py-2 sm:px-8">
+      <div className="flex items-stretch gap-3.5 border-b border-neutral-200 bg-white px-5 py-2 sm:px-8">
         <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={onPhoto} />
-        <div className="group relative h-[68px] w-[52px] shrink-0 cursor-pointer overflow-hidden rounded-[11px] border border-neutral-200 bg-neutral-50 shadow-sm" onClick={() => photoRef.current && photoRef.current.click()} title={product.image ? "Заменить фото" : "Добавить фото"}>
+        <div className="group relative aspect-[3/4] shrink-0 self-stretch cursor-pointer overflow-hidden rounded-[11px] border border-neutral-200 bg-neutral-50 shadow-sm" onClick={() => photoRef.current && photoRef.current.click()} title={product.image ? "Заменить фото" : "Добавить фото"}>
           {product.image
-            ? <img src={product.image} alt="" className="h-full w-full object-cover" />
-            : <div className="flex h-full w-full items-center justify-center text-neutral-300"><ImagePlus size={20} /></div>}
+            ? <img src={product.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            : <div className="absolute inset-0 flex items-center justify-center text-neutral-300"><ImagePlus size={20} /></div>}
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-black/45 text-white opacity-0 transition group-hover:opacity-100">
             <ImagePlus size={14} /><span className="text-[9px] font-semibold leading-none">{product.image ? "Заменить" : "Добавить"}</span>
           </div>
