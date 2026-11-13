@@ -1543,7 +1543,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const restoreFunction = (id) => setDuties((d0) => ({ ...d0, functions: d0.functions.map((f) => { if (f.id !== id) return f; const { deletedAt, deletedBy, ...rest } = f; return { ...rest, areaId: d0.areas.some((a) => a.id === rest.areaId) ? rest.areaId : null }; }) }));
   const purgeFunctions = (ids) => setDuties((d0) => ({ ...d0, functions: d0.functions.filter((f) => !ids.includes(f.id)) }));
   const openTrash = (sec) => { setTrashSec(sec); setTrashOpen(true); };
-  const trashTotal = trashJobs.length + trashProducts.length + trashFunctions.length;
 
   /* --- картинки --- */
   const triggerUpload = (id) => {
@@ -2159,7 +2158,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             {(activeTab === "tasks" || activeTab === "assortment" || activeTab === "duties") && (
             <button onClick={() => openTrash(activeTab === "assortment" ? "products" : activeTab === "duties" ? "functions" : "jobs")} title="Корзина" className="relative rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
               <Trash2 size={16} />
-              {trashTotal > 0 && <span className="absolute -right-1.5 -top-1.5 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-neutral-600 px-1 text-[10px] font-extrabold text-white">{trashTotal}</span>}
             </button>
             )}
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
