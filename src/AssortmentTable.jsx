@@ -3072,8 +3072,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames }) {
               {(filterArea || filterPerson) && <button onClick={() => { setFilterArea(null); setFilterPerson(null); }} className="mt-1 w-full rounded-lg border-t border-neutral-100 px-2 pt-2 text-left text-xs font-semibold text-neutral-400 hover:text-neutral-700">Сбросить фильтры</button>}
             </div></>}
           </div>
-          <button onClick={addFunction} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Функция</button>
-          <button onClick={() => setManageOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"><Users size={14} /> Управление</button>
+          <button onClick={() => setManageOpen(true)} title="Управление: области и исполнители" className="inline-flex items-center justify-center rounded-lg border border-neutral-200 p-2 text-neutral-500 transition hover:bg-neutral-50"><Settings2 size={15} /></button>
         </div>
         {/* группы по областям */}
         {(
