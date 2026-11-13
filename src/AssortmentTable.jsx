@@ -634,6 +634,37 @@ function PersonAvatar({ p, size = 24, ring = false, title }) {
     </span>
   );
 }
+// Исполнители задачи: до двух. Поле assignees — массив, assignee — первый (для совместимости).
+const jobAssignees = (j) => (j && Array.isArray(j.assignees) && j.assignees.length ? j.assignees : (j && j.assignee ? [j.assignee] : [])).filter(Boolean);
+// Выбор исполнителей: компактные чипы с аватаркой (max — сколько можно выбрать)
+function AssigneePicker({ people = [], value = [], onChange, max = 2 }) {
+  const sel = value || [];
+  const full = sel.length >= max;
+  const toggle = (id) => {
+    if (sel.includes(id)) onChange(sel.filter((x) => x !== id));
+    else if (max === 1) onChange([id]);
+    else if (!full) onChange([...sel, id]);
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
+        {people.map((pp) => { const on = sel.includes(pp.id); const dis = !on && full && max > 1; return (
+          <button key={pp.id} type="button" onClick={() => toggle(pp.id)} disabled={dis} title={profileLabel(pp)}
+            className={"inline-flex items-center gap-1.5 rounded-full border-[1.5px] py-[3px] pl-[3px] pr-2.5 text-[13px] font-semibold transition " + (on ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300") + (dis ? " cursor-not-allowed opacity-40" : "")}>
+            <PersonAvatar p={pp} size={22} />{profileLabel(pp)}
+          </button>
+        ); })}
+      </div>
+      {max > 1 && people.length > 0 && <span className="text-[11px] text-neutral-400">Можно выбрать до двух · выбрано {sel.length} из {max}</span>}
+    </div>
+  );
+}
+// Аватарки исполнителей (одна или две внахлёст)
+function AssigneeAvatars({ j, personById, size = 20 }) {
+  const list = jobAssignees(j).map((id) => personById[id]).filter(Boolean);
+  if (!list.length) return null;
+  return <span className="ml-auto inline-flex items-center">{list.map((pr, i) => <span key={pr.id} className={i ? "-ml-1.5" : ""}><PersonAvatar p={pr} size={size} ring={list.length > 1} /></span>)}</span>;
+}
 // Ужать изображение (File) до data-URL ~квадрат maxPx, jpeg.
 function fileToAvatarDataURL(file, maxPx = 256) {
   return new Promise((resolve, reject) => {
@@ -4297,7 +4328,6 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
           <button onClick={prevMo} className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /></button>
           <button onClick={nextMo} className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} /></button>
           <h3 className="ml-1 text-sm font-semibold capitalize text-neutral-900">{MONTHS_FULL[ym.m]} {ym.y}</h3>
-          <button onClick={goThisMo} className="ml-1 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">Сегодня</button>
           <label className="ml-1 inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50/60 px-2 py-1 text-xs font-medium text-violet-700" title="Отмечается полоской на ганте (единое поле со «старт продаж / точка входа»)">
             <Flag size={12} className="text-violet-500" /> Старт продаж
             <input type="date" value={saleStart} onChange={(e) => onSetSaleStart && onSetSaleStart(e.target.value)} className="rounded-md border border-violet-200 bg-white px-1.5 py-0.5 text-xs text-violet-700 focus:outline-none" />
@@ -6712,7 +6742,7 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], myId = null, 
   const fJobs = jobs.filter((j) => {
     if (!matchType(j)) return false;
     if (fltPrio && (j.priority || null) !== fltPrio) return false;
-    if (fltAssignee && (fltAssignee === "__none" ? !!j.assignee : (j.assignee || null) !== fltAssignee)) return false;
+    if (fltAssignee && (fltAssignee === "__none" ? jobAssignees(j).length > 0 : !jobAssignees(j).includes(fltAssignee))) return false;
     if (fltMark && (fltMark === "__none" ? !!j.mark : (j.mark || null) !== fltMark)) return false;
     if (fltStatus && stageOf(j) !== fltStatus) return false;
     if (fltSearch.trim() && !String(j.title || "").toLowerCase().includes(fltSearch.trim().toLowerCase())) return false;
@@ -6731,7 +6761,6 @@ function TasksView({ jobs, taskLabels, taskTags = [], people = [], myId = null, 
             <button onClick={prevM} className="rounded-lg flex h-7 w-7 items-center justify-center border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /></button>
             <button onClick={nextM} className="rounded-lg flex h-7 w-7 items-center justify-center border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} /></button>
             <h2 className="ml-1 text-base font-semibold capitalize text-neutral-900">{MONTHS_FULL[ym.m]} {ym.y}</h2>
-            <button onClick={goToday} className="rounded-lg ml-1 border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">Сегодня</button>
           </>
         )}
         <div className="ml-3 inline-flex rounded-lg bg-neutral-100 p-0.5" title="Быстрый фильтр по типу задачи">
@@ -6912,7 +6941,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   // — проектные —
   const burning = (j) => j.date && j.date <= todayStr && stageOf(j) !== "done"; // срок сегодня/просрочено
   const dueBadge = (j) => { if (!j.date || stageOf(j) === "done") return null; if (j.date < todayStr) { const dd = Math.round((new Date(todayStr) - new Date(j.date)) / 86400000); return { txt: `−${dd} дн`, over: true }; } if (j.date === todayStr) return { txt: "сегодня", over: false }; return null; };
-  const mine = (j) => !myId || (j.assignee || null) === myId; // только задачи текущего пользователя
+  const mine = (j) => !myId || jobAssignees(j).includes(myId); // только задачи текущего пользователя
   const projAll = (jobs || []).filter((j) => jobType(j) === "project" && !j.opId && mine(j));
   const focusProjects = projAll.filter((j) => stageOf(j) !== "done" && (stageOf(j) === "progress" || burning(j))).sort(sortP);
   const waiting = projAll.filter((j) => stageOf(j) === "wait" && !burning(j)).sort(sortP);
@@ -7251,7 +7280,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
         {groupBy !== "status" && <StageIcon j={j} />}
         {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
         {(prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
-        {(() => { const pr = personById[j.assignee]; return pr ? <span className="ml-auto"><PersonAvatar p={pr} size={20} /></span> : null; })()}
+        <AssigneeAvatars j={j} personById={personById} size={20} />
       </div>
     </div>
   ); };
@@ -7321,7 +7350,7 @@ function JobsListView({ jobs, tags, taskLabels, people = [], products, onOpen, o
               <td className="px-3 py-2"><button onClick={() => onOpen(j)} className={"text-left font-medium hover:text-orange-700 " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, prod && prod.name) || "Без названия")}</button></td>
               <td className="px-3 py-2"><StageIcon j={j} size={16} /></td>
               <td className="px-3 py-2"><PrioChip p={j.priority} /></td>
-              <td className="px-3 py-2">{(() => { const pr = personById[j.assignee]; return pr ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>{pr.name}</span> : <span className="text-neutral-300">—</span>; })()}</td>
+              <td className="px-3 py-2">{(() => { const prs = jobAssignees(j).map((id) => personById[id]).filter(Boolean); return prs.length ? <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700">{prs.map((pr) => <span key={pr.id} className="inline-flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: pr.color }}>{(pr.name[0] || "?").toUpperCase()}</span>{pr.name}</span>)}</span> : <span className="text-neutral-300">—</span>; })()}</td>
               <td className="px-3 py-2 text-xs text-neutral-600">{fmtD(j.date)}</td>
               <td className="px-3 py-2 text-xs text-neutral-500">{prod ? (prod.code || prod.name || "товар") : <span className="text-neutral-300">—</span>}</td>
             </tr>
@@ -7793,7 +7822,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
               <div className="flex flex-wrap items-center gap-1.5">
                 <StageIcon j={j} />
                 {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
-                {(() => { const pr = personById[j.assignee]; return pr ? <span className="ml-auto"><PersonAvatar p={pr} size={20} /></span> : null; })()}
+                <AssigneeAvatars j={j} personById={personById} size={20} />
               </div>
             </div>
           );
@@ -7988,13 +8017,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
             <RecurEditor recur={normRecur(j.recur)} onChange={(r) => set("recur", r)} />
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Исполнитель</span>
-              <div className="flex items-center gap-2">
-                <PersonAvatar p={(people || []).find((pp) => pp.id === j.assignee) || null} size={20} />
-                <select value={j.assignee || ""} onChange={(e) => set("assignee", e.target.value || null)} className="w-full max-w-xs rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-                  <option value="">Не назначен</option>
-                  {(people || []).map((pp) => (<option key={pp.id} value={pp.id}>{profileLabel(pp)}</option>))}
-                </select>
-              </div>
+              <AssigneePicker people={people || []} max={1} value={jobAssignees(j)} onChange={(arr) => setJ((o) => ({ ...o, assignees: arr, assignee: arr[0] || null }))} />
               {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Профили появляются после входа пользователей.</span>}
             </div>
             <p className="rounded-xl bg-indigo-50/60 px-3 py-2 text-[11px] leading-snug text-indigo-500">Операционная задача ложится в раздел «Операционные» на Ганте — чекбоксами по дням графика.</p>
@@ -8151,14 +8174,8 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
 
             <div className="border-t border-neutral-200/70" />
             <div className="flex flex-col gap-1.5">
-              <span className={fieldL}>Исполнитель</span>
-              <div className="flex items-center gap-2">
-                <PersonAvatar p={(people || []).find((pp) => pp.id === j.assignee) || null} size={20} />
-                <select value={j.assignee || ""} onChange={(e) => set("assignee", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-                  <option value="">Не назначен</option>
-                  {(people || []).map((pp) => (<option key={pp.id} value={pp.id}>{profileLabel(pp)}</option>))}
-                </select>
-              </div>
+              <span className={fieldL}>Исполнители</span>
+              <AssigneePicker people={people || []} max={2} value={jobAssignees(j)} onChange={(arr) => setJ((o) => ({ ...o, assignees: arr, assignee: arr[0] || null }))} />
               {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Профили появляются после входа пользователей.</span>}
             </div>
           </div>
