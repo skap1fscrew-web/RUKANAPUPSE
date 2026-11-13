@@ -163,6 +163,7 @@ const TABS = [
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
   { id: "strategy", label: "Карты" },
+  { id: "content", label: "Контент" },
   { id: "duties", label: "Функционал" },
 ];
 
@@ -2624,6 +2625,16 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               return id;
             }}
             onOpenTask={(id) => { const job = liveJobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
+          />
+        )}
+
+        {activeTab === "content" && (
+          <ContentBoard
+            products={products}
+            batches={purchaseBatches}
+            statuses={statuses}
+            onToggle={(pid, itemId) => { const pr = products.find((x) => x.id === pid); if (!pr) return; const cur = (pr.content && typeof pr.content === "object") ? pr.content : {}; updateProduct(pid, "content", { ...cur, [itemId]: !cur[itemId] }); }}
+            onOpen={(id) => setCardModal(id)}
           />
         )}
 
@@ -6749,6 +6760,121 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
 }
 
 const plural = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return one; if (m10 >= 2 && m10 <= 4 && !(m100 >= 12 && m100 <= 14)) return few; return many; };
+// ---- Вкладка «Контент»: наполненность карточек (матрица «товар × пункт чек-листа») ----
+function ContentBoard({ products = [], batches = [], statuses = [], onToggle, onOpen }) {
+  const [batchSel, setBatchSel] = useState([]); // выбранные партии (пусто = все товары)
+  const [statusSel, setStatusSel] = useState([]); // статусы товара
+  const [missing, setMissing] = useState(null); // id пункта, которого не хватает
+  const [sort, setSort] = useState("new"); // new | asc | desc
+  const [q, setQ] = useState("");
+  const [menu, setMenu] = useState(null); // batches | status | missing | sort
+  const SHORT = { main: "Главн.", sizegrid: "Размер.", extra: "Доп.", desc: "Опис.", specs: "Хар-ки", rich: "Рич", variants: "Вар. гл.", video: "Видео", bundle: "Связка" };
+  const N = CONTENT_ITEMS.length;
+  const doneOf = (p) => (p.content && typeof p.content === "object" ? p.content : {});
+  const pctOf = (p) => { const d = doneOf(p); return Math.round(CONTENT_ITEMS.filter((i) => d[i.id]).length / N * 100); };
+  const colOf = (v) => v >= 80 ? "#16a34a" : v >= 40 ? "#f59e0b" : v > 0 ? "#ef4444" : "#d4d4d8";
+  const statusColor = (name) => (statuses.find((s) => s.name === name) || {}).color || "#a3a3a3";
+  // товары выбранных партий
+  const batchProductIds = useMemo(() => {
+    if (!batchSel.length) return null;
+    const set = new Set();
+    (batches || []).filter((b) => batchSel.includes(b.id)).forEach((b) => (b.items || []).forEach((it) => it && it.productId && set.add(it.productId)));
+    return set;
+  }, [batchSel, batches]);
+  const rows = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    let r = products.filter((p) => {
+      if (batchProductIds && !batchProductIds.has(p.id)) return false;
+      if (statusSel.length && !statusSel.includes(p.status)) return false;
+      if (missing && doneOf(p)[missing]) return false;
+      if (qq && !((p.name || "").toLowerCase().includes(qq) || (p.code || "").toLowerCase().includes(qq))) return false;
+      return true;
+    });
+    r = r.slice().sort((a, b) => sort === "asc" ? pctOf(a) - pctOf(b) : sort === "desc" ? pctOf(b) - pctOf(a) : (b.createdAt || 0) - (a.createdAt || 0));
+    return r;
+  }, [products, batchProductIds, statusSel, missing, q, sort]); // eslint-disable-line
+  const avg = rows.length ? Math.round(rows.reduce((s, p) => s + pctOf(p), 0) / rows.length) : 0;
+  const full = rows.filter((p) => pctOf(p) === 100).length;
+  const none = rows.filter((p) => pctOf(p) === 0).length;
+  const perItem = CONTENT_ITEMS.map((it) => rows.length ? Math.round(rows.filter((p) => doneOf(p)[it.id]).length / rows.length * 100) : 0);
+  const batchCount = (b) => new Set((b.items || []).map((it) => it && it.productId).filter(Boolean)).size;
+  const toggleIn = (arr, setArr, v) => setArr(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  const Chip = ({ id, label, active, children, width = 260 }) => (
+    <div className="relative">
+      <button onClick={() => setMenu(menu === id ? null : id)} className={"inline-flex h-[30px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition " + (active ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50")}>{label}<ChevronDown size={13} className="opacity-60" /></button>
+      {menu === id && (<><div className="fixed inset-0 z-10" onClick={() => setMenu(null)} /><div className="absolute left-0 z-20 mt-1.5 max-h-80 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl" style={{ width }}>{children}</div></>)}
+    </div>
+  );
+  const Opt = ({ on, onClick, children, right }) => (
+    <button onClick={onClick} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-neutral-50 " + (on ? "font-semibold text-neutral-900" : "text-neutral-600")}>
+      <span className={"flex h-4 w-4 shrink-0 items-center justify-center rounded border " + (on ? "border-orange-500 bg-orange-500 text-white" : "border-neutral-300")}>{on && <Check size={11} strokeWidth={3.4} />}</span>
+      <span className="min-w-0 flex-1 truncate">{children}</span>{right != null && <span className="text-[11px] text-neutral-400">{right}</span>}
+    </button>
+  );
+  const sortLabel = sort === "asc" ? "Готовность: сначала меньше" : sort === "desc" ? "Готовность: сначала больше" : "Сначала новые";
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-neutral-100 px-4 py-3">
+        <div className="flex items-baseline gap-1.5"><b className="text-[28px] font-extrabold leading-none tracking-tight" style={{ color: colOf(avg) === "#d4d4d8" ? "#a3a3a3" : colOf(avg) }}>{avg}%</b><span className="text-xs text-neutral-400">средняя наполненность</span></div>
+        <div className="flex gap-4">
+          {[[full, "готовы на 100%"], [none, "ещё не начаты"], [rows.length, "товаров в списке"]].map(([n, l], i) => <div key={i} className="flex flex-col leading-tight"><b className="text-base font-extrabold text-neutral-900">{n}</b><span className="text-[10.5px] text-neutral-400">{l}</span></div>)}
+        </div>
+        <span className="flex-1" />
+        <div className="inline-flex h-[30px] items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5"><Search size={13} className="text-neutral-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Код или название" className="w-36 border-0 bg-transparent p-0 text-xs outline-none placeholder:text-neutral-400" />{q && <button onClick={() => setQ("")} className="text-neutral-300 hover:text-neutral-600"><X size={12} /></button>}</div>
+        <Chip id="batches" label={batchSel.length ? "Партии: " + batchSel.length : "Все партии"} active={batchSel.length > 0} width={300}>
+          {(batches || []).length === 0 && <div className="px-2.5 py-3 text-xs text-neutral-400">Партий пока нет</div>}
+          {(batches || []).map((b) => <Opt key={b.id} on={batchSel.includes(b.id)} onClick={() => toggleIn(batchSel, setBatchSel, b.id)} right={batchCount(b)}>{b.name || "Партия"}</Opt>)}
+          {batchSel.length > 0 && <button onClick={() => setBatchSel([])} className="mt-1 w-full rounded-lg border-t border-neutral-100 px-2.5 pt-2 text-left text-xs font-semibold text-neutral-400 hover:text-neutral-700">Сбросить выбор</button>}
+        </Chip>
+        <Chip id="status" label={statusSel.length ? "Статусы: " + statusSel.length : "Все статусы"} active={statusSel.length > 0} width={240}>
+          {(statuses || []).map((s) => <Opt key={s.name} on={statusSel.includes(s.name)} onClick={() => toggleIn(statusSel, setStatusSel, s.name)}><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: s.color }} />{s.name}</Opt>)}
+          {statusSel.length > 0 && <button onClick={() => setStatusSel([])} className="mt-1 w-full rounded-lg border-t border-neutral-100 px-2.5 pt-2 text-left text-xs font-semibold text-neutral-400 hover:text-neutral-700">Сбросить выбор</button>}
+        </Chip>
+        <Chip id="missing" label={missing ? "Нет: " + (CONTENT_ITEMS.find((i) => i.id === missing) || {}).label : "Чего не хватает"} active={!!missing} width={220}>
+          {CONTENT_ITEMS.map((it) => <Opt key={it.id} on={missing === it.id} onClick={() => { setMissing(missing === it.id ? null : it.id); setMenu(null); }}>{it.label}</Opt>)}
+        </Chip>
+        <Chip id="sort" label={sortLabel} active={false} width={230}>
+          {[["new", "Сначала новые"], ["asc", "Готовность: сначала меньше"], ["desc", "Готовность: сначала больше"]].map(([k, l]) => <button key={k} onClick={() => { setSort(k); setMenu(null); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-neutral-50 " + (sort === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{sort === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{l}</button>)}
+        </Chip>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead><tr>
+            <th className="px-4 py-2 text-left text-[9.5px] font-extrabold uppercase tracking-wider text-neutral-400">Товар</th>
+            {CONTENT_ITEMS.map((it) => <th key={it.id} title={it.label} className="px-1 py-2 text-center text-[9.5px] font-extrabold uppercase tracking-wider text-neutral-400 whitespace-nowrap">{SHORT[it.id] || it.label}</th>)}
+            <th className="py-2 pl-1 pr-4 text-left text-[9.5px] font-extrabold uppercase tracking-wider text-neutral-400">Готовность</th>
+          </tr></thead>
+          <tbody>
+            {rows.length === 0 && <tr><td colSpan={N + 2} className="px-4 py-14 text-center text-sm text-neutral-400">Нет товаров под выбранные фильтры</td></tr>}
+            {rows.map((p) => { const d = doneOf(p); const pc = pctOf(p); return (
+              <tr key={p.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
+                <td className="px-4 py-2">
+                  <button onClick={() => onOpen && onOpen(p.id)} className="flex items-center gap-2.5 text-left">
+                    <span className="flex h-11 w-[34px] shrink-0 items-center justify-center overflow-hidden rounded-[7px] border border-neutral-200 bg-neutral-50 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={14} />}</span>
+                    <span className="min-w-0"><span className="block text-[13px] font-bold leading-tight text-neutral-800">{p.code || "—"}</span><span className="block max-w-[260px] truncate text-[11px] text-neutral-400">{p.name || "Без названия"}</span></span>
+                    {p.status && <span className="ml-1 hidden h-2 w-2 shrink-0 rounded-full sm:block" style={{ background: statusColor(p.status) }} title={p.status} />}
+                  </button>
+                </td>
+                {CONTENT_ITEMS.map((it) => (
+                  <td key={it.id} className="px-1 py-2 text-center">
+                    <button onClick={() => onToggle && onToggle(p.id, it.id)} title={it.label} className={"inline-flex h-5 w-5 items-center justify-center rounded-[7px] border-[1.5px] transition " + (d[it.id] ? "border-green-500 bg-green-500 text-white" : "border-neutral-300 bg-white text-transparent hover:border-green-400")}><Check size={12} strokeWidth={3.4} /></button>
+                  </td>
+                ))}
+                <td className="py-2 pl-1 pr-4"><div className="flex min-w-[120px] items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full" style={{ width: pc + "%", background: colOf(pc) }} /></div><b className="w-9 text-right text-xs font-extrabold" style={{ color: colOf(pc) === "#d4d4d8" ? "#a3a3a3" : colOf(pc) }}>{pc}%</b></div></td>
+              </tr>
+            ); })}
+          </tbody>
+          {rows.length > 0 && <tfoot><tr className="border-t border-neutral-200 bg-neutral-50">
+            <td className="px-4 py-2 text-[11.5px] font-extrabold text-neutral-500">Заполнено по пункту</td>
+            {perItem.map((v, i) => <td key={i} className="px-1 py-2 text-center text-[11.5px] font-extrabold text-neutral-600">{v}%</td>)}
+            <td />
+          </tr></tfoot>}
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ---- Отчёты: итоги по выполненным задачам и подзадачам за день / неделю / месяц ----
 function DaySummary({ jobs = [], opTypes = [], opDone = {}, people = [], products = [], batches = [], onClose }) {
   const [mode, setMode] = useState("day"); // day | week | month
