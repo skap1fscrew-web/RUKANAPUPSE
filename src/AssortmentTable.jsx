@@ -663,7 +663,9 @@ function AssigneePicker({ people = [], value = [], onChange, max = 2 }) {
 function AssigneeAvatars({ j, personById, size = 20 }) {
   const list = jobAssignees(j).map((id) => personById[id]).filter(Boolean);
   if (!list.length) return null;
-  return <span className="ml-auto inline-flex items-center">{list.map((pr, i) => <span key={pr.id} className={i ? "-ml-1.5" : ""}><PersonAvatar p={pr} size={size} ring={list.length > 1} /></span>)}</span>;
+  // обёртки — flex, а не строчные: иначе аватарка с фото и аватарка с буквой садятся на базовую линию по-разному и «прыгают» по вертикали
+  // первый исполнитель всегда сверху (z-index убывает), второй выглядывает из-под него
+  return <span className="ml-auto inline-flex items-center">{list.map((pr, i) => <span key={pr.id} className={"relative flex shrink-0 leading-none " + (i ? "-ml-1.5" : "")} style={{ zIndex: list.length - i }}><PersonAvatar p={pr} size={size} ring={list.length > 1} /></span>)}</span>;
 }
 // Ужать изображение (File) до data-URL ~квадрат maxPx, jpeg.
 function fileToAvatarDataURL(file, maxPx = 256) {
