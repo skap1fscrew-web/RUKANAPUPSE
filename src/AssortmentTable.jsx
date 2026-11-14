@@ -7274,8 +7274,8 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
             <button key={key} title={label} onClick={() => { setFocusMode(false); setFltType(key); }} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
           ); })}
         </div>
-        <button onClick={() => setFocusMode((f) => !f)} title="Фокус — повестка на сегодня" className={"inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-extrabold transition " + (focusMode ? "text-white shadow-[0_2px_8px_rgba(225,29,72,0.35)]" : "text-rose-600 hover:bg-rose-50")} style={focusMode ? { background: "#e11d48" } : { border: "1px solid #fbcfe8" }}><Target size={15} />ФОКУС</button>
-        <button onClick={() => setReportsOpen(true)} title="Отчеты — итоги по выполненным задачам" aria-label="Отчеты" className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-600 transition hover:bg-blue-100"><ClipboardCheck size={16} /></button>
+        <button onClick={() => setFocusMode((f) => !f)} title="Фокус — повестка на сегодня" className={"inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-extrabold transition " + (focusMode ? "text-white shadow-[0_2px_8px_rgba(225,29,72,0.35)]" : "text-rose-600 hover:bg-rose-50")} style={focusMode ? { background: "#e11d48" } : { border: "1px solid #fbcfe8" }}><Target size={15} />ФОКУС</button>
+        <button onClick={() => setReportsOpen(true)} title="Отчеты — итоги по выполненным задачам" aria-label="Отчеты" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-600 transition hover:bg-blue-100"><ClipboardCheck size={15} /></button>
         {reportsOpen && <DaySummary jobs={jobs} opTypes={opTypes} opDone={opDone} people={people} products={products} batches={batches} onClose={() => setReportsOpen(false)} />}
         {!focusMode && <div className="ml-auto flex flex-wrap items-center gap-2">
           {searchOpen || fltSearch ? (
@@ -7296,7 +7296,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
             <button onClick={() => setSearchOpen(true)} title="Поиск по названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
           )}
           {myId && (
-            <button onClick={() => setFltAssignee(fltAssignee === myId ? null : myId)} title="Только мои задачи" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold " + (fltAssignee === myId ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><User size={14} className={fltAssignee === myId ? "" : "text-neutral-400"} />Свои</button>
+            <button onClick={() => setFltAssignee(fltAssignee === myId ? null : myId)} title="Только мои задачи" className={"inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold " + (fltAssignee === myId ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><User size={14} className={fltAssignee === myId ? "" : "text-neutral-400"} />Свои</button>
           )}
           {view === "kanban" && (
             <div className="relative">
