@@ -3037,6 +3037,10 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames, deletedBy = null, onT
   const [asgKey, setAsgKey] = useState(null);
   const [recKey, setRecKey] = useState(null);
   const [manageOpen, setManageOpen] = useState(false);
+  const [groupBy, setGroupByRaw] = useState(() => (lsGet("rnp.dutiesGroup", "area") === "person" ? "person" : "area")); // area | person
+  const [gbOpen, setGbOpen] = useState(false);
+  const setGroupBy = (v) => { setGroupByRaw(v); lsSet("rnp.dutiesGroup", v); };
+  const byPerson = groupBy === "person";
   const personById = Object.fromEntries(d.people.map((p) => [p.id, p]));
   // Все мутации читают АКТУАЛЬНОЕ состояние из рефа, а не из устаревшего замыкания —
   // иначе быстрый ввод и перерисовки от облачного эха могли бы затирать правки.
@@ -3045,7 +3049,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames, deletedBy = null, onT
   const patchFn = (fid, p) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, ...p } : f)) }); };
   const patchSub = (fid, sid, p) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: f.subs.map((s) => (s.id === sid ? { ...s, ...p } : s)) } : f)) }); };
   const addFunction = () => { const c = stateRef.current; const areaId = filterArea || c.areas[0]?.id || null; const id = uid(); save({ ...c, functions: [...c.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
-  const addFunctionTo = (areaId) => { const c = stateRef.current; const id = uid(); save({ ...c, functions: [...c.functions, { id, areaId, name: "", assignee: null, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
+  const addFunctionTo = (areaId, assignee = null) => { const c = stateRef.current; const id = uid(); save({ ...c, functions: [...c.functions, { id, areaId: areaId ?? c.areas[0]?.id ?? null, name: "", assignee, recur: normRecur(null), subs: [] }] }); setExpanded((s) => new Set(s).add(id)); };
   const removeFunction = (fid) => { const c = stateRef.current; const fn = c.functions.find((f) => f.id === fid); save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, deletedAt: new Date().toISOString(), deletedBy } : f)) }); if (fn && onTrashed) onTrashed(fn); };
   const addSub = (fid) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: [...f.subs, { id: uid(), name: "", assignee: f.assignee, recur: normRecur(f.recur) }] } : f)) }); setExpanded((s) => new Set(s).add(fid)); };
   const removeSub = (fid, sid) => { const c = stateRef.current; save({ ...c, functions: c.functions.map((f) => (f.id === fid ? { ...f, subs: f.subs.filter((s) => s.id !== sid) } : f)) }); };
@@ -3066,8 +3070,12 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames, deletedBy = null, onT
 
   // группировка по областям
   const orphan = d.functions.filter((f) => !d.areas.some((a) => a.id === f.areaId));
-  let groups = [...d.areas.map((a) => ({ area: a, fns: d.functions.filter((f) => f.areaId === a.id) })), ...(orphan.length ? [{ area: null, fns: orphan }] : [])];
-  if (filterArea) groups = groups.filter((g) => g.area && g.area.id === filterArea);
+  const unassignedFns = d.functions.filter((f) => !d.people.some((p) => p.id === f.assignee));
+  let groups = byPerson
+    ? [...d.people.map((p) => ({ person: p, fns: d.functions.filter((f) => f.assignee === p.id) })), ...(unassignedFns.length ? [{ person: null, fns: unassignedFns }] : [])]
+    : [...d.areas.map((a) => ({ area: a, fns: d.functions.filter((f) => f.areaId === a.id) })), ...(orphan.length ? [{ area: null, fns: orphan }] : [])];
+  if (!byPerson && filterArea) groups = groups.filter((g) => g.area && g.area.id === filterArea);
+  if (byPerson && filterPerson) groups = groups.filter((g) => g.person && g.person.id === filterPerson);
   const fpMatch = (f) => !filterPerson || f.assignee === filterPerson || f.subs.some((s) => s.assignee === filterPerson);
 
   const Avatar = ({ p, sm }) => <span className={"flex items-center justify-center rounded-full font-bold text-white " + (sm ? "h-5 w-5 text-[10px]" : "h-6 w-6 text-[11px]")} style={{ background: p ? p.color : "#cfcfd6" }}>{p ? (p.name[0] || "?").toUpperCase() : "?"}</span>;
@@ -3121,25 +3129,33 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames, deletedBy = null, onT
               {(filterArea || filterPerson) && <button onClick={() => { setFilterArea(null); setFilterPerson(null); }} className="mt-1 w-full rounded-lg border-t border-neutral-100 px-2 pt-2 text-left text-xs font-semibold text-neutral-400 hover:text-neutral-700">Сбросить фильтры</button>}
             </div></>}
           </div>
+          <div className="relative">
+            <button onClick={() => setGbOpen((o) => !o)} title="Группировка: по областям или по исполнителям" className={"inline-flex items-center justify-center rounded-lg border p-2 transition " + (gbOpen ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}><Columns3 size={15} /></button>
+            {gbOpen && <><div className="fixed inset-0 z-10" onClick={() => setGbOpen(false)} /><div className="absolute right-0 z-20 mt-1.5 w-52 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl">
+              <div className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Группировать</div>
+              {[["area", "По областям"], ["person", "По исполнителям"]].map(([v, l]) => <button key={v} onClick={() => { setGroupBy(v); setGbOpen(false); }} className={"flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-neutral-50 " + (groupBy === v ? "font-semibold text-neutral-900" : "text-neutral-600")}>{l}{groupBy === v && <Check size={13} className="ml-auto text-neutral-500" />}</button>)}
+            </div></>}
+          </div>
           <button onClick={() => setManageOpen(true)} title="Управление: области и исполнители" className="inline-flex items-center justify-center rounded-lg border border-neutral-200 p-2 text-neutral-500 transition hover:bg-neutral-50"><Settings2 size={15} /></button>
         </div>
         {/* группы по областям */}
         {(
           <div className="grid gap-3 p-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))" }}>
             {groups.map((g) => {
-              const aid = g.area ? g.area.id : null; const fns = g.fns.filter(fpMatch);
-              const accent = g.area ? g.area.color : "#a3a3a3";
+              const aid = byPerson ? (g.person ? "p:" + g.person.id : "p:none") : (g.area ? g.area.id : null); const fns = g.fns.filter(fpMatch).filter((f) => !byPerson || !filterArea || f.areaId === filterArea);
+              const accent = byPerson ? (g.person ? g.person.color : "#a3a3a3") : (g.area ? g.area.color : "#a3a3a3");
+              const droppable = byPerson ? true : !!g.area;
               return (
                 <div key={aid || "none"}
-                  onDragOver={(e) => { if (dragFnRef.current && g.area) { e.preventDefault(); setOverArea(aid); } }}
+                  onDragOver={(e) => { if (dragFnRef.current && droppable) { e.preventDefault(); setOverArea(aid); } }}
                   onDragLeave={() => setOverArea((o) => (o === aid ? undefined : o))}
-                  onDrop={(e) => { e.preventDefault(); if (dragFnRef.current && g.area) patchFn(dragFnRef.current, { areaId: aid }); dragFnRef.current = null; setOverArea(undefined); }}
+                  onDrop={(e) => { e.preventDefault(); if (dragFnRef.current && droppable) patchFn(dragFnRef.current, byPerson ? { assignee: g.person ? g.person.id : null } : { areaId: aid }); dragFnRef.current = null; setOverArea(undefined); }}
                   className="flex min-w-0 flex-col rounded-2xl border p-2.5 transition" style={{ borderColor: overArea === aid ? accent : "#ececef", background: overArea === aid ? accent + "14" : "#fafafa" }}>
                   <div className="mb-2 flex items-center gap-2 px-1">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: accent }} />
-                    <span className="truncate text-xs font-bold uppercase tracking-wide text-neutral-600">{g.area ? g.area.name : "Без области"}</span>
+                    {byPerson ? <Avatar p={g.person} sm /> : <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: accent }} />}
+                    <span className="truncate text-xs font-bold uppercase tracking-wide text-neutral-600">{byPerson ? (g.person ? g.person.name : "Не назначено") : (g.area ? g.area.name : "Без области")}</span>
                     <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] font-bold text-neutral-500">{fns.length}</span>
-                    {g.area && !filterPerson && <button onClick={() => addFunctionTo(aid)} title="Добавить функцию" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-700"><Plus size={15} /></button>}
+                    {(byPerson || g.area) && !filterPerson && <button onClick={() => (byPerson ? addFunctionTo(filterArea || null, g.person ? g.person.id : null) : addFunctionTo(aid))} title="Добавить функцию" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-700"><Plus size={15} /></button>}
                   </div>
                   <div className="flex min-h-[40px] flex-col gap-1.5">
                     {fns.map((f) => {
@@ -3153,6 +3169,7 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames, deletedBy = null, onT
                           </div>
                           <div className="flex items-center gap-2">
                             <Pill compact who={f.assignee} k={`f:${f.id}`} onPick={(pid) => patchFn(f.id, { assignee: pid })} />
+                            {byPerson && (() => { const ar = d.areas.find((a) => a.id === f.areaId); return ar ? <span title={ar.name} className="h-2 w-2 shrink-0 rounded-sm" style={{ background: ar.color }} /> : null; })()}
                             <textarea value={f.name} rows={1} onChange={(e) => patchFn(f.id, { name: e.target.value })} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} placeholder="Название функции…" className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-0.5 text-[13px] font-semibold leading-snug text-neutral-800 focus:outline-none" />
                             <button onClick={toggle} className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-neutral-100 px-1.5 text-[11px] font-bold text-neutral-500 hover:bg-neutral-200" title="Подфункции">{f.subs.length > 0 ? f.subs.length : <Plus size={11} />}{isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</button>
                           </div>
