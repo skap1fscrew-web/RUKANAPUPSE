@@ -7275,7 +7275,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
           ); })}
         </div>
         <button onClick={() => setFocusMode((f) => !f)} title="Фокус — повестка на сегодня" className={"inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-extrabold transition " + (focusMode ? "text-white shadow-[0_2px_8px_rgba(225,29,72,0.35)]" : "text-rose-600 hover:bg-rose-50")} style={focusMode ? { background: "#e11d48" } : { border: "1px solid #fbcfe8" }}><Target size={15} />ФОКУС</button>
-        <button onClick={() => setReportsOpen(true)} title="Отчеты — итоги по выполненным задачам" className="inline-flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-extrabold text-orange-700 transition hover:bg-orange-100"><ClipboardCheck size={15} />Отчеты</button>
+        <button onClick={() => setReportsOpen(true)} title="Отчеты — итоги по выполненным задачам" aria-label="Отчеты" className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-600 transition hover:bg-blue-100"><ClipboardCheck size={16} /></button>
         {reportsOpen && <DaySummary jobs={jobs} opTypes={opTypes} opDone={opDone} people={people} products={products} batches={batches} onClose={() => setReportsOpen(false)} />}
         {!focusMode && <div className="ml-auto flex flex-wrap items-center gap-2">
           {searchOpen || fltSearch ? (
