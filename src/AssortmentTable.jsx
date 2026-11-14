@@ -964,6 +964,9 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [navCfg, setNavCfg] = useState(() => { try { const r = JSON.parse(localStorage.getItem("rnp-navtabs") || "null"); return r && typeof r === "object" ? r : { order: [], hidden: {} }; } catch { return { order: [], hidden: {} }; } });
   useEffect(() => { try { localStorage.setItem("rnp-navtabs", JSON.stringify(navCfg)); } catch {} }, [navCfg]);
   const [navMoreOpen, setNavMoreOpen] = useState(false);
+  // личный масштаб интерфейса (по умолчанию 80%)
+  const [uiZoom, setUiZoom] = useState(() => { try { const z = parseFloat(localStorage.getItem("rnp-uizoom")); return z >= 0.6 && z <= 1.2 ? z : 0.8; } catch { return 0.8; } });
+  useEffect(() => { try { localStorage.setItem("rnp-uizoom", String(uiZoom)); } catch {} document.documentElement.style.zoom = uiZoom === 1 ? "" : String(uiZoom); return () => { document.documentElement.style.zoom = ""; }; }, [uiZoom]);
   const navTabs = (() => { const ord = (navCfg.order || []).filter((id) => TABS.some((t) => t.id === id)); const all = [...ord, ...TABS.map((t) => t.id).filter((id) => !ord.includes(id))]; return all.map((id) => TABS.find((t) => t.id === id)); })();
   const navShown = navTabs.filter((t) => !(navCfg.hidden || {})[t.id] || t.id === activeTab);
   const navRest = navTabs.filter((t) => !navShown.includes(t));
@@ -2037,8 +2040,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
   return (
     <div
-      style={{ fontFamily: '"Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
-      className="min-h-screen w-full bg-neutral-100 text-neutral-900"
+      style={{ fontFamily: '"Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', minHeight: (100 / uiZoom) + "vh" }}
+      className="w-full bg-neutral-100 text-neutral-900"
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
@@ -2746,6 +2749,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           initialTab={settingsTab}
           navCfg={navCfg}
           setNavCfg={setNavCfg}
+          uiZoom={uiZoom}
+          setUiZoom={setUiZoom}
           wbApiKey={wbApiKey}
           setWbApiKey={setWbApiKey}
           onFetchWb={() => { setSettingsOpen(false); fetchWbOrders(); }}
@@ -9752,7 +9757,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
   const toggleTrgOpen = (id) => setTrgOpen((o) => ({ ...o, [id]: !o[id] }));
@@ -9890,7 +9895,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
         <div className="flex flex-wrap gap-1.5 border-b border-neutral-100 px-5 py-2.5">
           <TabBtn id="statuses">Статусы</TabBtn>
-          <TabBtn id="nav">Быстрый доступ</TabBtn>
+          <TabBtn id="nav">Вид</TabBtn>
           <TabBtn id="triggers">Задачи по триггерам</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
@@ -9907,6 +9912,11 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
             const move = (id, d) => { const ids = list.map((t) => t.id); const i = ids.indexOf(id), j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j], ids[i]]; setOrder(ids); };
             return (
               <>
+                <h3 className="text-sm font-bold text-neutral-900">Масштаб интерфейса</h3>
+                <p className="mb-2 text-xs text-neutral-500">Личная настройка. Если вы уже уменьшали масштаб в браузере, поставьте 100%.</p>
+                <div className="mb-5 inline-flex rounded-xl border border-neutral-200 bg-white p-1">
+                  {[0.7, 0.8, 0.9, 1].map((z) => <button key={z} onClick={() => setUiZoom(z)} className={"rounded-lg px-3.5 py-1.5 text-sm font-semibold transition " + (uiZoom === z ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100")}>{Math.round(z * 100)}%</button>)}
+                </div>
                 <h3 className="text-sm font-bold text-neutral-900">Быстрый доступ к блокам</h3>
                 <p className="mb-3 text-xs text-neutral-500">Выбранные блоки — на верхней панели, остальные — в меню «⋯». Настройка личная, на других пользователей не влияет.</p>
                 <div>
