@@ -3383,6 +3383,13 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
       pushToast({ sticky: true, text: `Этап «${s0.name}» закрыт. Создать задачи по правилам (${pending.length})?`, actions: [{ label: "Создать", primary: true, fn: () => { const { cyc: c, patch } = cycFresh.current; if (!c || !patch) return; patch({ fired: Object.fromEntries(Object.entries(c.fired || {}).filter(([k]) => !ids.includes(k))) }); } }, { label: "Нет" }] });
     }
   };
+  // снять отметку «факт»: этап (и следующие за ним) возвращаются в работу
+  const clearStageFact = (i) => {
+    const s0 = cycSt[i]; if (!s0) return;
+    const stages = cycSt.map((s, j) => { if (j < i) return s; const n = { ...s, done: false }; delete n.actualDate; return n; });
+    patchCyc({ stages });
+    setStagePop(null);
+  };
   const fmtDM = (iso) => { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0"); };
   const stageDev = (s) => { const d = cycDates[s.id]; if (!s.actualDate || !d || !d.endISO) return null; return Math.round((new Date(s.actualDate) - new Date(d.endISO)) / 86400000); }; // >0 позже плана
   const addItem = (productId) => { patchBatch({ items: [...(active.items || []), { id: uid(), productId, priceCny: "", qty: "" }] }); setPicker(false); setPq(""); };
@@ -3586,7 +3593,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                             <label className="mb-1.5 flex items-center justify-between gap-2 text-xs text-neutral-500">План<input type="date" value={d ? d.endISO : ""} onChange={(e) => setStagePlan(i, e.target.value)} className="w-[130px] rounded-md border border-neutral-200 px-1.5 py-1 text-[13px] text-neutral-700 focus:outline-none focus:ring-2 focus:ring-orange-200" /></label>
                             <label className="flex items-center justify-between gap-2 text-xs text-neutral-500">Факт<input type="date" value={s.actualDate || ""} onChange={(e) => setStageFact(i, e.target.value)} className="w-[130px] rounded-md border border-neutral-200 px-1.5 py-1 text-[13px] text-neutral-700 focus:outline-none focus:ring-2 focus:ring-orange-200" /></label>
                             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                              
+                              {(s.done || s.actualDate) && <button onClick={() => clearStageFact(i)} className="text-[11px] font-semibold text-red-500 hover:underline" title="Этап вернётся в работу">Убрать факт</button>}
                               {(cycleTriggers || []).some((r) => r.stageId === s.id && r.enabled && String(r.text || "").trim()) && <button onClick={() => { onCreateStageTask && onCreateStageTask(active.id, s.id); setStagePop(null); }} className="text-[11px] font-semibold text-sky-600 hover:underline">Создать задачи этапа</button>}
                             </div>
                           </div>
