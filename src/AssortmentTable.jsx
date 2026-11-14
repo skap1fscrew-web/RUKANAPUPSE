@@ -7671,27 +7671,22 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     ...hotList.filter((j) => jobType(j) !== "product").map((j) => ({ j, date: dateKey(j) })),
     ...Object.entries(hotGroupsMap).map(([title, list]) => ({ g: { title, list, maxOver: Math.max(0, ...list.map((j) => (dueBadge(j)?.over ? dueBadge(j).dd : 0))), hasOver: list.some((j) => dueBadge(j)?.over) }, date: list.reduce((mn, j) => (dateKey(j) < mn ? dateKey(j) : mn), "9999-99-99") })),
   ].sort((a, b) => a.date.localeCompare(b.date));
-  const typeBadge = (j) => { const t = jobType(j); return t === "product" ? { ch: "Т", cls: "bg-orange-50 text-orange-600" } : t === "purchase" ? { ch: "З", cls: "bg-cyan-50 text-cyan-600" } : { ch: "П", cls: "bg-violet-50 text-violet-600" }; };
+  const typeBadge = (j) => TASK_TYPE_META.find((x) => x.key === jobType(j)) || TASK_TYPE_META[2];
+  const TypeIco = ({ j, size = 22 }) => { const tb = typeBadge(j); const Ic = tb.Icon; return <span title={tb.label} style={{ background: tb.bg, color: tb.tint, width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-md"><Ic size={Math.round(size * 0.58)} /></span>; };
   const dueChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; if (dd === 1) return { txt: "завтра", cls: "bg-orange-100 text-orange-700" }; if (dd <= 3) return { txt: `через ${dd} дн`, cls: "bg-orange-100 text-orange-700" }; return { txt: j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: "bg-neutral-100 text-neutral-500" }; };
   const setMain = (j, on) => onUpdateJob({ ...j, pinned: on, ...(on ? {} : { focus: false }) });
   const pickCands = allOpen.filter((j) => !isMain(j)).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
   const pickList = pickCands.filter((j) => !pickQ.trim() || (j.title || "").toLowerCase().includes(pickQ.trim().toLowerCase())).slice(0, 200);
   const addToMain = () => { const sel = allOpen.filter((j) => pickSel.includes(j.id)); sel.forEach((j) => onUpdateJob({ ...j, pinned: true })); setPickSel([]); setPickOpen(false); setPickQ(""); if (sel.length) flash(`В «Главное» добавлено: ${sel.length}`); };
   const JobCard = ({ j, main = false }) => {
-    const tb = typeBadge(j); const dc = dueChip(j); const st = STAGES[stageOf(j)]; const pr = (people || []).find((q) => q.id === j.assignee);
-    const over = dc && dc.cls.includes("red");
+    const dc = dueChip(j); const st = STAGES[stageOf(j)]; const pr = (people || []).find((q) => q.id === j.assignee);
     return (
-      <div onClick={() => onOpen(j)} className={"group mb-2 flex cursor-pointer flex-col gap-1.5 rounded-xl border p-2.5 transition hover:shadow-sm " + (main ? "border-rose-200 bg-rose-50/50" : over ? "border-red-200 bg-red-50/40" : "border-neutral-200 bg-white")}>
-        <div className="flex items-start gap-1.5">
-          <span className="min-w-0 flex-1 text-[13.5px] font-bold leading-snug text-neutral-800">{stripProdSuffix(j.title, prodById[j.productId]?.name)}</span>
-          <button onClick={(e) => { e.stopPropagation(); setMain(j, !main); }} title={main ? "Убрать из «Главного»" : "В «Главное»"} className={"shrink-0 text-[15px] leading-none " + (main ? "text-rose-600" : "text-neutral-300 hover:text-rose-400")}>★</button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className={"flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-extrabold " + tb.cls} title={JOB_TYPES[jobType(j)]?.label || ""}>{tb.ch}</span>
-          {st && <span className="text-[11px] font-semibold text-neutral-400">{st.label.toLowerCase()}</span>}
-          {dc && <span className={"rounded-full px-2 py-0.5 text-[11px] font-extrabold " + dc.cls}>{dc.txt}</span>}
-          {pr && <span className="ml-auto"><PersonAvatar p={pr} size={20} /></span>}
-        </div>
+      <div onClick={() => onOpen(j)} title={st ? st.label : ""} className="group flex cursor-pointer items-center gap-2.5 border-b border-neutral-100 px-1.5 py-2 transition last:border-b-0 hover:bg-neutral-50">
+        <TypeIco j={j} />
+        <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-neutral-800">{stripProdSuffix(j.title, prodById[j.productId]?.name)}</span>
+        {pr && <PersonAvatar p={pr} size={18} />}
+        <button onClick={(e) => { e.stopPropagation(); setMain(j, !main); }} title={main ? "Убрать из «Главного»" : "В «Главное»"} className={"shrink-0 transition " + (main ? "text-rose-600" : "text-neutral-300 hover:text-rose-400")}><Target size={15} /></button>
+        {dc ? <span className={"shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold " + dc.cls}>{dc.txt}</span> : <span className="w-[1px]" />}
       </div>
     );
   };
@@ -7699,11 +7694,11 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
               const open = !!openG[g.title];
               const n = g.list.length;
               return (
-                <div key={g.title} className="mb-2.5 overflow-hidden rounded-xl border border-neutral-200">
-                  <button onClick={() => setOpenG((o) => ({ ...o, [g.title]: !o[g.title] }))} className="flex w-full items-center gap-2.5 bg-white px-3 py-2.5 text-left hover:bg-neutral-50">
-                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-orange-50 text-[13px]">📅</span>
-                    <span className="min-w-0 flex-1"><span className="block text-[12.5px] font-bold leading-tight text-neutral-800">{g.title}</span>{g.hasOver && <span className="text-[11px] font-bold text-red-600">−{g.maxOver} дн · просрочено</span>}</span>
-                    <span className={"rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (g.hasOver ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-600")}>{n} {plural(n, "товар", "товара", "товаров")}</span>
+                <div key={g.title} className="border-b border-neutral-100 last:border-b-0">
+                  <button onClick={() => setOpenG((o) => ({ ...o, [g.title]: !o[g.title] }))} className="flex w-full items-center gap-2.5 px-1.5 py-2 text-left transition hover:bg-neutral-50">
+                    <span style={{ background: "#fff7ed", color: "#ea580c" }} className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md"><Box size={13} /></span>
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-neutral-800">{g.title}<span className="ml-1.5 text-[11.5px] font-semibold text-neutral-400">· {n} {plural(n, "товар", "товара", "товаров")}</span></span>
+                    {(() => { const dd = g.hasOver ? { txt: `−${g.maxOver} дн`, cls: "bg-red-100 text-red-700" } : dueChip(g.list.slice().sort((a, b) => dateKey(a).localeCompare(dateKey(b)))[0]); return dd ? <span className={"shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold " + dd.cls}>{dd.txt}</span> : null; })()}
                     <ChevronRight size={14} className={"shrink-0 text-neutral-300 transition " + (open ? "rotate-90" : "")} />
                   </button>
                   {open && (
@@ -7847,7 +7842,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
                     {pickList.map((j) => (
                       <label key={j.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1.5 text-[12.5px] font-semibold text-neutral-700 hover:bg-neutral-50">
                         <input type="checkbox" checked={pickSel.includes(j.id)} onChange={() => setPickSel((s) => s.includes(j.id) ? s.filter((x) => x !== j.id) : [...s, j.id])} className="h-4 w-4 accent-rose-600" />
-                        <span className={"flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-extrabold " + typeBadge(j).cls}>{typeBadge(j).ch}</span>
+                        <TypeIco j={j} size={20} />
                         <span className="min-w-0 flex-1 truncate">{stripProdSuffix(j.title, prodById[j.productId]?.name)}</span>
                         <span className="text-[10.5px] font-bold text-neutral-400">{dueChip(j) ? dueChip(j).txt : ""}</span>
                       </label>
