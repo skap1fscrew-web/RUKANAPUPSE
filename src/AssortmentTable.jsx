@@ -7666,11 +7666,11 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       )}
 
       {/* колонки */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row md:justify-center">
         {showOps && (opsStrip ? (
           <button onClick={() => setOpsOpen(true)} title="Операционные: на сегодня всё закрыто. Нажми, чтобы развернуть" className="flex items-center justify-center border-b border-neutral-100 py-3 text-[11px] font-bold text-neutral-400 hover:bg-neutral-50 md:w-[46px] md:flex-none md:border-b-0 md:border-r" style={{ writingMode: typeof window !== "undefined" && window.innerWidth >= 768 ? "vertical-rl" : undefined }}>Операционные · всё закрыто 🎉</button>
         ) : (
-          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:flex-[1_1_0%] md:border-b-0 md:border-r">
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[320px] md:flex-none md:border-b-0 md:border-r">
             <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-indigo-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Операционные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{opsPending.length}</span>
               {opsPending.length === 0 && <button onClick={() => setOpsOpen(false)} className="ml-auto text-[10.5px] text-neutral-400 hover:text-neutral-700">свернуть</button>}</div>
             {opsPending.length === 0 ? (
@@ -7690,7 +7690,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         ))}
 
         {showProj && (
-          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:flex-[1.9_1_0%] md:border-b-0 md:border-r">
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[640px] md:flex-none md:border-b-0 md:border-r">
             <div className="relative mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-violet-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Проектные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{focusProjects.length}</span>
               <button onClick={() => setPickOpen((v) => !v)} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition " + (pickOpen ? "border-rose-300 bg-rose-100 text-rose-700" : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100")}><Plus size={12} />в Фокус из ожидающих{waiting.length ? ` (${waiting.length})` : ""}</button>
               {pickOpen && (<>
@@ -7736,7 +7736,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         )}
 
         {showProd && (
-          <div className="min-w-0 p-3.5 md:flex-[1.15_1_0%]">
+          <div className="min-w-0 p-3.5 md:w-[420px] md:flex-none">
             <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-orange-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Товары</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{prodHot.length}</span></div>
             {groups.length === 0 ? (
               <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных задач по товарам нет" : "Нет горящих задач по товарам"}</div>
