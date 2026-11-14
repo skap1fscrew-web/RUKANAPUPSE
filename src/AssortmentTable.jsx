@@ -512,7 +512,14 @@ function normCycle(v) {
       },
     };
   });
-  return { stages: stages.length ? stages : DEFAULT_CYCLE.stages.map((s) => ({ ...s, task: { ...s.task } })) };
+  const fin = stages.length ? stages : DEFAULT_CYCLE.stages.map((s) => ({ ...s, task: { ...s.task } }));
+  const known = new Set(fin.map((s) => s.id));
+  let cycles = (v && Array.isArray(v.cycles) ? v.cycles : []).filter((c) => c && typeof c === "object").map((c) => ({
+    id: c.id || uid(), name: c.name || "Цикл",
+    stages: (Array.isArray(c.stages) ? c.stages : []).filter((x) => x && known.has(x.id)).map((x) => ({ id: x.id, days: Math.max(0, parseInt(x.days) || 0) })),
+  }));
+  if (!cycles.length) cycles = [{ id: "main", name: "Основной цикл", stages: fin.map((s) => ({ id: s.id, days: s.days })) }];
+  return { stages: fin, cycles };
 }
 // план дат этапов партии из даты старта и длительностей
 function cycleStageDates(startISO, stages) {
@@ -2570,6 +2577,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             onOpenCard={(id) => setCardModal(id)}
             onActiveChange={setPurchActiveId}
             cycleStages={prodCycle.stages}
+            cycles={prodCycle.cycles}
             cycleTriggers={cycleTriggers}
             onCreateStageTask={createCycleStageTasks}
             jobs={liveJobs}
@@ -3239,7 +3247,27 @@ function DutiesBoard({ duties, onChange, onAddOp, opNames, deletedBy = null, onT
 const PU_STATUS = { draft: { label: "Черновик", cls: "bg-neutral-100 text-neutral-500" }, paid: { label: "Оплачено", cls: "bg-emerald-50 text-emerald-600" }, transit: { label: "В пути", cls: "bg-amber-50 text-amber-600" }, received: { label: "Получено", cls: "bg-blue-50 text-blue-600" } };
 
 // Блок «Закупки» — партии (как карты в «Стратегии»); внутри партии товары из каталога.
-function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], cycleTriggers = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob }) {
+// выпадающий список этапов из справочника (названия этапов в партии не вводятся вручную)
+function StagePicker({ label, current, options, onPick, dashed = false }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative min-w-0">
+      <button type="button" onClick={() => setOpen((o) => !o)} className={dashed ? "flex w-full items-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-left text-[13px] font-bold text-neutral-500 hover:bg-slate-100" : "flex max-w-full items-center gap-1.5 rounded-md border border-transparent px-1 py-0 text-left text-[13.5px] font-semibold text-neutral-800 hover:border-neutral-200"}>
+        <span className="min-w-0 truncate">{label}</span><ChevronDown size={12} className="shrink-0 text-neutral-400" />
+      </button>
+      {open && (<>
+        <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+        <div className="absolute left-0 top-full z-40 mt-1 max-h-[260px] w-[260px] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
+          {current && <div className="rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[13px] font-semibold text-neutral-800">✓ {current}</div>}
+          {options.length === 0 && <div className="px-2.5 py-2 text-xs text-neutral-400">Других этапов нет — все уже в цикле</div>}
+          {options.map((o) => <button key={o.id} type="button" onClick={() => { onPick(o); setOpen(false); }} className="block w-full rounded-lg px-2.5 py-1.5 text-left text-[13px] font-semibold text-neutral-800 hover:bg-neutral-100">{o.name}</button>)}
+        </div>
+      </>)}
+    </div>
+  );
+}
+
+function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], cycles = [], cycleTriggers = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob }) {
   const list = Array.isArray(batches) ? batches : [];
   const [activeId, setActiveId] = useState(list[0]?.id || null);
   const [editingId, setEditingId] = useState(null);
@@ -3251,7 +3279,6 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const [payOpen, setPayOpen] = useState(false);
   const [cycOpen, setCycOpen] = useState(false);
   const [durOpen, setDurOpen] = useState(false);
-  const [newStage, setNewStage] = useState({ name: "", days: "5" });
   const [dragSt, setDragSt] = useState(null);
   const [cycMore, setCycMore] = useState(false);
   const [factOpen, setFactOpen] = useState(false);
@@ -3287,19 +3314,24 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   // производственный цикл партии
   const cyc = active && active.cycle;
   const cycStarted = !!(cyc && cyc.started && Array.isArray(cyc.stages));
-  const cycSt = cycStarted ? cyc.stages : [];
+  const cycSt = cycStarted ? cyc.stages.map((s) => { const L = (cycleStages || []).find((x) => x.id === s.id); return L ? { ...s, name: L.name } : s; }) : [];
+  const [cycPick, setCycPick] = useState(null);
   const curIdx = cycSt.findIndex((s) => !s.done);
   const curStage = curIdx >= 0 ? cycSt[curIdx] : null;
   const cycDates = cycStarted ? cycleStageDates(cyc.startDate, cycSt) : {};
   const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-  const startCycle = () => { patchBatch({ cycle: { started: true, startDate: todayISO(), fired: {}, stages: (cycleStages || []).map((s) => ({ id: s.id, name: s.name, days: Math.max(0, parseInt(s.days) || 0), done: false })) } }); setCycOpen(true); };
+  const buildCycleStages = (cy, old = []) => (cy ? cy.stages : (cycleStages || []).map((x) => ({ id: x.id, days: x.days }))).map((x) => { const L = (cycleStages || []).find((y) => y.id === x.id); if (!L) return null; const o = old.find((z) => z.id === x.id); return { id: L.id, name: L.name, days: Math.max(0, parseInt(x.days) || 0), done: !!(o && o.done), ...(o && o.actualDate ? { actualDate: o.actualDate } : {}) }; }).filter(Boolean);
+  const pickedCycle = (cycles || []).find((c) => c.id === cycPick) || (cycles || [])[0] || null;
+  const startCycle = () => { patchBatch({ cycle: { started: true, startDate: todayISO(), fired: {}, cycleId: pickedCycle ? pickedCycle.id : null, stages: buildCycleStages(pickedCycle) } }); setCycOpen(true); };
+  const switchCycle = (id) => { const cy = (cycles || []).find((c) => c.id === id); if (!cy) return; if (!window.confirm(`Заменить этапы партии этапами цикла «${cy.name}»? Отметки «пройдено» сохранятся для совпадающих этапов.`)) return; patchCyc({ cycleId: id, stages: buildCycleStages(cy, cycSt) }); };
+  const swapCycStage = (oldId, L) => patchCyc({ stages: cycSt.map((s) => (s.id === oldId ? { ...s, id: L.id, name: L.name } : s)) });
   const patchCyc = (p) => patchBatch({ cycle: { ...(active.cycle || {}), ...p } });
   cycFresh.current = { cyc: active && active.cycle, patch: patchCyc };
   const renameCycStage = (id, name) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, name } : s)) });
   const moveCycStageTo = (from, to) => { if (from == null || from === to || to < 0 || to >= cycSt.length) return; const a = cycSt.slice(); const [it] = a.splice(from, 1); a.splice(to, 0, it); patchCyc({ stages: a }); };
   const removeCycStage = (id) => { const st = cycSt.find((x) => x.id === id); if (!st) return; if (cycSt.length <= 1) { alert("В цикле должен остаться хотя бы один этап."); return; } if (!window.confirm(`Удалить этап «${st.name}» из цикла этой партии?`)) return; patchCyc({ stages: cycSt.filter((x) => x.id !== id) }); };
-  const addCycStage = () => { const name = newStage.name.trim(); if (!name) return; patchCyc({ stages: [...cycSt, { id: uid(), name, days: Math.max(0, parseInt(newStage.days) || 0), done: false }] }); setNewStage({ name: "", days: "5" }); };
-  const resetCycStages = () => { if (!window.confirm("Вернуть стандартные этапы цикла? Названия и длительности этой партии будут заменены, отметки «пройдено» сохранятся для совпадающих этапов.")) return; patchCyc({ stages: (cycleStages || []).map((s) => { const old = cycSt.find((x) => x.id === s.id); return { id: s.id, name: s.name, days: Math.max(0, parseInt(s.days) || 0), done: !!(old && old.done), ...(old && old.actualDate ? { actualDate: old.actualDate } : {}) }; }) }); };
+  const addCycStage = (L) => { if (!L || cycSt.some((x) => x.id === L.id)) return; patchCyc({ stages: [...cycSt, { id: L.id, name: L.name, days: Math.max(0, parseInt(L.days) || 1), done: false }] }); };
+  const resetCycStages = () => { const cy = (cycles || []).find((c) => c.id === (cyc && cyc.cycleId)) || (cycles || [])[0] || null; if (!window.confirm("Вернуть этапы выбранного цикла? Длительности этой партии будут заменены, отметки «пройдено» сохранятся для совпадающих этапов.")) return; patchCyc({ stages: buildCycleStages(cy, cycSt) }); };
   const toggleCycStage = (id) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, done: !s.done } : s)) });
   const setCycDays = (id, v) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, days: Math.max(0, parseInt(v) || 0) } : s)) });
   // мультиступенчатый переключатель: клик по этапу i → предыдущие «пройдены», этот текущий
@@ -3518,8 +3550,9 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
           <div className="border-b border-neutral-100 bg-neutral-50/40 px-4 py-3">
             {!cycStarted ? (
               <div className="flex flex-wrap items-center gap-3">
+                {(cycles || []).length > 1 && <select value={pickedCycle ? pickedCycle.id : ""} onChange={(e) => setCycPick(e.target.value)} className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200">{cycles.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
                 <button onClick={startCycle} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Запустить цикл</button>
-                <span className="text-xs text-neutral-500">Возьмётся стандартный набор этапов. Дальше этапы, их длительность и старт настраиваются под эту партию кнопкой ⚙.</span>
+                <span className="text-xs text-neutral-500">{(cycles || []).length > 1 ? "Выберите цикл и запустите." : "Возьмётся набор этапов цикла."} Дальше этапы и их длительность настраиваются под эту партию кнопкой ⚙.</span>
               </div>
             ) : (
               <>
@@ -3556,7 +3589,8 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                     {durOpen && (<>
                       <div className="fixed inset-0 z-20" onClick={() => setDurOpen(false)} />
                       <div className="absolute right-0 top-full z-30 mt-2 w-[380px] max-w-[92vw] rounded-2xl border border-neutral-200 bg-white p-4 shadow-2xl">
-                        <div className="relative mb-3 flex items-center text-[14px] font-extrabold text-neutral-800">Цикл партии
+                        <div className="relative mb-3 flex items-center gap-2 text-[14px] font-extrabold text-neutral-800">Цикл партии
+                          {(cycles || []).length > 0 && <select value={(cyc && cyc.cycleId) || ""} onChange={(e) => switchCycle(e.target.value)} className="min-w-0 max-w-[170px] rounded-lg border border-neutral-200 bg-white px-2 py-1 text-[12.5px] font-semibold text-neutral-800 focus:outline-none">{!(cyc && cyc.cycleId) && <option value="">свой набор</option>}{cycles.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
                           <button onClick={() => setCycMore((v) => !v)} title="Ещё" className="ml-auto flex h-[26px] w-[26px] items-center justify-center rounded-lg text-[16px] leading-none text-neutral-400 hover:bg-neutral-100">⋯</button>
                           {cycMore && (<><div className="fixed inset-0 z-10" onClick={() => setCycMore(false)} /><div className="absolute right-0 top-8 z-20 w-52 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl"><button onClick={() => { setCycMore(false); resetCycStages(); }} className="w-full rounded-lg px-2.5 py-1.5 text-left text-[13px] font-semibold text-neutral-700 hover:bg-neutral-50">Сбросить к стандарту</button></div></>)}
                         </div>
@@ -3567,7 +3601,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                             <div key={s.id} onDragOver={(e) => { if (dragSt != null) e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); moveCycStageTo(dragSt, i); setDragSt(null); }} className={"relative flex items-center gap-2 py-1.5 " + (dragSt === i ? "opacity-40" : "")}>
                               <span draggable onDragStart={() => setDragSt(i)} onDragEnd={() => setDragSt(null)} title="Перетащить, чтобы поменять порядок" className="absolute -left-[23px] top-1/2 h-3 w-3 -translate-y-1/2 cursor-grab rounded-full border-[2.5px]" style={s.done ? { background: "#16a34a", borderColor: "#16a34a" } : { background: "#fff", borderColor: "#f59e0b" }} />
                               <div className="min-w-0 flex-1">
-                                <input value={s.name} onChange={(e) => renameCycStage(s.id, e.target.value)} className={"block w-full rounded-md border border-transparent bg-transparent px-1 py-0 text-[13.5px] font-semibold hover:border-neutral-200 focus:border-neutral-300 focus:outline-none " + (s.done ? "text-emerald-700" : "text-neutral-800")} />
+                                <StagePicker label={s.name} current={s.name} options={(cycleStages || []).filter((l) => !cycSt.some((x) => x.id === l.id))} onPick={(L) => swapCycStage(s.id, L)} />
                                 <div className="px-1 text-[11.5px] font-medium text-neutral-400">{dd ? `${dd.startStr} → ${dd.endStr}` : "—"}</div>
                               </div>
                               <div className="inline-flex shrink-0 items-center overflow-hidden rounded-[9px] border border-neutral-200">
@@ -3579,11 +3613,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                             </div>
                           ); })}
                         </div>
-                        <div className="mt-2 flex items-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-slate-300 bg-slate-50 p-2">
-                          <input value={newStage.name} onChange={(e) => setNewStage((v) => ({ ...v, name: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") addCycStage(); }} placeholder="＋ Новый этап…" className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[13px] focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                          <input value={newStage.days} onChange={(e) => setNewStage((v) => ({ ...v, days: e.target.value }))} inputMode="numeric" className="w-[42px] rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-right text-[13px] focus:outline-none" />
-                          <button onClick={addCycStage} disabled={!newStage.name.trim()} className="whitespace-nowrap rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-neutral-800 disabled:opacity-40">Добавить</button>
-                        </div>
+                        <div className="mt-2"><StagePicker dashed label="＋ Добавить этап…" options={(cycleStages || []).filter((l) => !cycSt.some((x) => x.id === l.id))} onPick={addCycStage} /></div>
                         {(() => { const tot = cycSt.reduce((a, x) => a + (parseInt(x.days, 10) || 0), 0); const last = cycSt.length ? cycDates[cycSt[cycSt.length - 1].id] : null; return (
                           <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-[12.5px] font-semibold text-emerald-800">🏁 <span>Завершение цикла · {tot} дн</span>{last && <b className="ml-auto text-[14px] text-emerald-900">{last.endISO.slice(8, 10)}.{last.endISO.slice(5, 7)}.{last.endISO.slice(0, 4)}</b>}</div>
                         ); })()}
@@ -9722,7 +9752,24 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
   // --- производственный цикл ---
   const cycStages = (prodCycle && Array.isArray(prodCycle.stages)) ? prodCycle.stages : [];
-  const setCyc = (stages) => setProdCycle({ stages });
+  const setCyc = (stages) => setProdCycle({ ...prodCycle, stages });
+  const cyclesList = (prodCycle && Array.isArray(prodCycle.cycles)) ? prodCycle.cycles : [];
+  const [cycSel, setCycSel] = useState(null);
+  const [libName, setLibName] = useState("");
+  const curCycle = cyclesList.find((c) => c.id === cycSel) || cyclesList[0] || null;
+  const setCycles = (cs) => setProdCycle({ ...prodCycle, cycles: cs });
+  const patchCycle = (id, p) => setCycles(cyclesList.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  const addCycle = () => { const id = uid(); setCycles([...cyclesList, { id, name: "Новый цикл", stages: [] }]); setCycSel(id); };
+  const removeCycle = (id) => { if (cyclesList.length <= 1) { alert("Должен остаться хотя бы один цикл."); return; } const c = cyclesList.find((x) => x.id === id); if (!c || !window.confirm(`Удалить цикл «${c.name}»? Уже запущенные партии не изменятся.`)) return; setCycles(cyclesList.filter((x) => x.id !== id)); setCycSel(null); };
+  const addToCycle = (L) => { if (!curCycle || curCycle.stages.some((x) => x.id === L.id)) return; patchCycle(curCycle.id, { stages: [...curCycle.stages, { id: L.id, days: Math.max(0, parseInt(L.days) || 1) }] }); };
+  const rmFromCycle = (sid) => curCycle && patchCycle(curCycle.id, { stages: curCycle.stages.filter((x) => x.id !== sid) });
+  const moveInCycle = (sid, dir) => { if (!curCycle) return; const a = curCycle.stages.slice(); const i = a.findIndex((x) => x.id === sid); const j = i + dir; if (i < 0 || j < 0 || j >= a.length) return; const [x] = a.splice(i, 1); a.splice(j, 0, x); patchCycle(curCycle.id, { stages: a }); };
+  const setCycleDays = (sid, v) => curCycle && patchCycle(curCycle.id, { stages: curCycle.stages.map((x) => (x.id === sid ? { ...x, days: Math.max(0, parseInt(v) || 0) } : x)) });
+  const renameLib = (id, name) => setCyc(cycStages.map((x) => (x.id === id ? { ...x, name } : x)));
+  const addLib = () => { const name = libName.trim(); if (!name) return; setCyc([...cycStages, { id: uid(), name, days: 5, task: { enabled: false, text: "", scope: "batch", when: "enter", priority: null, assignee: null } }]); setLibName(""); };
+  const stageInCycles = (id) => cyclesList.filter((c) => c.stages.some((x) => x.id === id)).length;
+  const stageTrgCount = (id) => (cycleTriggers || []).filter((r) => r.stageId === id).length;
+  const removeLib = (id) => { if (stageInCycles(id) || stageTrgCount(id)) { alert("Этап используется в цикле или в правиле триггера — сначала уберите его оттуда."); return; } setCyc(cycStages.filter((x) => x.id !== id)); };
   const patchCycStage = (id, p) => setCyc(cycStages.map((s) => (s.id === id ? { ...s, ...p } : s)));
   const addCycStage = () => setCyc([...cycStages, { id: uid(), name: "Новый этап", days: 1, task: { enabled: false, text: "", scope: "batch", when: "enter", priority: null, assignee: null } }]);
   const removeCycStage = (id) => setCyc(cycStages.filter((s) => s.id !== id));
@@ -9845,7 +9892,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + (tab === "triggers" ? "max-w-4xl" : "max-w-lg")} style={{ maxHeight: zvh(85) }} onClick={(e) => e.stopPropagation()}>
+      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + ((tab === "triggers" || tab === "cycles") ? "max-w-4xl" : "max-w-lg")} style={{ maxHeight: zvh(85) }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
           <h2 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-900"><Settings2 size={18} /> Настройки</h2>
           <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
@@ -9855,6 +9902,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
           <TabBtn id="statuses">Статусы</TabBtn>
           <TabBtn id="nav">Вид</TabBtn>
           <TabBtn id="triggers">Задачи по триггерам</TabBtn>
+          <TabBtn id="cycles">Циклы</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
           <TabBtn id="wbapi">API ВБ</TabBtn>
@@ -10100,6 +10148,59 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
               </div>
               <button onClick={addCycleTrigger} disabled={cycStages.length === 0} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-amber-400 hover:text-amber-700 disabled:opacity-40"><Plus size={14} /> Добавить правило</button>
             </>
+          )}
+
+          {tab === "cycles" && (
+            <div className="flex min-h-[420px] gap-0">
+              <div className="w-[210px] shrink-0 border-r border-neutral-100 bg-neutral-50/70 p-3">
+                <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wider text-neutral-400">Циклы</div>
+                {cyclesList.map((c) => (
+                  <button key={c.id} onClick={() => setCycSel(c.id)} className={"mb-1 flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[13px] font-bold " + ((curCycle && curCycle.id === c.id) ? "border-neutral-200 bg-white shadow-sm" : "border-transparent text-neutral-600 hover:bg-white")}>
+                    <span className="min-w-0 flex-1 truncate">{c.name}</span><span className="shrink-0 text-[11px] font-semibold text-neutral-400">{c.stages.length}</span>
+                  </button>
+                ))}
+                <button onClick={addCycle} className="mt-1 w-full rounded-lg border-[1.5px] border-dashed border-neutral-300 py-1.5 text-[12.5px] font-bold text-neutral-500 hover:bg-white">＋ Новый цикл</button>
+              </div>
+              <div className="min-w-0 flex-1 overflow-y-auto p-4" style={{ maxHeight: zvh(70) }}>
+                {curCycle && (<>
+                  <div className="mb-1 flex items-center gap-2">
+                    <input value={curCycle.name} onChange={(e) => patchCycle(curCycle.id, { name: e.target.value })} className="min-w-0 flex-1 rounded-md border border-transparent px-1 text-[17px] font-extrabold text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none" />
+                    <button onClick={() => removeCycle(curCycle.id)} title="Удалить цикл" className="rounded-md p-1.5 text-neutral-300 hover:bg-red-50 hover:text-red-500"><Trash2 size={15} /></button>
+                  </div>
+                  <div className="mb-3 text-xs text-neutral-500">Этапы идут сверху вниз. В закупке выбирается этот цикл, а длительность можно подправить для конкретной партии.</div>
+                  {curCycle.stages.map((x, i) => { const L = cycStages.find((y) => y.id === x.id); if (!L) return null; const tc = stageTrgCount(x.id); return (
+                    <div key={x.id} className="mb-1.5 flex items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-2.5 py-2">
+                      <span className="flex flex-col text-[9px] leading-none text-neutral-300"><button onClick={() => moveInCycle(x.id, -1)} disabled={i === 0} className="hover:text-neutral-600 disabled:opacity-30">▲</button><button onClick={() => moveInCycle(x.id, 1)} disabled={i === curCycle.stages.length - 1} className="mt-0.5 hover:text-neutral-600 disabled:opacity-30">▼</button></span>
+                      <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-neutral-800">{L.name}</span>
+                      <span className={"shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold " + (tc ? "bg-orange-50 text-orange-700" : "bg-neutral-100 text-neutral-400")}>{tc ? `${tc} ${plural(tc, "триггер", "триггера", "триггеров")}` : "нет триггеров"}</span>
+                      <div className="inline-flex shrink-0 items-center overflow-hidden rounded-[9px] border border-neutral-200 text-[13px]">
+                        <button onClick={() => setCycleDays(x.id, (parseInt(x.days, 10) || 0) - 1)} className="w-6 text-center font-bold text-neutral-500 hover:bg-neutral-100">−</button>
+                        <input value={x.days} onChange={(e) => setCycleDays(x.id, e.target.value)} inputMode="numeric" className="w-[36px] border-x border-neutral-200 py-[3px] text-center focus:outline-none" />
+                        <button onClick={() => setCycleDays(x.id, (parseInt(x.days, 10) || 0) + 1)} className="w-6 text-center font-bold text-neutral-500 hover:bg-neutral-100">+</button>
+                      </div>
+                      <button onClick={() => rmFromCycle(x.id)} title="Убрать из цикла" className="shrink-0 text-neutral-300 hover:text-red-500"><X size={14} /></button>
+                    </div>
+                  ); })}
+                  <div className="mb-3 mt-2 max-w-[320px]"><StagePicker dashed label="＋ Добавить этап из справочника" options={cycStages.filter((l) => !curCycle.stages.some((x) => x.id === l.id))} onPick={addToCycle} /></div>
+                  <div className="rounded-xl bg-emerald-50 px-3 py-2 text-[12.5px] font-bold text-emerald-800">🏁 Завершение цикла · {curCycle.stages.reduce((a, x) => a + (parseInt(x.days, 10) || 0), 0)} дн</div>
+                </>)}
+                <div className="mb-2 mt-6 text-[10.5px] font-extrabold uppercase tracking-wider text-neutral-400">Справочник этапов</div>
+                <div className="space-y-1">
+                  {cycStages.map((L) => { const n = stageInCycles(L.id); const tc = stageTrgCount(L.id); return (
+                    <div key={L.id} className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1">
+                      <input value={L.name} onChange={(e) => renameLib(L.id, e.target.value)} className="min-w-0 flex-1 rounded-md border border-transparent px-1 py-0.5 text-[13px] font-semibold text-neutral-800 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none" />
+                      <span className="shrink-0 text-[11px] text-neutral-400">{n ? `в циклах: ${n}` : "не используется"}{tc ? ` · триггеров: ${tc}` : ""}</span>
+                      <button onClick={() => removeLib(L.id)} title="Удалить из справочника" className="shrink-0 text-neutral-300 hover:text-red-500"><X size={13} /></button>
+                    </div>
+                  ); })}
+                </div>
+                <div className="mt-2 flex max-w-[360px] items-center gap-1.5">
+                  <input value={libName} onChange={(e) => setLibName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addLib(); }} placeholder="＋ Новый этап в справочник…" className="min-w-0 flex-1 rounded-lg border border-dashed border-neutral-300 px-2.5 py-1.5 text-[13px] focus:border-neutral-400 focus:outline-none" />
+                  <button onClick={addLib} disabled={!libName.trim()} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40">Добавить</button>
+                </div>
+                <div className="mt-2 text-[11.5px] text-neutral-400">Название этапа меняется здесь один раз — в циклах, закупках и триггерах оно обновится. Удалить этап нельзя, пока он используется.</div>
+              </div>
+            </div>
           )}
 
           {tab === "subjects" && (
