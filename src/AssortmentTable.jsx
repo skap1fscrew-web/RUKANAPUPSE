@@ -7482,6 +7482,7 @@ function TrashPanel({ jobs, people = [], products = [], trashProducts = [], tras
 
 function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], myId = null, now, onUpdateJob, onOpen, focusLine = "", onFocusLine }) {
   const [pickOpen, setPickOpen] = useState(false);
+  const [eyeOpen, setEyeOpen] = useState(false);
   const [pickSel, setPickSel] = useState([]);
   const [pickQ, setPickQ] = useState("");
   const [onlyOver, setOnlyOver] = useState(false);
@@ -7572,35 +7573,35 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-      {/* шапка + дашборд */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-rose-100 bg-gradient-to-r from-rose-50 to-white px-4 py-2.5">
-        <div>
-          <div className="flex items-center gap-1.5 text-[15px] font-black text-rose-700"><Target size={16} />ФОКУС</div>
-          <div className="text-[11px] text-rose-700/60">{WD_FULL ? WD_FULL[wd] : WD_LABEL[wd]}, {d} {MONTHS_GEN[m]}{myId ? ` · ${profileLabel((people || []).find((p) => p.id === myId))}` : ""}</div>
+      {/* шапка: ФОКУС + строка фокуса, счётчики, меню групп */}
+      <div className="relative flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rose-100 bg-gradient-to-r from-rose-50 to-white px-4 py-2.5">
+        <div className="min-w-[260px] flex-[1_1_320px]">
+          <div className="flex items-center gap-1.5 text-[14px] font-black leading-tight text-rose-700"><Target size={15} />ФОКУС{note && <span className="ml-2 rounded-lg bg-neutral-900 px-2 py-0.5 text-[11px] font-semibold text-white">{note}</span>}</div>
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор: например, расширяем базу блогеров…" className="mt-0.5 block w-full border-0 border-b-2 border-dashed border-transparent bg-transparent p-0 pb-0.5 text-[18px] font-extrabold leading-tight text-rose-900 outline-none transition placeholder:text-[14px] placeholder:font-semibold placeholder:text-rose-300 hover:border-rose-200 focus:border-rose-300" />
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white py-1 pl-1.5 pr-3">
-            <span className="relative flex h-9 w-9 items-center justify-center rounded-full" style={{ background: `conic-gradient(#16a34a 0 ${opPct}deg, #e9eaee ${opPct}deg 360deg)` }}><span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-[10px] font-extrabold text-emerald-600">{opsDoneCount}/{myOpsToday.length}</span></span>
-            <div className="leading-tight"><div className="text-[10.5px] font-extrabold text-emerald-600">Операционные</div><div className="text-[9.5px] text-neutral-400">сделано сегодня</div></div>
-          </div>
-          <div className="min-w-[66px] rounded-xl border border-neutral-200 bg-white px-2.5 py-1 text-center"><div className="text-[15px] font-black text-neutral-800">{inWorkCount}</div><div className="text-[9px] font-bold uppercase text-neutral-400">в работе</div></div>
-          <button onClick={() => setOnlyOver((v) => !v)} title="Показать только просроченные" className={"min-w-[66px] rounded-xl border px-2.5 py-1 text-center transition " + (onlyOver ? "border-red-400 bg-red-50" : "border-neutral-200 bg-white hover:bg-neutral-50")}><div className="text-[15px] font-black text-red-600">{overdueCount}</div><div className="text-[9px] font-bold uppercase text-neutral-400">просрочено ›</div></button>
-          <div className="min-w-[66px] rounded-xl border border-neutral-200 bg-white px-2.5 py-1 text-center"><div className="text-[15px] font-black text-neutral-800">{dueTodayCount}</div><div className="text-[9px] font-bold uppercase text-neutral-400">на сегодня</div></div>
-          <div className="flex items-center gap-1 rounded-xl border border-neutral-200 bg-white p-1" title="Показывать группы задач">
-            {COLS.map((c) => { const off = hidden.includes(c.k); return (
-              <button key={c.k} onClick={() => toggleHidden(c.k)} title={(off ? "Показать: " : "Скрыть: ") + c.label} className={"inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold transition " + (off ? "text-neutral-300 line-through hover:text-neutral-500" : "text-neutral-600 hover:bg-neutral-50")}>
-                {off ? <EyeOff size={12} /> : <Eye size={12} />}<span className="h-1.5 w-1.5 rounded-full" style={{ background: c.dot, opacity: off ? 0.4 : 1 }} />
-              </button>
-            ); })}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-3 text-[12px] font-bold text-neutral-600" title="Операционные: сделано сегодня">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: `conic-gradient(#16a34a 0 ${opPct}deg, #e9eaee ${opPct}deg 360deg)` }}><span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white text-[8px] font-extrabold text-emerald-600">{opsDoneCount}/{myOpsToday.length}</span></span>операц.
+          </span>
+          <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[12px] font-bold text-neutral-600"><b className="mr-1 text-[14px] text-neutral-900">{inWorkCount}</b>в работе</span>
+          <button onClick={() => setOnlyOver((v) => !v)} title="Показать только просроченные" className={"rounded-full border px-3 py-1 text-[12px] font-bold text-neutral-600 transition " + (onlyOver ? "border-red-400 bg-red-100" : "border-red-200 bg-red-50 hover:bg-red-100")}><b className="mr-1 text-[14px] text-red-600">{overdueCount}</b>просрочено ›</button>
+          <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[12px] font-bold text-neutral-600"><b className="mr-1 text-[14px] text-neutral-900">{dueTodayCount}</b>сегодня</span>
+          <div className="relative">
+            <button onClick={() => setEyeOpen((v) => !v)} title="Показывать группы задач" className={"flex h-8 w-8 items-center justify-center rounded-[10px] border transition " + (hidden.length ? "border-rose-300 bg-rose-50 text-rose-600" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>{hidden.length ? <EyeOff size={15} /> : <Eye size={15} />}</button>
+            {eyeOpen && (<>
+              <div className="fixed inset-0 z-20" onClick={() => setEyeOpen(false)} />
+              <div className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl">
+                <div className="px-2 pb-1 pt-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Показывать группы</div>
+                {COLS.map((c) => (
+                  <label key={c.k} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] font-semibold text-neutral-700 hover:bg-neutral-50">
+                    <input type="checkbox" checked={!hidden.includes(c.k)} onChange={() => toggleHidden(c.k)} className="h-4 w-4 accent-rose-600" />
+                    <span className="h-2 w-2 rounded-full" style={{ background: c.dot }} />{c.label}
+                  </label>
+                ))}
+              </div>
+            </>)}
           </div>
         </div>
-      </div>
-
-      {/* главный фокус — просто строка */}
-      <div className="flex items-center gap-3 border-b border-rose-100 bg-rose-50/50 px-4 py-2">
-        <span className="shrink-0 text-[10px] font-extrabold uppercase tracking-widest text-rose-700">Главный фокус</span>
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор: например, расширяем базу блогеров…" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[17px] font-extrabold text-rose-900 outline-none placeholder:text-[14px] placeholder:font-semibold placeholder:text-rose-300" />
-        {note && <span className="shrink-0 rounded-lg bg-neutral-900 px-2.5 py-1 text-[11px] font-semibold text-white">{note}</span>}
       </div>
 
       {onlyOver && (
