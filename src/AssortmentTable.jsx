@@ -3641,7 +3641,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-11 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-neutral-100 text-neutral-300">{p.image ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={14} />}</div>
-                      <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><button onClick={() => onOpenCard && onOpenCard(it.productId)} title="Открыть карточку товара" className="block max-w-full truncate text-left font-medium text-neutral-800 hover:text-orange-700 hover:underline" style={{ maxWidth: 230 }}>{p.name || "Без названия"}</button></div>
+                      <div className="min-w-0"><div className="text-[11px] text-neutral-400">{p.code || "—"}</div><button onClick={() => onOpenCard && onOpenCard(it.productId)} title="Открыть карточку товара" className="block max-w-full truncate text-left font-medium text-neutral-800 hover:text-orange-700 hover:underline" style={{ maxWidth: 276 }}>{p.name || "Без названия"}</button></div>
                     </div>
                   </td>
                   <td className="px-3 py-2 text-sm text-neutral-600">{p.subject ? <span className="block max-w-[160px] truncate" title={p.subject}>{p.subject}</span> : <span className="text-neutral-300">—</span>}</td>
