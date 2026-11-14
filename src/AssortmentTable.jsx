@@ -1162,52 +1162,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     return () => clearTimeout(t);
   }, [allProducts, loaded]);
 
-  // авто-создание задач по триггеру «этап партии» (производственный цикл)
-  // несколько правил на этап; дедуп на партии: batch.cycle.fired[ruleId] = true
-  useEffect(() => {
-    if (!loaded) return;
-    const rules = (cycleTriggers || []).filter((r) => r && r.enabled && String(r.text || "").trim() && r.stageId);
-    if (!rules.length) return;
-    let batchesChanged = false; const newJobs = [];
-    const next = (purchaseBatches || []).map((b) => {
-      const bc = b.cycle;
-      if (!bc || !bc.started || !Array.isArray(bc.stages)) return b;
-      const fired = { ...(bc.fired || {}) }; let localChanged = false;
-      rules.forEach((r) => {
-        const idx = bc.stages.findIndex((x) => x.id === r.stageId);
-        if (idx < 0 || fired[r.id]) return;
-        const s = bc.stages[idx];
-        const whenComplete = r.when === "complete";
-        const cond = whenComplete ? !!s.done : bc.stages.slice(0, idx).every((x) => x.done);
-        if (!cond) return;
-        const title = String(r.text).replace(/\{партия\}/g, b.name || "партия");
-        const dd = r.hasDate ? stageTaskDates(bc, r.stageId, r.durDays) : { start: null, date: null };
-        const common = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Партия: «${b.name || ""}»`, createdAt: isoYMD(new Date()) };
-        if (r.scope === "product") {
-          // на каждый товар партии — задача типа «Товар»; не дублируем, если такая уже есть
-          // (проверяем и сохранённые задачи, и созданные в этом же проходе — товар мог быть в нескольких партиях)
-          (b.items || []).forEach((it) => {
-            const jt = String(title).trim(); // без хвоста «· товар» — товар и так привязан к задаче
-            const legacy = `${jt} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim(); // старый формат — чтобы не плодить дубли
-            const dup = (jobs || []).some((j) => j && j.productId === it.productId && (j.title === jt || j.title === legacy))
-              || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
-            if (dup) return;
-            newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common, log: [mkLog("created", {}, "system")] });
-          });
-        } else {
-          // на партию — задача типа «Закупки»; не дублируем, если такая уже есть у партии
-          const dup = (jobs || []).some((j) => j && j.batchId === b.id && j.title === title)
-            || newJobs.some((j) => j.batchId === b.id && j.title === title);
-          if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common, log: [mkLog("created", {}, "system")] });
-        }
-        fired[r.id] = true; localChanged = true;
-      });
-      if (localChanged) { batchesChanged = true; return { ...b, cycle: { ...bc, fired } }; }
-      return b;
-    });
-    if (newJobs.length) setJobs((js) => [...js, ...newJobs]);
-    if (batchesChanged) setPurchaseBatches(next);
-  }, [purchaseBatches, cycleTriggers, jobs, loaded]);
+  // задачи по триггерам этапов партии создаются только вручную — кнопкой «Создать задачи этапа» (createCycleStageTasks)
 
   // авто-создание задач по триггеру «смена статуса товара»
   // создаётся ОДИН раз при входе в статус (флаг product.trgDone[ruleId]);
@@ -3373,22 +3328,10 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
     const s0 = cycSt[i]; if (!s0) return;
     if (!iso) return; // закрытый этап в работу не возвращается: дату факта можно только поменять
     const stages = cycSt.map((s, j) => (j === i ? { ...s, done: true, actualDate: iso } : j < i && !s.done ? { ...s, done: true, actualDate: s.actualDate || iso } : s));
-    // какие правила «по этапам» сработают от этого действия — не создаём сами, а спрашиваем
-    const fired = { ...((cyc && cyc.fired) || {}) };
-    const pending = (cycleTriggers || []).filter((r) => {
-      if (!r || !r.enabled || !String(r.text || "").trim() || fired[r.id]) return false;
-      const idx = stages.findIndex((x) => x.id === r.stageId); if (idx < 0) return false;
-      return r.when === "complete" ? !!stages[idx].done : stages.slice(0, idx).every((x) => x.done);
-    });
-    pending.forEach((r) => { fired[r.id] = true; }); // придержать до ответа
-    patchCyc({ stages, fired });
+    patchCyc({ stages });
     const planEnd = (cycDates[s0.id] || {}).endISO;
     const late = planEnd ? isoDiff(planEnd, iso) : 0;
     if (late > 0 && i < cycSt.length - 1) pushToast({ text: `Опоздание ${late} дн. Сдвинуть плановые даты следующих этапов?`, actions: [{ label: "Сдвинуть", primary: true, fn: () => shiftFollowing(i, late) }, { label: "Нет" }] });
-    if (pending.length) {
-      const ids = pending.map((r) => r.id);
-      pushToast({ sticky: true, text: `Этап «${s0.name}» закрыт. Создать задачи по правилам (${pending.length})?`, actions: [{ label: "Создать", primary: true, fn: () => { const { cyc: c, patch } = cycFresh.current; if (!c || !patch) return; patch({ fired: Object.fromEntries(Object.entries(c.fired || {}).filter(([k]) => !ids.includes(k))) }); } }, { label: "Нет" }] });
-    }
   };
   // снять отметку «факт»: этап (и следующие за ним) возвращаются в работу
   const clearStageFact = (i) => {
