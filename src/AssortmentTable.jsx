@@ -8808,7 +8808,6 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
               <AssigneePicker people={people || []} max={1} value={jobAssignees(j)} onChange={(arr) => setJ((o) => ({ ...o, assignees: arr, assignee: arr[0] || null }))} />
               {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Профили появляются после входа пользователей.</span>}
             </div>
-            <p className="rounded-xl bg-indigo-50/60 px-3 py-2 text-[11px] leading-snug text-indigo-500">Операционная задача ложится в раздел «Операционные» на Ганте — чекбоксами по дням графика.</p>
           </div>
         ) : (
         <div className="grid flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-[1fr_300px]">
