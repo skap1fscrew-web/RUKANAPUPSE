@@ -6418,7 +6418,6 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-bold transition hover:brightness-95" style={curStatus ? { background: curStatus.color + "1f", color: curStatus.color } : { background: "#f1f1f3", color: "#9a9a9a" }}>
-                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
                 {curStatus ? curStatus.name : "Без статуса"}
                 <ChevronDown size={12} className="opacity-60" />
               </button>
