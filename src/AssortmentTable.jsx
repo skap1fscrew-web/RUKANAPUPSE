@@ -7657,13 +7657,13 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const dueTodayCount = (jobs || []).filter((j) => mine(j) && j.date === todayStr && stageOf(j) !== "done").length;
   const opPct = myOpsToday.length ? Math.round((opsDoneCount / myOpsToday.length) * 360) : 0;
 
-  // — новая раскладка: Операционные → Горит (все типы, срок ≤ 3 дн) → Главное ★ (закреплённые вручную) —
+  // — новая раскладка: Операционные → Горит (все типы: срок ≤ 3 дн или уже начата) → Главное ★ (закреплённые вручную) —
   const isMain = (j) => !!(j.pinned || j.focus);
   const allOpen = (jobs || []).filter((j) => !j.opId && mine(j) && stageOf(j) !== "done");
   const dateKey = (j) => j.date || "9999-99-99";
   const mainList = allOpen.filter(isMain).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
   const limISO = isoYMD(new Date(y, m, d + 3));
-  const hotAll = allOpen.filter((j) => !isMain(j) && j.date && j.date <= limISO);
+  const hotAll = allOpen.filter((j) => (j.date && j.date <= limISO) || (j.start && j.start <= todayStr) || stageOf(j) === "progress");
   const hotList = (onlyOver ? hotAll.filter(isOver) : hotAll).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
   const hotGroupsMap = {};
   hotList.filter((j) => jobType(j) === "product").forEach((j) => { const t = stripProdSuffix(j.title, prodById[j.productId]?.name) || "Задача"; (hotGroupsMap[t] = hotGroupsMap[t] || []).push(j); });
@@ -7826,10 +7826,10 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
 
         {showProj && (
           <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[460px] md:flex-none md:border-b-0 md:border-r">
-            <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Горит · до 3 дней</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotList.length}</span></div>
+            <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Горит</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotList.length}</span></div>
             {hotEntries.length === 0 ? (
               <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных задач нет" : "Горящих задач нет 🎉"}</div>
-            ) : hotEntries.map((en) => en.g ? renderGroup(en.g) : <JobCard key={en.j.id} j={en.j} />)}
+            ) : hotEntries.map((en) => en.g ? renderGroup(en.g) : <JobCard key={en.j.id} j={en.j} main={isMain(en.j)} />)}
           </div>
         )}
 
