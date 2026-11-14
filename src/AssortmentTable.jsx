@@ -7781,32 +7781,34 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       )}
 
       {/* колонки */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row md:justify-center">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row">
         {showOps && (opsStrip ? (
-          <button onClick={() => setOpsOpen(true)} title="Операционные: на сегодня всё закрыто. Нажми, чтобы развернуть" className="flex items-center justify-center border-b border-neutral-100 py-3 text-[11px] font-bold text-neutral-400 hover:bg-neutral-50 md:w-[46px] md:flex-none md:border-b-0 md:border-r" style={{ writingMode: typeof window !== "undefined" && window.innerWidth >= 768 ? "vertical-rl" : undefined }}>Операционные · всё закрыто 🎉</button>
+          <button onClick={() => setOpsOpen(true)} title="Операционные: на сегодня всё закрыто. Нажми, чтобы развернуть" className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:border-b-0 md:border-r md:px-0 md:py-3">
+            <ChevronDown size={14} className="shrink-0" />
+            <span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-400 md:[writing-mode:vertical-rl] md:rotate-180">Операционные</span>
+            {myOpsToday.length > 0 && <span className="text-[11px] font-bold tabular-nums text-neutral-500">{opsDoneCount}/{myOpsToday.length}</span>}
+          </button>
         ) : (
-          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[320px] md:flex-none md:border-b-0 md:border-r">
-            <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-indigo-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Операционные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{opsPending.length}</span>
-              {opsPending.length === 0 && <button onClick={() => setOpsOpen(false)} className="ml-auto text-[10.5px] text-neutral-400 hover:text-neutral-700">свернуть</button>}</div>
-            {opsPending.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">На сегодня всё закрыто 🎉</div>
-            ) : opsPending.map((op) => {
-              const pr = (people || []).find((p) => p.id === op.assignee);
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[300px] md:flex-none md:border-b-0 md:border-r">
+            <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Операционные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{opsPending.length === 0 ? `${opsDoneCount}/${myOpsToday.length}` : opsPending.length}</span>
+              {opsPending.length === 0 && <button onClick={() => setOpsOpen(false)} title="Свернуть" className="ml-auto flex h-[22px] w-[22px] items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button>}</div>
+            {myOpsToday.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">На сегодня операционных нет</div>
+            ) : [...opsPending, ...myOpsToday.filter(opIsDone)].map((op) => {
+              const done = opIsDone(op);
               return (
-                <div key={op.id} className="flex items-center gap-2.5 border-b border-neutral-100 py-2 text-[12.5px] last:border-b-0">
-                  <button onClick={() => onToggleDone(op.id, todayStr)} title="Отметить выполнено" className="h-[19px] w-[19px] shrink-0 rounded-md transition hover:scale-110" style={{ background: "#fff7f0", border: "2px solid #f6b98a" }} />
-                  <button onClick={() => onEditOp && onEditOp(op)} className="min-w-0 flex-1 truncate text-left text-neutral-800">{op.name}</button>
-                  {pr && <PersonAvatar p={pr} size={18} />}
+                <div key={op.id} className="flex items-center gap-2.5 border-b border-neutral-100 py-2 text-[13px] last:border-b-0">
+                  <button onClick={() => onToggleDone(op.id, todayStr)} title={done ? "Снять отметку" : "Отметить выполнено"} className="flex h-[19px] w-[19px] shrink-0 items-center justify-center rounded-md border-2 transition hover:scale-110" style={done ? { background: "#16a34a", borderColor: "#16a34a", color: "#fff" } : { background: "#fff", borderColor: "#c9c9cf" }}>{done && <Check size={12} strokeWidth={3.5} />}</button>
+                  <button onClick={() => onEditOp && onEditOp(op)} className={"min-w-0 flex-1 truncate text-left " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{op.name}</button>
                 </div>
               );
             })}
-            {opsDoneCount > 0 && <div className="mt-2 text-[10.5px] text-neutral-400">✓ выполненные скрыты ({opsDoneCount})</div>}
           </div>
         ))}
 
         {showProj && (
           <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[460px] md:flex-none md:border-b-0 md:border-r">
-            <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-red-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Горит · до 3 дней</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotList.length}</span></div>
+            <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Горит · до 3 дней</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotList.length}</span></div>
             {hotEntries.length === 0 ? (
               <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных задач нет" : "Горящих задач нет 🎉"}</div>
             ) : hotEntries.map((en) => en.g ? renderGroup(en.g) : <JobCard key={en.j.id} j={en.j} />)}
@@ -7815,7 +7817,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
 
         {showProd && (
           <div className="min-w-0 p-3.5 md:w-[460px] md:flex-none">
-            <div className="relative mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-rose-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Главное ★</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{mainList.length}</span>
+            <div className="relative mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Главное ★</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{mainList.length}</span>
               <button onClick={() => setPickOpen((v) => !v)} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition " + (pickOpen ? "border-rose-300 bg-rose-100 text-rose-700" : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100")}><Plus size={12} />добавить</button>
               {pickOpen && (<>
                 <div className="fixed inset-0 z-20" onClick={() => setPickOpen(false)} />
