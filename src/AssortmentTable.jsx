@@ -6469,8 +6469,7 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                   />
                   <button onClick={addTask} disabled={!newText.trim()} className="rounded-lg inline-flex shrink-0 items-center bg-neutral-900 p-2 text-white hover:bg-neutral-800 disabled:opacity-40" title="Добавить"><Plus size={15} /></button>
                 </div>
-              </>,
-              <span className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700" title="Задачи синхронизированы с разделом «Задачи»"><ArrowLeftRight size={11} /> раздел «Задачи»</span>
+              </>
             )}
           </aside>
 
