@@ -961,6 +961,13 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [expanded, setExpanded] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // личная настройка быстрого доступа к блокам: порядок + скрытые (уходят в меню «⋯»)
+  const [navCfg, setNavCfg] = useState(() => { try { const r = JSON.parse(localStorage.getItem("rnp-navtabs") || "null"); return r && typeof r === "object" ? r : { order: [], hidden: {} }; } catch { return { order: [], hidden: {} }; } });
+  useEffect(() => { try { localStorage.setItem("rnp-navtabs", JSON.stringify(navCfg)); } catch {} }, [navCfg]);
+  const [navMoreOpen, setNavMoreOpen] = useState(false);
+  const navTabs = (() => { const ord = (navCfg.order || []).filter((id) => TABS.some((t) => t.id === id)); const all = [...ord, ...TABS.map((t) => t.id).filter((id) => !ord.includes(id))]; return all.map((id) => TABS.find((t) => t.id === id)); })();
+  const navShown = navTabs.filter((t) => !(navCfg.hidden || {})[t.id] || t.id === activeTab);
+  const navRest = navTabs.filter((t) => !navShown.includes(t));
   const [defaultTasks, setDefaultTasks] = useState([]); // задачи по умолчанию (общие) — [{id, text, labelId}]
   const [taskLabels, setTaskLabels] = useState([]); // метки задач (общие) — [{id, name, color}]
   const [taskTags, setTaskTags] = useState([]); // теги задач — [{id, name, color}], несколько на задачу
@@ -2071,7 +2078,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="rounded-xl inline-flex border border-neutral-200 bg-white p-1">
-              {TABS.map((t) => {
+              {navShown.map((t) => {
                 const on = activeTab === t.id;
                 return (
                   <button
@@ -2084,6 +2091,23 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                   </button>
                 );
               })}
+              {navRest.length > 0 && (
+                <div className="relative">
+                  <button onClick={() => setNavMoreOpen((v) => !v)} title="Остальные блоки" className={"rounded-lg px-3 py-1.5 text-sm font-black tracking-tighter transition " + (navMoreOpen ? "bg-neutral-100 text-neutral-900" : "text-neutral-500 hover:bg-neutral-100")}>⋯</button>
+                  {navMoreOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setNavMoreOpen(false)} />
+                      <div className="absolute left-0 top-full z-40 mt-1.5 w-56 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
+                        {navRest.map((t) => (
+                          <button key={t.id} onClick={() => { setActiveTab(t.id); setNavMoreOpen(false); }} className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-semibold text-neutral-700 hover:bg-neutral-100">{t.label}</button>
+                        ))}
+                        <div className="my-1 border-t border-neutral-100" />
+                        <button onClick={() => { setNavMoreOpen(false); setSettingsTab("nav"); setSettingsOpen(true); }} className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] font-bold text-blue-600 hover:bg-blue-50">⚙ Настроить быстрый доступ</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
             <span className="text-sm text-neutral-400">{activeTab === "purchases" ? `${purchaseBatches.length} ${(() => { const n = purchaseBatches.length % 100, d = n % 10; return n > 10 && n < 20 ? "партий" : d === 1 ? "партия" : d >= 2 && d <= 4 ? "партии" : "партий"; })()}` : activeTab === "tasks" ? `${jobs.length} задач` : activeTab === "duties" ? `${(duties.functions || []).filter((f) => !f.deletedAt).length} функций` : activeTab === "assortment" ? `${filteredProducts.length} товаров` : ""}</span>
             {activeTab === "assortment" && (
@@ -2723,6 +2747,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           unitConst={unitConst}
           setUnitConst={setUnitConst}
           initialTab={settingsTab}
+          navCfg={navCfg}
+          setNavCfg={setNavCfg}
           wbApiKey={wbApiKey}
           setWbApiKey={setWbApiKey}
           onFetchWb={() => { setSettingsOpen(false); fetchWbOrders(); }}
@@ -9686,7 +9712,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
   const toggleTrgOpen = (id) => setTrgOpen((o) => ({ ...o, [id]: !o[id] }));
@@ -9824,6 +9850,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
         <div className="flex flex-wrap gap-1.5 border-b border-neutral-100 px-5 py-2.5">
           <TabBtn id="statuses">Статусы</TabBtn>
+          <TabBtn id="nav">Быстрый доступ</TabBtn>
           <TabBtn id="triggers">Задачи по триггерам</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
@@ -9831,6 +9858,30 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
         </div>
 
         <div className="flex-1 overflow-auto p-5">
+          {tab === "nav" && (() => {
+            const ord = (navCfg.order || []).filter((id) => TABS.some((t) => t.id === id));
+            const list = [...ord, ...TABS.map((t) => t.id).filter((id) => !ord.includes(id))].map((id) => TABS.find((t) => t.id === id));
+            const hid = navCfg.hidden || {};
+            const shown = list.filter((t) => !hid[t.id]).length;
+            const setOrder = (ids) => setNavCfg((c) => ({ ...c, order: ids }));
+            const move = (id, d) => { const ids = list.map((t) => t.id); const i = ids.indexOf(id), j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j], ids[i]]; setOrder(ids); };
+            return (
+              <>
+                <h3 className="text-sm font-bold text-neutral-900">Быстрый доступ к блокам</h3>
+                <p className="mb-3 text-xs text-neutral-500">Выбранные блоки — на верхней панели, остальные — в меню «⋯». Настройка личная, на других пользователей не влияет.</p>
+                <div>
+                  {list.map((t, i) => (
+                    <div key={t.id} className="flex items-center gap-2.5 border-t border-neutral-100 py-2 first:border-t-0">
+                      <div className="flex flex-col"><button onClick={() => move(t.id, -1)} disabled={i === 0} className="text-[9px] leading-none text-neutral-400 hover:text-neutral-800 disabled:opacity-20">▲</button><button onClick={() => move(t.id, 1)} disabled={i === list.length - 1} className="text-[9px] leading-none text-neutral-400 hover:text-neutral-800 disabled:opacity-20">▼</button></div>
+                      <span className="flex-1 text-sm font-semibold text-neutral-800">{t.label}</span>
+                      <button onClick={() => setNavCfg((c) => ({ ...c, hidden: { ...(c.hidden || {}), [t.id]: !hid[t.id] } }))} className={"relative h-[21px] w-9 shrink-0 rounded-full transition " + (hid[t.id] ? "bg-neutral-300" : "bg-neutral-900")}><span className={"absolute top-[2px] h-[17px] w-[17px] rounded-full bg-white shadow transition-all " + (hid[t.id] ? "left-[2px]" : "left-[17px]")} /></button>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center text-xs text-neutral-500">В быстром доступе: {shown} из {list.length}<button onClick={() => setNavCfg({ order: [], hidden: {} })} className="ml-auto font-bold text-blue-600 hover:underline">Сбросить — показать все</button></div>
+              </>
+            );
+          })()}
           {tab === "statuses" && (
             <>
               <div className="mb-4 space-y-1.5">
