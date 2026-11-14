@@ -2101,8 +2101,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                         {navRest.map((t) => (
                           <button key={t.id} onClick={() => { setActiveTab(t.id); setNavMoreOpen(false); }} className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-semibold text-neutral-700 hover:bg-neutral-100">{t.label}</button>
                         ))}
-                        <div className="my-1 border-t border-neutral-100" />
-                        <button onClick={() => { setNavMoreOpen(false); setSettingsTab("nav"); setSettingsOpen(true); }} className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] font-bold text-blue-600 hover:bg-blue-50">⚙ Настроить быстрый доступ</button>
                       </div>
                     </>
                   )}
