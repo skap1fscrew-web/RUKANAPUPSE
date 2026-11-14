@@ -7624,6 +7624,74 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const dueTodayCount = (jobs || []).filter((j) => mine(j) && j.date === todayStr && stageOf(j) !== "done").length;
   const opPct = myOpsToday.length ? Math.round((opsDoneCount / myOpsToday.length) * 360) : 0;
 
+  // — новая раскладка: Операционные → Горит (все типы, срок ≤ 3 дн) → Главное ★ (закреплённые вручную) —
+  const isMain = (j) => !!(j.pinned || j.focus);
+  const allOpen = (jobs || []).filter((j) => !j.opId && mine(j) && stageOf(j) !== "done");
+  const dateKey = (j) => j.date || "9999-99-99";
+  const mainList = allOpen.filter(isMain).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
+  const limISO = isoYMD(new Date(y, m, d + 3));
+  const hotAll = allOpen.filter((j) => !isMain(j) && j.date && j.date <= limISO);
+  const hotList = (onlyOver ? hotAll.filter(isOver) : hotAll).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
+  const hotGroupsMap = {};
+  hotList.filter((j) => jobType(j) === "product").forEach((j) => { const t = stripProdSuffix(j.title, prodById[j.productId]?.name) || "Задача"; (hotGroupsMap[t] = hotGroupsMap[t] || []).push(j); });
+  const hotEntries = [
+    ...hotList.filter((j) => jobType(j) !== "product").map((j) => ({ j, date: dateKey(j) })),
+    ...Object.entries(hotGroupsMap).map(([title, list]) => ({ g: { title, list, maxOver: Math.max(0, ...list.map((j) => (dueBadge(j)?.over ? dueBadge(j).dd : 0))), hasOver: list.some((j) => dueBadge(j)?.over) }, date: list.reduce((mn, j) => (dateKey(j) < mn ? dateKey(j) : mn), "9999-99-99") })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  const typeBadge = (j) => { const t = jobType(j); return t === "product" ? { ch: "Т", cls: "bg-orange-50 text-orange-600" } : t === "purchase" ? { ch: "З", cls: "bg-cyan-50 text-cyan-600" } : { ch: "П", cls: "bg-violet-50 text-violet-600" }; };
+  const dueChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; if (dd === 1) return { txt: "завтра", cls: "bg-orange-100 text-orange-700" }; if (dd <= 3) return { txt: `через ${dd} дн`, cls: "bg-orange-100 text-orange-700" }; return { txt: j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: "bg-neutral-100 text-neutral-500" }; };
+  const setMain = (j, on) => onUpdateJob({ ...j, pinned: on, ...(on ? {} : { focus: false }) });
+  const pickCands = allOpen.filter((j) => !isMain(j)).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
+  const pickList = pickCands.filter((j) => !pickQ.trim() || (j.title || "").toLowerCase().includes(pickQ.trim().toLowerCase())).slice(0, 200);
+  const addToMain = () => { const sel = allOpen.filter((j) => pickSel.includes(j.id)); sel.forEach((j) => onUpdateJob({ ...j, pinned: true })); setPickSel([]); setPickOpen(false); setPickQ(""); if (sel.length) flash(`В «Главное» добавлено: ${sel.length}`); };
+  const JobCard = ({ j, main = false }) => {
+    const tb = typeBadge(j); const dc = dueChip(j); const st = STAGES[stageOf(j)]; const pr = (people || []).find((q) => q.id === j.assignee);
+    const over = dc && dc.cls.includes("red");
+    return (
+      <div onClick={() => onOpen(j)} className={"group mb-2 flex cursor-pointer flex-col gap-1.5 rounded-xl border p-2.5 transition hover:shadow-sm " + (main ? "border-rose-200 bg-rose-50/50" : over ? "border-red-200 bg-red-50/40" : "border-neutral-200 bg-white")}>
+        <div className="flex items-start gap-1.5">
+          <span className="min-w-0 flex-1 text-[13.5px] font-bold leading-snug text-neutral-800">{stripProdSuffix(j.title, prodById[j.productId]?.name)}</span>
+          <button onClick={(e) => { e.stopPropagation(); setMain(j, !main); }} title={main ? "Убрать из «Главного»" : "В «Главное»"} className={"shrink-0 text-[15px] leading-none " + (main ? "text-rose-600" : "text-neutral-300 hover:text-rose-400")}>★</button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={"flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-extrabold " + tb.cls} title={JOB_TYPES[jobType(j)]?.label || ""}>{tb.ch}</span>
+          {st && <span className="text-[11px] font-semibold text-neutral-400">{st.label.toLowerCase()}</span>}
+          {dc && <span className={"rounded-full px-2 py-0.5 text-[11px] font-extrabold " + dc.cls}>{dc.txt}</span>}
+          {pr && <span className="ml-auto"><PersonAvatar p={pr} size={20} /></span>}
+        </div>
+      </div>
+    );
+  };
+  const renderGroup = (g) => {
+              const open = !!openG[g.title];
+              const n = g.list.length;
+              return (
+                <div key={g.title} className="mb-2.5 overflow-hidden rounded-xl border border-neutral-200">
+                  <button onClick={() => setOpenG((o) => ({ ...o, [g.title]: !o[g.title] }))} className="flex w-full items-center gap-2.5 bg-white px-3 py-2.5 text-left hover:bg-neutral-50">
+                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-orange-50 text-[13px]">📅</span>
+                    <span className="min-w-0 flex-1"><span className="block text-[12.5px] font-bold leading-tight text-neutral-800">{g.title}</span>{g.hasOver && <span className="text-[11px] font-bold text-red-600">−{g.maxOver} дн · просрочено</span>}</span>
+                    <span className={"rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (g.hasOver ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-600")}>{n} {plural(n, "товар", "товара", "товаров")}</span>
+                    <ChevronRight size={14} className={"shrink-0 text-neutral-300 transition " + (open ? "rotate-90" : "")} />
+                  </button>
+                  {open && (
+                    <div className="border-t border-neutral-100 bg-neutral-50/60">
+                      {g.list.map((j) => { const prod = prodById[j.productId]; return (
+                        <div key={j.id} className="flex items-center gap-2.5 border-b border-neutral-100 px-3 py-1.5 last:border-b-0">
+                          <span className="flex h-[36px] w-[28px] shrink-0 items-center justify-center overflow-hidden rounded-md bg-neutral-100 text-neutral-300">{prod?.image ? <img src={prod.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={12} />}</span>
+                          <button onClick={() => onOpen(j)} className="min-w-0 flex-1 text-left"><span className="block text-[11px] font-extrabold text-orange-600">{prod?.code || "—"}</span><span className="block truncate text-[12px] text-neutral-700">{prod?.name || "Товар"}</span></button>
+                          <button onClick={() => onUpdateJob(applyStage(j, "done"))} title="Отметить выполненной" className="rounded-md border border-neutral-200 bg-white px-1.5 py-0.5 text-[10.5px] font-bold text-neutral-500 hover:border-emerald-300 hover:text-emerald-700">✓ готово</button>
+                        </div>
+                      ); })}
+                      <div className="flex flex-wrap gap-1.5 border-t border-neutral-200 bg-white px-3 py-2">
+                        <button onClick={() => { if (window.confirm(`Перенести «${g.title}» (${n}) на завтра?`)) { setDates(g.list, shiftDate(1)); flash(`Перенесено: ${n}`); } }} className="rounded-lg border border-neutral-200 px-2.5 py-1 text-[11px] font-bold text-neutral-600 hover:bg-neutral-50">Перенести группу на завтра</button>
+                        <button onClick={() => { if (window.confirm(`Закрыть «${g.title}» для всех (${n})?`)) { g.list.forEach((j) => onUpdateJob(applyStage(j, "done"))); flash(`Закрыто: ${n}`); } }} className="rounded-lg border border-emerald-200 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50">✓ Закрыть для всех {n}</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+  };
+
   const prioSize = (j) => j.priority === "high" ? "t-hi" : j.priority === "med" ? "t-md" : "t-lo";
   const pmeta = (pr) => PRIORITIES[pr] || PRIORITIES.med;
   const shiftDate = (n) => isoYMD(new Date(y, m, d + n));
@@ -7655,10 +7723,9 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     );
   };
 
-  const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "proj", label: "Проектные", dot: "#7c3aed" }, { k: "prod", label: "Товары", dot: "#ea580c" }];
+  const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "proj", label: "Горит", dot: "#ef4444" }, { k: "prod", label: "Главное ★", dot: "#e11d48" }];
   const opsStrip = opsPending.length === 0 && !opsOpen;
   const showOps = !hidden.includes("ops"), showProj = !hidden.includes("proj"), showProd = !hidden.includes("prod");
-  const pickList = waiting.filter((j) => !pickQ.trim() || (j.title || "").toLowerCase().includes(pickQ.trim().toLowerCase()));
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
@@ -7727,85 +7794,44 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         ))}
 
         {showProj && (
-          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[640px] md:flex-none md:border-b-0 md:border-r">
-            <div className="relative mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-violet-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Проектные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{focusProjects.length}</span>
-              <button onClick={() => setPickOpen((v) => !v)} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition " + (pickOpen ? "border-rose-300 bg-rose-100 text-rose-700" : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100")}><Plus size={12} />в Фокус из ожидающих{waiting.length ? ` (${waiting.length})` : ""}</button>
-              {pickOpen && (<>
-                <div className="fixed inset-0 z-20" onClick={() => setPickOpen(false)} />
-                <div className="absolute right-0 top-9 z-30 w-[380px] max-w-[92vw] rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl">
-                  <div className="mb-2 flex items-center text-[13px] font-extrabold text-neutral-800">Добавить в Фокус<button onClick={() => setPickOpen(false)} className="ml-auto text-neutral-300 hover:text-neutral-600"><X size={14} /></button></div>
-                  <input value={pickQ} onChange={(e) => setPickQ(e.target.value)} placeholder="Поиск по ожидающим…" className="mb-1.5 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[12.5px] outline-none focus:ring-2 focus:ring-rose-200" />
-                  <div className="max-h-[300px] overflow-y-auto">
-                    {pickList.length === 0 && <div className="py-4 text-center text-[12px] text-neutral-400">Нет ожидающих задач</div>}
-                    {pickList.map((j) => (
-                      <label key={j.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1.5 text-[12.5px] font-semibold text-neutral-700 hover:bg-neutral-50">
-                        <input type="checkbox" checked={pickSel.includes(j.id)} onChange={() => setPickSel((s) => s.includes(j.id) ? s.filter((x) => x !== j.id) : [...s, j.id])} className="h-4 w-4 accent-rose-600" />
-                        <span className="min-w-0 flex-1 truncate">{j.title}</span>
-                        <span className="text-[9.5px] font-extrabold uppercase" style={{ color: pmeta(j.priority).color }}>{j.priority === "high" ? "выс" : j.priority === "med" ? "сред" : "низ"}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex items-center border-t border-neutral-100 pt-2.5">
-                    <span className="text-[11.5px] text-neutral-500">Выбрано: {pickSel.length} · получат метку «◎ в фокусе»</span>
-                    <button onClick={addToFocus} disabled={!pickSel.length} className="ml-auto rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700 disabled:opacity-40">Добавить</button>
-                  </div>
-                </div>
-              </>)}
-            </div>
-            {focusProjects.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных проектных задач нет" : "Нет задач в работе и горящих"}</div>
-            ) : (<>
-              {pinnedList.length > 0 && (
-                <div className="mb-2 rounded-2xl border-[1.5px] border-rose-200 bg-white p-2.5">
-                  <div className="mb-2 flex items-center text-[10.5px] font-extrabold uppercase tracking-wide text-rose-700">★ Топ-3 на сегодня<span className="ml-auto font-semibold normal-case tracking-normal text-neutral-400">★ на карточке — закрепить или убрать</span></div>
-                  <div className="flex flex-wrap content-start gap-2.5">{pinnedList.map((j) => <Tile key={j.id} j={j} onClick={() => onOpen(j)} />)}</div>
-                </div>
-              )}
-              {pinnedList.length > 0 && restList.length > 0 && !restOpen && (
-                <button onClick={() => setRestOpen(true)} className="mt-1 w-full rounded-xl border border-dashed border-neutral-300 py-2 text-[12px] font-bold text-neutral-500 hover:bg-neutral-50">▾ ещё {restList.length} задач</button>
-              )}
-              {(pinnedList.length === 0 || restOpen) && restList.length > 0 && (<>
-                <div className="flex flex-wrap content-start gap-2.5">{restList.map((j) => <Tile key={j.id} j={j} onClick={() => onOpen(j)} />)}</div>
-                {pinnedList.length > 0 && <button onClick={() => setRestOpen(false)} className="mt-2 w-full text-center text-[11px] font-bold text-neutral-400 hover:text-neutral-700">▴ свернуть</button>}
-              </>)}
-            </>)}
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[460px] md:flex-none md:border-b-0 md:border-r">
+            <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-red-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Горит · до 3 дней</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotList.length}</span></div>
+            {hotEntries.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных задач нет" : "Горящих задач нет 🎉"}</div>
+            ) : hotEntries.map((en) => en.g ? renderGroup(en.g) : <JobCard key={en.j.id} j={en.j} />)}
           </div>
         )}
 
         {showProd && (
-          <div className="min-w-0 p-3.5 md:w-[420px] md:flex-none">
-            <div className="mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-orange-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Товары</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{prodHot.length}</span></div>
-            {groups.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных задач по товарам нет" : "Нет горящих задач по товарам"}</div>
-            ) : groups.map((g) => {
-              const open = !!openG[g.title];
-              const n = g.list.length;
-              return (
-                <div key={g.title} className="mb-2.5 overflow-hidden rounded-xl border border-neutral-200">
-                  <button onClick={() => setOpenG((o) => ({ ...o, [g.title]: !o[g.title] }))} className="flex w-full items-center gap-2.5 bg-white px-3 py-2.5 text-left hover:bg-neutral-50">
-                    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-orange-50 text-[13px]">📅</span>
-                    <span className="min-w-0 flex-1"><span className="block text-[12.5px] font-bold leading-tight text-neutral-800">{g.title}</span>{g.hasOver && <span className="text-[11px] font-bold text-red-600">−{g.maxOver} дн · просрочено</span>}</span>
-                    <span className={"rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (g.hasOver ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-600")}>{n} {plural(n, "товар", "товара", "товаров")}</span>
-                    <ChevronRight size={14} className={"shrink-0 text-neutral-300 transition " + (open ? "rotate-90" : "")} />
-                  </button>
-                  {open && (
-                    <div className="border-t border-neutral-100 bg-neutral-50/60">
-                      {g.list.map((j) => { const prod = prodById[j.productId]; return (
-                        <div key={j.id} className="flex items-center gap-2.5 border-b border-neutral-100 px-3 py-1.5 last:border-b-0">
-                          <span className="flex h-[36px] w-[28px] shrink-0 items-center justify-center overflow-hidden rounded-md bg-neutral-100 text-neutral-300">{prod?.image ? <img src={prod.image} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={12} />}</span>
-                          <button onClick={() => onOpen(j)} className="min-w-0 flex-1 text-left"><span className="block text-[11px] font-extrabold text-orange-600">{prod?.code || "—"}</span><span className="block truncate text-[12px] text-neutral-700">{prod?.name || "Товар"}</span></button>
-                          <button onClick={() => onUpdateJob(applyStage(j, "done"))} title="Отметить выполненной" className="rounded-md border border-neutral-200 bg-white px-1.5 py-0.5 text-[10.5px] font-bold text-neutral-500 hover:border-emerald-300 hover:text-emerald-700">✓ готово</button>
-                        </div>
-                      ); })}
-                      <div className="flex flex-wrap gap-1.5 border-t border-neutral-200 bg-white px-3 py-2">
-                        <button onClick={() => { if (window.confirm(`Перенести «${g.title}» (${n}) на завтра?`)) { setDates(g.list, shiftDate(1)); flash(`Перенесено: ${n}`); } }} className="rounded-lg border border-neutral-200 px-2.5 py-1 text-[11px] font-bold text-neutral-600 hover:bg-neutral-50">Перенести группу на завтра</button>
-                        <button onClick={() => { if (window.confirm(`Закрыть «${g.title}» для всех (${n})?`)) { g.list.forEach((j) => onUpdateJob(applyStage(j, "done"))); flash(`Закрыто: ${n}`); } }} className="rounded-lg border border-emerald-200 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50">✓ Закрыть для всех {n}</button>
-                      </div>
-                    </div>
-                  )}
+          <div className="min-w-0 p-3.5 md:w-[460px] md:flex-none">
+            <div className="relative mb-2.5 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-rose-500" /><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Главное ★</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{mainList.length}</span>
+              <button onClick={() => setPickOpen((v) => !v)} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition " + (pickOpen ? "border-rose-300 bg-rose-100 text-rose-700" : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100")}><Plus size={12} />добавить</button>
+              {pickOpen && (<>
+                <div className="fixed inset-0 z-20" onClick={() => setPickOpen(false)} />
+                <div className="absolute right-0 top-9 z-30 w-[400px] max-w-[92vw] rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl">
+                  <div className="mb-2 flex items-center text-[13px] font-extrabold text-neutral-800">Добавить в «Главное»<button onClick={() => setPickOpen(false)} className="ml-auto text-neutral-300 hover:text-neutral-600"><X size={14} /></button></div>
+                  <input value={pickQ} onChange={(e) => setPickQ(e.target.value)} placeholder="Поиск по задачам…" className="mb-1.5 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[12.5px] outline-none focus:ring-2 focus:ring-rose-200" />
+                  <div className="max-h-[320px] overflow-y-auto">
+                    {pickList.length === 0 && <div className="py-4 text-center text-[12px] text-neutral-400">Нет подходящих задач</div>}
+                    {pickList.map((j) => (
+                      <label key={j.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1.5 text-[12.5px] font-semibold text-neutral-700 hover:bg-neutral-50">
+                        <input type="checkbox" checked={pickSel.includes(j.id)} onChange={() => setPickSel((s) => s.includes(j.id) ? s.filter((x) => x !== j.id) : [...s, j.id])} className="h-4 w-4 accent-rose-600" />
+                        <span className={"flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-extrabold " + typeBadge(j).cls}>{typeBadge(j).ch}</span>
+                        <span className="min-w-0 flex-1 truncate">{stripProdSuffix(j.title, prodById[j.productId]?.name)}</span>
+                        <span className="text-[10.5px] font-bold text-neutral-400">{dueChip(j) ? dueChip(j).txt : ""}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex items-center border-t border-neutral-100 pt-2.5">
+                    <span className="text-[11.5px] text-neutral-500">Выбрано: {pickSel.length}</span>
+                    <button onClick={addToMain} disabled={!pickSel.length} className="ml-auto rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700 disabled:opacity-40">Добавить</button>
+                  </div>
                 </div>
-              );
-            })}
+              </>)}
+            </div>
+            {mainList.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">Здесь ваши главные задачи. Нажмите «добавить» или ★ на любой карточке.</div>
+            ) : mainList.map((j) => <JobCard key={j.id} j={j} main />)}
           </div>
         )}
       </div>
