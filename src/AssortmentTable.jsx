@@ -3417,17 +3417,30 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
     </label>
   );
 
+  // активные партии (цикл запущен и не завершён) — в начале; остальные после разделителя
+  const isActiveBatch = (b) => !!(b.cycle && b.cycle.started && Array.isArray(b.cycle.stages) && b.cycle.stages.some((x) => !x.done));
+  const batchLate = (b) => { const cur = b.cycle.stages.find((x) => !x.done); const dd = cur ? cycleStageDates(b.cycle.startDate, b.cycle.stages)[cur.id] : null; return !!(dd && dd.endISO < todayISO()); };
+  const nActiveB = list.filter(isActiveBatch).length;
+  const tabList = [...list.filter(isActiveBatch), ...list.filter((b) => !isActiveBatch(b))];
+  const shortName = (n) => { const t = String(n || ""); return t.length > 15 ? t.slice(0, 15).trimEnd() + "…" : t; };
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-1.5">
-        {list.map((b) => {
+        {tabList.map((b, bi) => {
           const on = b.id === active.id;
+          const act = isActiveBatch(b);
+          const sepBefore = bi === nActiveB && nActiveB > 0;
           if (editingId === b.id) return <input key={b.id} autoFocus defaultValue={b.name} onBlur={(e) => { renameBatch(b.id, e.target.value); setEditingId(null); }} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setEditingId(null); }} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-800 focus:outline-none" style={{ width: 160 }} />;
           return (
-            <button key={b.id} onClick={() => setActiveId(b.id)} onDoubleClick={() => setEditingId(b.id)} title="Клик — открыть · двойной клик — переименовать" className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition " + (on ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200")}>
-              <span className="max-w-[200px] truncate">{b.name}</span>
-              {on && (<><Pencil size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingId(b.id); }} /><Copy size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); dupBatch(b.id); }} /><Trash2 size={12} className="opacity-70 hover:opacity-100 hover:text-red-300" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Удалить партию «${b.name}»?`)) removeBatch(b.id); }} /></>)}
+            <Fragment key={b.id}>
+            {sepBefore && <span className="mx-1 h-6 w-px self-center bg-neutral-200" />}
+            <button onClick={() => setActiveId(b.id)} onDoubleClick={() => setEditingId(b.id)} title={`${b.name || "Без названия"} — клик: открыть · двойной клик: переименовать` + (act ? (batchLate(b) ? " · этап просрочен" : " · активная партия") : "")} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition " + (on ? "bg-neutral-900 text-white" : act ? "bg-neutral-100 text-neutral-700 hover:bg-neutral-200" : "bg-neutral-100 text-neutral-500 opacity-80 hover:bg-neutral-200 hover:opacity-100")}>
+              {act && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: batchLate(b) ? "#ef4444" : "#f59e0b" }} />}
+              <span>{shortName(b.name) || "Без названия"}</span>
+              {on && (<><Pencil size={12} className="opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingId(b.id); }} /><Trash2 size={12} className="opacity-70 hover:opacity-100 hover:text-red-300" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Удалить партию «${b.name}»?`)) removeBatch(b.id); }} /></>)}
             </button>
+            </Fragment>
           );
         })}
         <button onClick={addBatch} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Партия</button>
