@@ -7730,18 +7730,14 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
       {/* шапка: ФОКУС + строка фокуса, счётчики, меню групп */}
-      <div className="relative flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rose-100 bg-gradient-to-r from-rose-50 to-white px-4 py-2.5">
-        <div className="min-w-[260px] flex-[1_1_320px]">
-          <div className="flex items-center gap-1.5 text-[14px] font-black leading-tight text-rose-700"><Target size={15} />ФОКУС{note && <span className="ml-2 rounded-lg bg-neutral-900 px-2 py-0.5 text-[11px] font-semibold text-white">{note}</span>}</div>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор: например, расширяем базу блогеров…" className="mt-0.5 block w-full border-0 border-b-2 border-dashed border-transparent bg-transparent p-0 pb-0.5 text-[18px] font-extrabold leading-tight text-rose-900 outline-none transition placeholder:text-[14px] placeholder:font-semibold placeholder:text-rose-300 hover:border-rose-200 focus:border-rose-300" />
-        </div>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-3 text-[12px] font-bold text-neutral-600" title="Операционные: сделано сегодня">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: `conic-gradient(#16a34a 0 ${opPct}deg, #e9eaee ${opPct}deg 360deg)` }}><span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white text-[8px] font-extrabold text-emerald-600">{opsDoneCount}/{myOpsToday.length}</span></span>операц.
-          </span>
-          <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[12px] font-bold text-neutral-600"><b className="mr-1 text-[14px] text-neutral-900">{inWorkCount}</b>в работе</span>
-          <button onClick={() => setOnlyOver((v) => !v)} title="Показать только просроченные" className={"rounded-full border px-3 py-1 text-[12px] font-bold text-neutral-600 transition " + (onlyOver ? "border-red-400 bg-red-100" : "border-red-200 bg-red-50 hover:bg-red-100")}><b className="mr-1 text-[14px] text-red-600">{overdueCount}</b>просрочено ›</button>
-          <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[12px] font-bold text-neutral-600"><b className="mr-1 text-[14px] text-neutral-900">{dueTodayCount}</b>сегодня</span>
+      <div className="relative flex items-center gap-3.5 border-b border-rose-100 bg-gradient-to-r from-rose-50 to-white px-4" style={{ minHeight: 52 }}>
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[14px] font-black tracking-wide text-rose-700"><Target size={15} />ФОКУС</span>
+        {note && <span className="shrink-0 rounded-lg bg-neutral-900 px-2 py-0.5 text-[11px] font-semibold text-white">{note}</span>}
+        <span className="h-[22px] w-px shrink-0 bg-rose-200" />
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор…" className="min-w-0 flex-1 rounded-lg border-0 bg-transparent px-1.5 py-1 text-[20px] font-extrabold tracking-tight text-rose-900 outline-none ring-0 transition placeholder:font-semibold placeholder:text-rose-300 hover:bg-rose-100/50 focus:bg-rose-100/50 focus:outline-none focus:ring-0" />
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {overdueCount > 0 && <button onClick={() => setOnlyOver((v) => !v)} title="Показать только просроченные" className={"rounded-[10px] px-3 py-1.5 text-[13px] font-extrabold transition " + (onlyOver ? "bg-red-600 text-white" : "bg-red-100 text-red-700 hover:bg-red-200")}>{overdueCount} просрочено ›</button>}
+          {dueTodayCount > 0 && <span className="rounded-[10px] bg-orange-100 px-3 py-1.5 text-[13px] font-extrabold text-orange-700">{dueTodayCount} сегодня</span>}
           <div className="relative">
             <button onClick={() => setEyeOpen((v) => !v)} title="Показывать группы задач" className={"flex h-8 w-8 items-center justify-center rounded-[10px] border transition " + (hidden.length ? "border-rose-300 bg-rose-50 text-rose-600" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>{hidden.length ? <EyeOff size={15} /> : <Eye size={15} />}</button>
             {eyeOpen && (<>
