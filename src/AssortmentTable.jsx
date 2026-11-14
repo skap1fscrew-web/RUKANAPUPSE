@@ -657,7 +657,6 @@ function AssigneePicker({ people = [], value = [], onChange, max = 2 }) {
           </button>
         ); })}
       </div>
-      {max > 1 && people.length > 0 && <span className="text-[11px] text-neutral-400">Можно выбрать до двух · выбрано {sel.length} из {max}</span>}
     </div>
   );
 }
