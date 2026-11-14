@@ -165,6 +165,7 @@ const TABS = [
   { id: "strategy", label: "Карты" },
   { id: "content", label: "Контент" },
   { id: "duties", label: "Функционал" },
+  { id: "base", label: "База" },
 ];
 
 // Задачи диаграммы Ганта (общие для всех товаров). kind задаёт поведение строки.
@@ -2145,10 +2146,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setDbOpen(true)} className="rounded-xl inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100">
-              База
-            </button>
-            {hasExpandable && products.length > 0 && (
+            {activeTab !== "base" && hasExpandable && products.length > 0 && (
               <button onClick={allOpen ? collapseAll : expandAll} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
                 {allOpen ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
                 {allOpen ? "Свернуть всё" : "Развернуть всё"}
@@ -2861,7 +2859,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         );
       })()}
 
-      {dbOpen && (() => {
+      {activeTab === "base" && (() => {
         const BLOGGER_FIELDS_DB = [
           { id: "image", label: "Фото", type: "image" },
           { id: "name", label: "Исполнитель", type: "text" },
@@ -2939,7 +2937,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             setExtraCols={(cols) => setDbColumns((d) => ({ ...d, [active]: cols }))}
             usage={usage}
             onCreateTask={createDbTask}
-            onClose={() => setDbOpen(false)}
+            embedded
+            onClose={() => setActiveTab("assortment")}
           />
         );
       })()}
@@ -4941,7 +4940,7 @@ function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, on
    Справочная база (Блогеры / Раздачницы)
 ---------------------------------------------------------------------------- */
 
-function RefDB({ title, typeId, fields, rows, setRows, types = [], activeId, onSelect, onAddType, onRemoveType, extraCols = [], setExtraCols, usage, onCreateTask, onClose }) {
+function RefDB({ embedded, title, typeId, fields, rows, setRows, types = [], activeId, onSelect, onAddType, onRemoveType, extraCols = [], setExtraCols, usage, onCreateTask, onClose }) {
   const fileRef = useRef(null);
   const csvRef = useRef(null);
   const target = useRef(null);
@@ -5106,8 +5105,8 @@ function RefDB({ title, typeId, fields, rows, setRows, types = [], activeId, onS
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={onClose}>
-      <div className="flex h-full w-full overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxWidth: 1360, maxHeight: "94vh" }} onClick={(e) => e.stopPropagation()}>
+    <div className={embedded ? "" : "fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-3 sm:p-6"} onClick={embedded ? undefined : onClose}>
+      <div className={"flex w-full overflow-hidden bg-white " + (embedded ? "rounded-2xl border border-neutral-200" : "h-full rounded-2xl shadow-2xl")} style={embedded ? { height: "calc(100vh - 150px)", minHeight: 480 } : { maxWidth: 1360, maxHeight: "94vh" }} onClick={(e) => e.stopPropagation()}>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
         <input ref={csvRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onCsv} />
         <div className="hidden w-[200px] shrink-0 flex-col border-r border-neutral-100 bg-neutral-50 p-3 md:flex">
@@ -5142,7 +5141,7 @@ function RefDB({ title, typeId, fields, rows, setRows, types = [], activeId, onS
               <button onClick={exportCsv} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 text-xs font-bold text-neutral-600 hover:bg-neutral-50"><Download size={13} />Экспорт</button>
               <button onClick={add} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-bold text-white hover:bg-neutral-800"><Plus size={13} />Запись</button>
             </>)}
-            <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><X size={18} /></button>
+            {!embedded && <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><X size={18} /></button>}
           </div>
           {msg && <div className="mx-4 mt-3 rounded-lg bg-neutral-900 px-3 py-2 text-xs font-semibold text-white">{msg}</div>}
           {!trashView && sel.length > 0 && (
