@@ -6374,24 +6374,19 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
           </div>
           {product.image && <button onClick={(e) => { e.stopPropagation(); onSetField && onSetField("image", null); }} title="Удалить фото" className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/55 p-0.5 text-white hover:bg-red-600 group-hover:block"><X size={11} /></button>}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
-          <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-            <label className="inline-flex h-[26px] items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 focus-within:ring-2 focus-within:ring-orange-200">
-              <span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Код</span>
-              <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код" className="w-12 border-0 bg-transparent p-0 text-[12.5px] font-bold text-neutral-700 outline-none placeholder:font-normal placeholder:text-neutral-400" />
-            </label>
-            {product.wb && (
-              <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" title={"Артикул WB " + product.wb + " — открыть на сайте"} className="inline-flex h-[26px] items-center gap-1.5 rounded-lg bg-violet-50 px-2.5 text-[12.5px] font-bold text-violet-700 transition hover:bg-violet-100">WB <ExternalLink size={12} /></a>
-            )}
-          </div>
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-2 min-h-[92px]">
           <input
             value={product.name}
             onChange={(e) => onSetName(e.target.value)}
             placeholder="Название товара"
             className="-ml-1.5 h-7 w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-0 text-xl font-extrabold leading-7 tracking-tight text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <div className="relative flex items-center gap-2">
+          <div className="flex flex-wrap items-end gap-x-7 gap-y-1.5">
+            <div className="flex flex-col gap-0.5"><span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Код</span>
+              <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код" className="h-[26px] w-16 rounded-md border border-transparent bg-transparent px-0 text-[14px] font-extrabold text-neutral-800 outline-none placeholder:font-normal placeholder:text-neutral-400 hover:border-neutral-200 focus:border-neutral-300 focus:px-1.5" /></div>
+            <div className="flex flex-col gap-0.5"><span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Предмет</span>
+              <div className="-ml-1.5 w-44"><SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} /></div></div>
+            <div className="relative flex flex-col gap-0.5"><span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Статус</span>
               <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-bold transition hover:brightness-95" style={curStatus ? { background: curStatus.color + "1f", color: curStatus.color } : { background: "#f1f1f3", color: "#9a9a9a" }}>
                 <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
                 {curStatus ? curStatus.name : "Без статуса"}
@@ -6417,10 +6412,10 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                 </>
               )}
             </div>
-            <div className="inline-flex h-[26px] items-center gap-1 rounded-lg border border-neutral-200 bg-white pl-2.5 pr-0.5">
-              <span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Предмет</span>
-              <div className="w-40"><SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} /></div>
-            </div>
+            {product.wb && (
+              <div className="flex flex-col gap-0.5"><span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">WB</span>
+                <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" title={"Артикул WB " + product.wb + " — открыть на сайте"} className="inline-flex h-[26px] items-center gap-1 text-[14px] font-extrabold text-violet-700 hover:text-violet-900"><ExternalLink size={14} /></a></div>
+            )}
           </div>
         </div>
         <button onClick={onClose} className="rounded-lg shrink-0 self-start p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
