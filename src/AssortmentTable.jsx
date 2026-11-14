@@ -7293,6 +7293,8 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
+  const [secDone, setSecDone] = useState(() => { try { return JSON.parse(localStorage.getItem("rnp-gantt-showdone") || "{}"); } catch { return {}; } });
+  const toggleSecDone = (id) => setSecDone((c) => { const n = { ...c, [id]: !c[id] }; try { localStorage.setItem("rnp-gantt-showdone", JSON.stringify(n)); } catch {} return n; });
   const [groupBy, setGroupBy] = useState(() => { const g = lsGet("rnp.kanbanGroup", "status"); return g === "label" ? "status" : g; }); // status | priority
   const [kanbanSort, setKanbanSort] = useState(() => lsGet("rnp.kanbanSort", "created")); // created | priority
   const [kanbanWide, setKanbanWide] = useState(() => lsGet("rnp.kanbanWide", false)); // широкий вид столбцов (2 подколонки по приоритету)
@@ -7379,6 +7381,9 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
           ) : (
             <button onClick={() => setSearchOpen(true)} title="Поиск по названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
           )}
+          {!focusMode && view !== "kanban" && view !== "prod" && view !== "today" && (fltType === "project" || fltType === "purchase") && (() => { const sid = fltType === "project" ? "gen" : "pur"; const on = !!secDone[sid]; return (
+            <button onClick={() => toggleSecDone(sid)} title={on ? "Скрыть выполненные" : "Показать выполненные"} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (on ? "border-neutral-300 bg-neutral-100 text-neutral-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{on ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+          ); })()}
           {myId && (
             <button onClick={() => setFltAssignee(fltAssignee === myId ? null : myId)} title="Только мои задачи" className={"inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold " + (fltAssignee === myId ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><User size={14} className={fltAssignee === myId ? "" : "text-neutral-400"} />Свои</button>
           )}
@@ -7435,7 +7440,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
           : view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
           : view === "today" ? <OpTodayView opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} people={people} now={now} onEditOp={onEditOp} />
-          : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} />}
+          : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} secDone={secDone} toggleSecDone={toggleSecDone} />}
       </div>
     </div>
   );
@@ -8147,7 +8152,7 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
   );
 }
 
-function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob, onlyType = null }) {
+function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob, onlyType = null, secDone = {}, toggleSecDone = () => {} }) {
   const productOnly = onlyType === "product";
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const LW = 320;      // ширина колонки с подписями
@@ -8246,8 +8251,6 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
   const [collapsed, setCollapsed] = useState(() => { try { return JSON.parse(localStorage.getItem("rnp-gantt-collapsed") || "{}"); } catch { return {}; } });
   const toggleSection = (id) => setCollapsed((c) => { const n = { ...c, [id]: !c[id] }; try { localStorage.setItem("rnp-gantt-collapsed", JSON.stringify(n)); } catch {} return n; });
   // показ выполненных задач по разделам (по умолчанию скрыты)
-  const [secDone, setSecDone] = useState(() => { try { return JSON.parse(localStorage.getItem("rnp-gantt-showdone") || "{}"); } catch { return {}; } });
-  const toggleSecDone = (id) => setSecDone((c) => { const n = { ...c, [id]: !c[id] }; try { localStorage.setItem("rnp-gantt-showdone", JSON.stringify(n)); } catch {} return n; });
 
   // позиция задачи внутри месяца (или null, если вне диапазона)
   const place = (j) => {
@@ -8434,7 +8437,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
     const showDone = !!secDone[id];
     return (
       <div className="mt-2 first:mt-0">
-        {!isOp && !(bare && !(doneCount > 0)) && <div className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1" style={{ width: LW + timelineW }}>
+        {!isOp && !bare && <div className="flex items-center gap-1.5 bg-neutral-50 px-2 py-1" style={{ width: LW + timelineW }}>
           {!bare && <button onClick={() => toggleSection(id)} className="flex items-center gap-1.5 text-left transition hover:opacity-70">
             <ChevronDown size={13} className="shrink-0 text-neutral-400 transition-transform" style={{ transform: open ? "none" : "rotate(-90deg)" }} />
             <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</span>
@@ -8541,7 +8544,7 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
     </div>
 
     {/* Нераспределённые задачи (без даты) — скрыты для «по товарам» и операционных */}
-    {onlyType !== "product" && onlyType !== "op" && (
+    {onlyType !== "product" && onlyType !== "op" && onlyType !== "project" && (
     <aside ref={unschedRef} className={"flex w-[250px] shrink-0 flex-col self-stretch border-l transition " + (overUnsched ? "border-orange-300 bg-orange-50/60" : "border-neutral-200 bg-neutral-50/40")}>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <ListIcon size={14} className="text-neutral-400" />
