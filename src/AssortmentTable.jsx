@@ -3435,11 +3435,13 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
 
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-3 border-b border-neutral-100 px-4 py-3">
-          <button onClick={() => setCycOpen((o) => !o)} title="Производственный цикл заказа" className={"inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition " + (!cycStarted ? "border-neutral-200 bg-white text-neutral-400 hover:bg-neutral-50" : curStage ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" : "border-emerald-200 bg-emerald-50 text-emerald-700")}>
-            <span className="h-2 w-2 rounded-full" style={{ background: !cycStarted ? "#cbd5e1" : curStage ? "#f59e0b" : "#10b981" }} />
-            {!cycStarted ? "Цикл не запущен" : curStage ? `Этап: ${curStage.name}` : "Цикл завершён"}
-            <ChevronDown size={11} className={"transition " + (cycOpen ? "rotate-180" : "")} />
+          {(() => { const curEnd = curStage && cycDates[curStage.id] ? cycDates[curStage.id].endISO : null; const late = !!(curEnd && curEnd < todayISO()); return (
+          <button onClick={() => setCycOpen((o) => !o)} title={!cycStarted ? "Запустить производственный цикл" : curStage ? "Текущий этап цикла" + (curEnd ? " · до " + curEnd.slice(8, 10) + "." + curEnd.slice(5, 7) + (late ? " (просрочено)" : "") : "") : "Все этапы цикла пройдены"} className={"inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[13px] font-bold transition hover:bg-neutral-50 " + (!cycStarted ? "text-neutral-500" : "text-neutral-800")}>
+            <span className="h-2 w-2 rounded-full" style={{ background: !cycStarted ? "#a3a3a3" : curStage ? (late ? "#ef4444" : "#f59e0b") : "#16a34a" }} />
+            {!cycStarted ? "Запустить цикл" : curStage ? curStage.name : "Готово"}
+            <ChevronDown size={11} className={"opacity-50 transition " + (cycOpen ? "rotate-180" : "")} />
           </button>
+          ); })()}
           <div className="relative">
             <button onClick={() => setRatesOpen((o) => !o)} title="Ставки партии" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (ratesOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
               <Settings2 size={14} className={ratesOpen ? "text-white" : "text-neutral-400"} /> Ставки
