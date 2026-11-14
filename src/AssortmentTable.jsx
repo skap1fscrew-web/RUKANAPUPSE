@@ -158,6 +158,9 @@ const scoreVerdict = (sc) => {
 // Группы. tab — к какой вкладке относится группа. kind:
 //   "columns" — добавляет столбцы к каждой строке товара (как Юнит);
 //   "matrix"  — раскрывается под строкой товара (метрики × интеграции, как Внешка).
+// масштаб интерфейса (CSS zoom на <html>): vh внутри масштабированного контента нужно компенсировать
+const uiZ = () => { try { const z = parseFloat(document.documentElement.style.zoom); return z > 0 ? z : 1; } catch { return 1; } };
+const zvh = (n) => (n / uiZ()) + "vh";
 const TABS = [
   { id: "assortment", label: "Товары" },
   { id: "purchases", label: "Закупки" },
@@ -4790,7 +4793,7 @@ function GanttPopup({ state, cells, entries, refSources = {}, onSetCell, onSetEn
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="rounded-2xl w-full max-w-lg overflow-auto bg-white p-5 shadow-xl" style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+      <div className="rounded-2xl w-full max-w-lg overflow-auto bg-white p-5 shadow-xl" style={{ maxHeight: zvh(85) }} onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-neutral-900">{task.label} · {dateKey.slice(8, 10)}.{dateKey.slice(5, 7)}</h2>
           <button onClick={onClose} className="p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
@@ -4988,7 +4991,7 @@ function EntriesDB({ task, entries, startDate, refSources = {}, onSetEntries, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className="rounded-2xl w-full overflow-auto bg-white p-5 shadow-xl" style={{ maxWidth: "min(1100px, 95vw)", maxHeight: "88vh" }} onClick={(e) => e.stopPropagation()}>
+      <div className="rounded-2xl w-full overflow-auto bg-white p-5 shadow-xl" style={{ maxWidth: "min(1100px, 95vw)", maxHeight: zvh(88) }} onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-base font-semibold text-neutral-900">{task.label} — база записей</h2>
@@ -5215,7 +5218,7 @@ function RefDB({ embedded, title, typeId, fields, rows, setRows, types = [], act
 
   return (
     <div className={embedded ? "" : "fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-3 sm:p-6"} onClick={embedded ? undefined : onClose}>
-      <div className={"flex w-full overflow-hidden bg-white " + (embedded ? "rounded-2xl border border-neutral-200" : "h-full rounded-2xl shadow-2xl")} style={embedded ? { height: "calc(100vh - 150px)", minHeight: 480 } : { maxWidth: 1360, maxHeight: "94vh" }} onClick={(e) => e.stopPropagation()}>
+      <div className={"flex w-full overflow-hidden bg-white " + (embedded ? "rounded-2xl border border-neutral-200" : "h-full rounded-2xl shadow-2xl")} style={embedded ? { height: `calc(${zvh(100)} - 150px)`, minHeight: 480 } : { maxWidth: 1360, maxHeight: "94vh" }} onClick={(e) => e.stopPropagation()}>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
         <input ref={csvRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onCsv} />
         <div className="hidden w-[200px] shrink-0 flex-col border-r border-neutral-100 bg-neutral-50 p-3 md:flex">
@@ -7356,7 +7359,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
   const opTypesF = fltAssignee ? (opTypes || []).filter((op) => fltAssignee === "__none" ? !op.assignee : (op.assignee || null) === fltAssignee) : (opTypes || []);
 
   return (
-    <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4" style={{ maxHeight: "calc(100vh - 128px)" }}>
+    <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4" style={{ maxHeight: `calc(${zvh(100)} - 128px)` }}>
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
         {(isBoard || view === "today" || focusMode) ? (
           <h2 className="text-base font-semibold text-neutral-900">Задачи</h2>
@@ -9641,7 +9644,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
         <button onClick={fitView} className={tBtn} title="Вписать в экран"><Maximize2 size={15} /></button>
       </div>
 
-      <div ref={vpRef} onPointerDown={onBgDown} className="relative overflow-hidden" style={{ height: "68vh", touchAction: "none", cursor: "default", background: "#fafafa" }}>
+      <div ref={vpRef} onPointerDown={onBgDown} className="relative overflow-hidden" style={{ height: `calc(${zvh(100)} - 215px)`, minHeight: 360, touchAction: "none", cursor: "default", background: "#fafafa" }}>
         <div ref={contentElRef} style={{ position: "absolute", left: 0, top: 0, width: CW, height: CH, transformOrigin: "0 0", transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`, backgroundImage: "radial-gradient(#e2e2e5 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
           <svg width={CW} height={CH} className="pointer-events-none absolute inset-0" style={{ zIndex: 2 }}>
             <defs><marker id="stratArr" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#94a3b8" /></marker></defs>
@@ -9887,7 +9890,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + (tab === "triggers" ? "max-w-4xl" : "max-w-lg")} style={{ maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + (tab === "triggers" ? "max-w-4xl" : "max-w-lg")} style={{ maxHeight: zvh(85) }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
           <h2 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-900"><Settings2 size={18} /> Настройки</h2>
           <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
