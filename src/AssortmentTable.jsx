@@ -3266,6 +3266,8 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const [payOpen, setPayOpen] = useState(false);
   const [cycOpen, setCycOpen] = useState(false);
   const [durOpen, setDurOpen] = useState(false);
+  const [newStage, setNewStage] = useState({ name: "", days: "5" });
+  const [dragSt, setDragSt] = useState(null);
   const [factOpen, setFactOpen] = useState(false);
   const [stagePop, setStagePop] = useState(null); // id этапа, у которого открыто окошко дат
   const cycFresh = useRef({ cyc: null, patch: null }); // свежий цикл и patchCyc для кнопок в уведомлениях (замыкания устаревают)
@@ -3307,6 +3309,11 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
   const startCycle = () => { patchBatch({ cycle: { started: true, startDate: todayISO(), fired: {}, stages: (cycleStages || []).map((s) => ({ id: s.id, name: s.name, days: Math.max(0, parseInt(s.days) || 0), done: false })) } }); setCycOpen(true); };
   const patchCyc = (p) => patchBatch({ cycle: { ...(active.cycle || {}), ...p } });
   cycFresh.current = { cyc: active && active.cycle, patch: patchCyc };
+  const renameCycStage = (id, name) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, name } : s)) });
+  const moveCycStageTo = (from, to) => { if (from == null || from === to || to < 0 || to >= cycSt.length) return; const a = cycSt.slice(); const [it] = a.splice(from, 1); a.splice(to, 0, it); patchCyc({ stages: a }); };
+  const removeCycStage = (id) => { const st = cycSt.find((x) => x.id === id); if (!st) return; if (cycSt.length <= 1) { alert("В цикле должен остаться хотя бы один этап."); return; } if (!window.confirm(`Удалить этап «${st.name}» из цикла этой партии?`)) return; patchCyc({ stages: cycSt.filter((x) => x.id !== id) }); };
+  const addCycStage = () => { const name = newStage.name.trim(); if (!name) return; patchCyc({ stages: [...cycSt, { id: uid(), name, days: Math.max(0, parseInt(newStage.days) || 0), done: false }] }); setNewStage({ name: "", days: "5" }); };
+  const resetCycStages = () => { if (!window.confirm("Вернуть стандартные этапы цикла? Названия и длительности этой партии будут заменены, отметки «пройдено» сохранятся для совпадающих этапов.")) return; patchCyc({ stages: (cycleStages || []).map((s) => { const old = cycSt.find((x) => x.id === s.id); return { id: s.id, name: s.name, days: Math.max(0, parseInt(s.days) || 0), done: !!(old && old.done), ...(old && old.actualDate ? { actualDate: old.actualDate } : {}) }; }) }); };
   const toggleCycStage = (id) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, done: !s.done } : s)) });
   const setCycDays = (id, v) => patchCyc({ stages: cycSt.map((s) => (s.id === id ? { ...s, days: Math.max(0, parseInt(v) || 0) } : s)) });
   // мультиступенчатый переключатель: клик по этапу i → предыдущие «пройдены», этот текущий
@@ -3516,7 +3523,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
             {!cycStarted ? (
               <div className="flex flex-wrap items-center gap-3">
                 <button onClick={startCycle} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={14} /> Запустить цикл</button>
-                <span className="text-xs text-neutral-500">Этапы и длительности возьмутся из «Настройки → Произв. цикл». Дальше их можно поправить под этот заказ.</span>
+                <span className="text-xs text-neutral-500">Возьмётся стандартный набор этапов. Дальше этапы, их длительность и старт настраиваются под эту партию кнопкой ⚙.</span>
               </div>
             ) : (
               <>
@@ -3552,9 +3559,31 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                     <button onClick={() => setDurOpen((o) => !o)} title="Старт цикла" className={"flex h-7 w-7 items-center justify-center rounded-lg border transition " + (durOpen ? "border-neutral-400 bg-neutral-100 text-neutral-700" : "border-neutral-200 text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600")}><Settings2 size={14} /></button>
                     {durOpen && (<>
                       <div className="fixed inset-0 z-20" onClick={() => setDurOpen(false)} />
-                      <div className="absolute right-0 top-full z-30 mt-2 w-[236px] rounded-xl border border-neutral-200 bg-white p-3 shadow-xl">
-                        <label className="flex items-center justify-between gap-2 text-xs text-neutral-500">Старт цикла<input type="date" value={cyc.startDate || ""} onChange={(e) => patchCyc({ startDate: e.target.value })} className="w-[130px] rounded-md border border-neutral-200 px-1.5 py-1 text-[13px] text-neutral-700 focus:outline-none focus:ring-2 focus:ring-orange-200" /></label>
-                        <div className="mt-1 text-[11px] text-neutral-400">От этой даты считаются плановые сроки этапов.</div>
+                      <div className="absolute right-0 top-full z-30 mt-2 w-[380px] max-w-[92vw] rounded-2xl border border-neutral-200 bg-white p-3.5 shadow-2xl">
+                        <div className="mb-2.5 flex items-center text-[13px] font-extrabold text-neutral-800">Цикл этой партии<span className="ml-auto text-[11.5px] font-medium text-neutral-400">только для неё</span></div>
+                        <label className="mb-1 flex items-center justify-between gap-2 text-xs text-neutral-500">Старт цикла<input type="date" value={cyc.startDate || ""} onChange={(e) => patchCyc({ startDate: e.target.value })} className="w-[140px] rounded-md border border-neutral-200 px-1.5 py-1 text-[13px] text-neutral-700 focus:outline-none focus:ring-2 focus:ring-orange-200" /></label>
+                        <div className="mb-1 mt-3 flex text-[10px] font-extrabold uppercase tracking-wider text-neutral-400"><span>Этапы</span><span className="ml-auto">Дней</span></div>
+                        <div className="max-h-[300px] overflow-y-auto">
+                          {cycSt.map((s, i) => (
+                            <div key={s.id} onDragOver={(e) => { if (dragSt != null) e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); moveCycStageTo(dragSt, i); setDragSt(null); }} className={"flex items-center gap-1.5 border-t border-neutral-100 py-1 first:border-0 " + (dragSt === i ? "opacity-40" : "")}>
+                              <span draggable onDragStart={() => setDragSt(i)} onDragEnd={() => setDragSt(null)} title="Перетащить" className="w-3.5 cursor-grab select-none text-[13px] text-neutral-300 hover:text-neutral-500">⋮⋮</span>
+                              <span className="w-4 text-center text-[12px] text-emerald-600">{s.done ? "✓" : ""}</span>
+                              <input value={s.name} onChange={(e) => renameCycStage(s.id, e.target.value)} className={"min-w-0 flex-1 rounded-md border border-transparent px-1.5 py-1 text-[13px] font-semibold hover:border-neutral-200 focus:border-neutral-300 focus:outline-none " + (s.done ? "text-emerald-700" : "text-neutral-800")} />
+                              <input value={s.days} onChange={(e) => setCycDays(s.id, e.target.value)} inputMode="numeric" className="w-[48px] rounded-md border border-neutral-200 px-1.5 py-1 text-right text-[13px] focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                              <span className="w-4 text-[11px] text-neutral-400">дн</span>
+                              <button onClick={() => removeCycStage(s.id)} title="Удалить этап" className="w-[18px] text-center text-neutral-300 hover:text-red-500"><X size={13} /></button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-2 flex items-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-slate-300 bg-slate-50 p-2">
+                          <input value={newStage.name} onChange={(e) => setNewStage((v) => ({ ...v, name: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") addCycStage(); }} placeholder="Новый этап, например «Склад Китая»" className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[13px] focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                          <input value={newStage.days} onChange={(e) => setNewStage((v) => ({ ...v, days: e.target.value }))} inputMode="numeric" className="w-[44px] rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-right text-[13px] focus:outline-none" />
+                          <span className="text-[11px] text-neutral-400">дн</span>
+                          <button onClick={addCycStage} disabled={!newStage.name.trim()} className="whitespace-nowrap rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-neutral-800 disabled:opacity-40">＋ Цикл</button>
+                        </div>
+                        {(() => { const tot = cycSt.reduce((a, x) => a + (parseInt(x.days, 10) || 0), 0); const last = cycSt.length ? cycDates[cycSt[cycSt.length - 1].id] : null; return (
+                          <div className="mt-3 flex items-center border-t border-neutral-100 pt-2.5 text-[12.5px] text-neutral-500">Всего <b className="mx-1 text-neutral-900">{tot} дн</b>{last ? <>· завершение <b className="ml-1 text-neutral-900">{fmtDM(last.endISO)}.{last.endISO.slice(0, 4)}</b></> : null}<button onClick={resetCycStages} className="ml-auto text-xs font-bold text-blue-600 hover:underline">Сбросить к стандарту</button></div>
+                        ); })()}
                       </div>
                     </>)}
                   </div>
@@ -9774,7 +9803,6 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
         <div className="flex flex-wrap gap-1.5 border-b border-neutral-100 px-5 py-2.5">
           <TabBtn id="statuses">Статусы</TabBtn>
-          <TabBtn id="cycle">Произв. цикл</TabBtn>
           <TabBtn id="triggers">Задачи по триггерам</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
@@ -9988,32 +10016,9 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                   </div>
                 ); })}
                 {(!cycleTriggers || cycleTriggers.length === 0) && <p className="py-2 text-center text-sm text-neutral-400">Правил по этапам пока нет</p>}
-                {cycStages.length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Этапов цикла пока нет — добавьте во вкладке «Произв. цикл»</p>}
+                {cycStages.length === 0 && <p className="py-2 text-center text-sm text-neutral-400">Стандартных этапов цикла нет</p>}
               </div>
               <button onClick={addCycleTrigger} disabled={cycStages.length === 0} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-amber-400 hover:text-amber-700 disabled:opacity-40"><Plus size={14} /> Добавить правило</button>
-            </>
-          )}
-
-          {tab === "cycle" && (
-            <>
-              <p className="mb-3 text-xs text-neutral-500">Этапы и длительности по умолчанию применяются к новым заказам. Автозадачи этапов настраиваются во вкладке <b>«Задачи по триггерам»</b>.</p>
-              <div className="space-y-3">
-                {cycStages.map((s, i) => (
-                  <div key={s.id} className="rounded-xl border border-neutral-200 p-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex flex-col">
-                        <button onClick={() => moveCycStage(s.id, -1)} disabled={i === 0} className="text-neutral-300 hover:text-neutral-600 disabled:opacity-30"><ChevronUp size={13} /></button>
-                        <button onClick={() => moveCycStage(s.id, 1)} disabled={i === cycStages.length - 1} className="text-neutral-300 hover:text-neutral-600 disabled:opacity-30"><ChevronDown size={13} /></button>
-                      </div>
-                      <input value={s.name} onChange={(e) => patchCycStage(s.id, { name: e.target.value })} className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-sm font-medium focus:border-neutral-400 focus:outline-none" />
-                      <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">по умолч.<input value={s.days} onChange={(e) => patchCycStage(s.id, { days: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" className="w-14 rounded-lg border border-neutral-200 px-2 py-1 text-center text-sm font-semibold focus:border-neutral-400 focus:outline-none" />дн.</span>
-                      {(() => { const n = (cycleTriggers || []).filter((r) => r.stageId === s.id && r.enabled).length; return n > 0 ? <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title="Автозадачи этапа настраиваются во вкладке «Задачи по триггерам»"><ListChecks size={11} /> {n > 1 ? `${n} задачи` : "задача"}</span> : null; })()}
-                      <button onClick={() => removeCycStage(s.id)} className="rounded-md p-1 text-neutral-300 hover:bg-red-50 hover:text-red-500" title="Удалить этап"><Trash2 size={14} /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={addCycStage} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"><Plus size={14} /> Добавить этап</button>
             </>
           )}
 
