@@ -6155,6 +6155,7 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
 function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [wbEdit, setWbEdit] = useState(false);
+  const [ratesEdit, setRatesEdit] = useState(false);
   const curStatus = (statuses || []).find((s) => s.name === product.status);
   // Задачи карточки = задачи типа «Товар» этого товара из общего раздела «Задачи».
   // Двусторонняя синхронизация: создал/отметил здесь → видно на Ганте/канбане и наоборот.
@@ -6758,55 +6759,34 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
 
                     {fullBlock === "purchase" && (
                       <>
-                        {mktBatches.length > 0 && (
-                          <div className="mb-5">
-                            <div className="mb-2.5 flex items-center gap-2 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Партии с этим товаром <span className="rounded-full bg-sky-100 px-2 text-[11px] font-bold text-sky-600">{mktBatches.length}</span></div>
-                            <div className="space-y-2.5">
-                              {mktBatches.map((b) => { const ci = batchCycleInfo(b); return (
-                                <div key={b.id} className="rounded-xl border border-neutral-200 bg-white p-3.5">
-                                  <div className="mb-3 flex items-center gap-2.5">
-                                    <span className={"rounded-full px-2 py-0.5 text-[10px] font-bold uppercase " + ci.st.cls}>{ci.st.label}</span>
-                                    <span className="text-sm font-bold text-neutral-800">{b.name}</span>
-                                    {ci.qty != null && <span className="text-xs font-medium text-neutral-400">· {ci.qty} шт</span>}
+                        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="flex flex-col justify-center gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">{resRow("Цена в руб за ед.", money(puRubPerUnit))}{resRow("Цена партии в рублях", money(puLotRub))}{resRow("Цена партии в юанях", yuan(puLotCny))}</div>
+                          <div className="space-y-2">{puField("Цена в юанях за ед.", pu.priceCny, (v) => setPu("priceCny", v), "¥")}{puField("Вес, г", pu.weightG, (v) => setPu("weightG", v), "г")}{puField("Кол-во", pu.qty, (v) => setPu("qty", v), "шт")}</div>
+                        </div>
+                        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Курсы и комиссии</span>
+                          {!ratesEdit ? (
+                            <>
+                              {[["¥", "cny", "₽"], ["$", "usd", "₽"], ["карго", "cargo", "$/кг"], ["комиссия", "commission", "%"], ["страховка", "insurance", "%"]].map(([label, key, suf]) => (
+                                <span key={key} className="rounded-lg bg-neutral-100 px-2.5 py-1 text-[13px]"><span className="mr-1.5 text-neutral-400">{label}</span><b className="tabular-nums text-neutral-800">{(unitConst || {})[key] || "—"} {suf}</b></span>
+                              ))}
+                              <button onClick={() => setRatesEdit(true)} title="Общие для всех товаров — меняются сразу везде" className="ml-auto text-[12.5px] font-bold text-blue-600 hover:underline">изменить</button>
+                            </>
+                          ) : (
+                            <>
+                              {[["Курс ¥", "cny", "₽"], ["Курс $", "usd", "₽"], ["Карго", "cargo", "$/кг"], ["Комиссия", "commission", "%"], ["Страховка", "insurance", "%"]].map(([label, key, suf]) => (
+                                <label key={key} className="flex flex-col gap-0.5">
+                                  <span className="text-[10px] text-neutral-500">{label}</span>
+                                  <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1 focus-within:border-neutral-400 focus-within:ring-2 focus-within:ring-orange-200">
+                                    <input value={(unitConst || {})[key] ?? ""} onChange={(e) => onSetUnitConst && onSetUnitConst({ [key]: e.target.value })} inputMode="decimal" placeholder="0" className="w-14 bg-transparent text-right text-sm tabular-nums focus:outline-none" />
+                                    <span className="text-[11px] text-neutral-400">{suf}</span>
                                   </div>
-                                  {!ci.started ? (
-                                    <div className="flex items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50/60 px-3 py-2 text-[12.5px] text-neutral-500"><span className="h-2 w-2 rounded-full bg-neutral-300" /> Производственный цикл ещё не запущен</div>
-                                  ) : ci.completed ? (
-                                    <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2 text-[12.5px] font-medium text-emerald-700"><Check size={14} strokeWidth={3} /> Цикл производства завершён — все {ci.total} {pluralRu(ci.total, "этап", "этапа", "этапов")} пройдены</div>
-                                  ) : (
-                                    <>
-                                      <div className="flex items-start">
-                                        {ci.stages.map((s, i) => { const done = s.done; const cur = i === ci.curIdx; return (
-                                          <div key={s.id} className="relative flex min-w-0 flex-1 flex-col items-center">
-                                            {i > 0 && <span className="absolute left-[-50%] top-[11px] h-[2px] w-full" style={{ background: done || cur ? "#34d399" : "#e7e7ec" }} />}
-                                            <span className="relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-bold" style={done ? { background: "#10b981", borderColor: "#10b981", color: "#fff" } : cur ? { background: "#fff", borderColor: "#0ea5e9", color: "#0ea5e9", boxShadow: "0 0 0 4px #e0f2fe" } : { background: "#f1f1f4", borderColor: "#e2e2e8", color: "#b4b4bb" }}>{done ? <Check size={12} strokeWidth={3} /> : i + 1}</span>
-                                            <span className={"mt-1.5 max-w-[84px] text-center text-[10px] leading-tight " + (cur ? "font-bold text-sky-700" : done ? "text-neutral-500" : "text-neutral-400")}>{s.name}</span>
-                                          </div>
-                                        ); })}
-                                      </div>
-                                      <div className="mt-3 flex items-center gap-2.5 border-t border-neutral-100 pt-2.5">
-                                        <span className="text-[12.5px] text-neutral-600">Сейчас: <b className="text-sky-700">{ci.cur ? ci.cur.name : ""}</b></span>
-                                        {ci.curEnd && <span className="text-[12px] font-medium text-neutral-400">план до {ci.curEnd}</span>}
-                                        <span className="ml-auto text-[11.5px] font-semibold text-neutral-400">Готово {ci.doneCount} из {ci.total}</span>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              ); })}
-                            </div>
-                          </div>
-                        )}
-                        <div className="mb-4 flex flex-wrap items-end gap-x-4 gap-y-2 rounded-xl border border-neutral-200 bg-neutral-50/60 px-3 py-2.5">
-                          <div className="-mb-0.5 w-full text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Курсы и комиссии <span className="font-normal normal-case text-neutral-400">· общие для всех товаров, меняются сразу везде</span></div>
-                          {[["Курс ¥", "cny", "₽"], ["Курс $", "usd", "₽"], ["Карго", "cargo", "$/кг"], ["Комиссия", "commission", "%"], ["Страховка", "insurance", "%"]].map(([label, key, suf]) => (
-                            <label key={key} className="flex flex-col gap-0.5">
-                              <span className="text-[10px] text-neutral-500">{label}</span>
-                              <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1 focus-within:border-neutral-400 focus-within:ring-2 focus-within:ring-orange-200">
-                                <input value={(unitConst || {})[key] ?? ""} onChange={(e) => onSetUnitConst && onSetUnitConst({ [key]: e.target.value })} inputMode="decimal" placeholder="0" className="w-14 bg-transparent text-right text-sm tabular-nums focus:outline-none" />
-                                <span className="text-[11px] text-neutral-400">{suf}</span>
-                              </div>
-                            </label>
-                          ))}
+                                </label>
+                              ))}
+                              <button onClick={() => setRatesEdit(false)} className="ml-auto text-[12.5px] font-bold text-blue-600 hover:underline">готово</button>
+                              <span className="w-full text-[11px] text-neutral-400">общие для всех товаров, меняются сразу везде</span>
+                            </>
+                          )}
                         </div>
                         {(isNaN(puCny) || isNaN(puUsd) || isNaN(puCargo)) && (<p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Заполните курс юаня, курс доллара и ставку карго выше — иначе расчёт неполный.</p>)}
                         <div className="mb-4 flex flex-wrap items-start gap-2">
@@ -6831,10 +6811,42 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                           <span className="shrink-0 pt-2 text-xs text-neutral-600">Параметр</span>
                           <input value={pu.param ?? ""} onChange={(e) => setPu("param", e.target.value)} placeholder="цвет / размер" className="min-w-[120px] flex-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
                         </div>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                          <div className="space-y-2">{puField("Цена в юанях за ед.", pu.priceCny, (v) => setPu("priceCny", v), "¥")}{puField("Вес, г", pu.weightG, (v) => setPu("weightG", v), "г")}{puField("Кол-во", pu.qty, (v) => setPu("qty", v), "шт")}</div>
-                          <div className="flex flex-col justify-center gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3 py-2.5">{resRow("Цена в руб за ед.", money(puRubPerUnit))}{resRow("Цена партии в рублях", money(puLotRub))}{resRow("Цена партии в юанях", yuan(puLotCny))}</div>
-                        </div>
+                        {mktBatches.length > 0 && (
+                          <div className="mt-1">
+                            <div className="mb-2.5 flex items-center gap-2 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Партии с этим товаром <span className="rounded-full bg-sky-100 px-2 text-[11px] font-bold text-sky-600">{mktBatches.length}</span></div>
+                            <div className="space-y-2.5">
+                              {mktBatches.map((b) => { const ci = batchCycleInfo(b); return (
+                                <div key={b.id} className="rounded-xl border border-neutral-200 bg-white p-3.5">
+                                  <div className="mb-3 flex items-center gap-2.5">
+                                    <span className={"rounded-full px-2 py-0.5 text-[10px] font-bold uppercase " + ci.st.cls}>{ci.st.label}</span>
+                                    <span className="text-sm font-bold text-neutral-800">{b.name}</span>
+                                    {ci.qty != null && <span className="text-xs font-medium text-neutral-400">· {ci.qty} шт</span>}
+                                  </div>
+                                  {!ci.started ? (
+                                    <div className="flex items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50/60 px-3 py-2 text-[12.5px] text-neutral-500"><span className="h-2 w-2 rounded-full bg-neutral-300" /> Производственный цикл ещё не запущен</div>
+                                  ) : ci.completed ? (
+                                    <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2 text-[12.5px] font-medium text-emerald-700"><Check size={14} strokeWidth={3} /> Цикл производства завершён — все {ci.total} {pluralRu(ci.total, "этап", "этапа", "этапов")} пройдены</div>
+                                  ) : (
+                                    <>
+                                      {(() => { const dd = cycleStageDates(b.cycle.startDate, ci.stages); const now = new Date(); const tISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; const late = ci.cur && dd[ci.cur.id] && dd[ci.cur.id].endISO < tISO; return (
+                                        <>
+                                          <div className="flex gap-[3px]">
+                                            {ci.stages.map((s, i) => { const done = s.done; const cur = i === ci.curIdx; const d = dd[s.id] || {}; return (
+                                              <div key={s.id} className="min-w-0" style={{ flex: Math.max(Number(s.days) || 1, 3) }}>
+                                                <div className="flex h-[26px] items-center overflow-hidden whitespace-nowrap rounded-[7px] px-2.5 text-[12px] font-bold" style={done ? { background: "#16a34a", color: "#fff" } : cur ? { background: late ? "linear-gradient(90deg,#ef4444,#dc2626)" : "linear-gradient(90deg,#f59e0b,#ea580c)", color: "#fff" } : { background: "#f0f0f0", color: "#a3a3a3" }}>{done ? "✓ " : ""}{s.name}</div>
+                                                <div className="mt-1 text-[11px] font-bold" style={{ color: cur ? (late ? "#dc2626" : "#c2410c") : "#737373" }}>{cur ? "до " : ""}{d.endStr || ""}</div>
+                                              </div>
+                                            ); })}
+                                          </div>
+                                        </>
+                                      ); })()}
+                                    </>
+                                  )}
+                                </div>
+                              ); })}
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
 
