@@ -5907,7 +5907,7 @@ function PromoDayEditor({ product, dkey, wbOrders = {}, onSetCell, onSetFlag, on
 }
 
 // Выпадающий список «Предмет» (combobox): фильтрация по вводу + выбор из списка, свой текст разрешён
-function SubjectCombo({ value, subjects = [], onChange }) {
+function SubjectCombo({ value, subjects = [], onChange, auto = false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -5920,9 +5920,9 @@ function SubjectCombo({ value, subjects = [], onChange }) {
   const q = (value || "").trim().toLowerCase();
   const filtered = q ? opts.filter((n) => n.toLowerCase().includes(q)) : opts;
   return (
-    <div ref={ref} className="relative w-full max-w-xs">
-      <div className="flex items-center rounded-md border border-transparent pr-1 hover:border-neutral-200 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-orange-200">
-        <input value={value || ""} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder="категория ВБ" className="min-w-0 flex-1 bg-transparent px-1.5 py-0.5 text-sm text-neutral-700 focus:outline-none" />
+    <div ref={ref} className={auto ? "relative inline-block" : "relative w-full max-w-xs"}>
+      <div className={"flex items-center rounded-md border pr-1 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-orange-200 " + (auto && !(value || "").trim() ? "border-dashed border-neutral-300 hover:border-neutral-400" : "border-transparent hover:border-neutral-200")}>
+        <input value={value || ""} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={auto ? "предмет" : "категория ВБ"} style={auto ? { width: Math.max((value || "").length, 7) + 1 + "ch" } : undefined} className={"bg-transparent px-1.5 py-0.5 focus:outline-none " + (auto ? "text-[15px] text-neutral-800 placeholder:text-neutral-400" : "min-w-0 flex-1 text-sm text-neutral-700")} />
         <button type="button" onClick={() => setOpen((o) => !o)} className="shrink-0 rounded p-0.5 text-neutral-400 hover:text-neutral-700" title="Выбрать предмет"><ChevronDown size={14} /></button>
       </div>
       {open && filtered.length > 0 && (
@@ -6131,6 +6131,7 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
 
 function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
   const [statusOpen, setStatusOpen] = useState(false);
+  const [wbEdit, setWbEdit] = useState(false);
   const curStatus = (statuses || []).find((s) => s.name === product.status);
   // Задачи карточки = задачи типа «Товар» этого товара из общего раздела «Задачи».
   // Двусторонняя синхронизация: создал/отметил здесь → видно на Ганте/канбане и наоборот.
@@ -6374,19 +6375,25 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
           </div>
           {product.image && <button onClick={(e) => { e.stopPropagation(); onSetField && onSetField("image", null); }} title="Удалить фото" className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/55 p-0.5 text-white hover:bg-red-600 group-hover:block"><X size={11} /></button>}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-2 min-h-[92px]">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 min-h-[92px]">
+          <div className="flex flex-wrap items-center gap-2 text-[14px]">
+            <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код" style={{ width: Math.max(String(product.code || "").length, 3) + 1 + "ch" }} className={"h-[22px] rounded-md border bg-transparent px-1 text-[14px] outline-none placeholder:font-normal placeholder:text-neutral-400 focus:border-neutral-300 " + (product.code ? "border-transparent font-extrabold text-neutral-700 hover:border-neutral-200" : "border-dashed border-neutral-300")} />
+            {product.wb && !wbEdit ? (
+              <span className="group inline-flex items-center gap-1.5"><span className="text-neutral-300">·</span>
+                <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" title={"Артикул WB " + product.wb + " — открыть на сайте"} className="inline-flex items-center gap-1 text-[13px] font-extrabold text-violet-700 hover:text-violet-900">WB <ExternalLink size={13} /></a>
+                <button onClick={() => setWbEdit(true)} title="Изменить артикул WB" className="hidden rounded p-0.5 text-neutral-300 hover:text-neutral-600 group-hover:inline-flex"><Pencil size={11} /></button></span>
+            ) : (
+              <input autoFocus={wbEdit} value={product.wb || ""} onChange={(e) => onSetField("wb", e.target.value)} onBlur={() => setWbEdit(false)} onKeyDown={(e) => e.key === "Enter" && setWbEdit(false)} placeholder="+ WB артикул" style={{ width: Math.max(String(product.wb || "").length, 12) + 1 + "ch" }} className="h-[22px] rounded-md border border-dashed border-neutral-300 bg-transparent px-1.5 text-[12.5px] outline-none placeholder:text-neutral-400 focus:border-neutral-400" />
+            )}
+          </div>
           <input
             value={product.name}
             onChange={(e) => onSetName(e.target.value)}
             placeholder="Название товара"
             className="-ml-1.5 h-7 w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-0 text-xl font-extrabold leading-7 tracking-tight text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
-          <div className="flex flex-wrap items-end gap-x-7 gap-y-1.5">
-            <div className="flex flex-col gap-0.5"><span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Код</span>
-              <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код" className="h-[26px] w-16 rounded-md border border-transparent bg-transparent px-0 text-[14px] font-extrabold text-neutral-800 outline-none placeholder:font-normal placeholder:text-neutral-400 hover:border-neutral-200 focus:border-neutral-300 focus:px-1.5" /></div>
-            <div className="flex flex-col gap-0.5"><span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Предмет</span>
-              <div className="-ml-1.5 w-44"><SubjectCombo value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} /></div></div>
-            <div className="relative flex flex-col gap-0.5"><span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">Статус</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
               <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-bold transition hover:brightness-95" style={curStatus ? { background: curStatus.color + "1f", color: curStatus.color } : { background: "#f1f1f3", color: "#9a9a9a" }}>
                 <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
                 {curStatus ? curStatus.name : "Без статуса"}
@@ -6412,10 +6419,7 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                 </>
               )}
             </div>
-            {product.wb && (
-              <div className="flex flex-col gap-0.5"><span className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400">WB</span>
-                <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" title={"Артикул WB " + product.wb + " — открыть на сайте"} className="inline-flex h-[26px] items-center gap-1 text-[14px] font-extrabold text-violet-700 hover:text-violet-900"><ExternalLink size={14} /></a></div>
-            )}
+            <SubjectCombo auto value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
           </div>
         </div>
         <button onClick={onClose} className="rounded-lg shrink-0 self-start p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
