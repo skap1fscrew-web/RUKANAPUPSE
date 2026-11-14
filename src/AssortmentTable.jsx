@@ -7767,7 +7767,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       {/* колонки */}
       <div className="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row">
         {showOps && (opsStrip ? (
-          <button onClick={() => setOpsOpen(true)} title="Операционные: на сегодня всё закрыто. Нажми, чтобы развернуть" className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:border-b-0 md:border-r md:px-0 md:py-3">
+          <button onClick={() => setOpsOpen(true)} title="Операционные: на сегодня всё закрыто. Нажми, чтобы развернуть" className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:justify-start md:border-b-0 md:border-r md:px-0 md:pb-3 md:pt-3.5">
             <ChevronDown size={14} className="shrink-0" />
             <span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-400 md:[writing-mode:vertical-rl] md:rotate-180">Операционные</span>
             {myOpsToday.length > 0 && <span className="text-[11px] font-bold tabular-nums text-neutral-500">{opsDoneCount}/{myOpsToday.length}</span>}
