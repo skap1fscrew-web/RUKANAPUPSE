@@ -7313,11 +7313,14 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
   const [groupBy, setGroupBy] = useState(() => { const g = lsGet("rnp.kanbanGroup", "status"); return g === "label" ? "status" : g; }); // status | priority
   const [kanbanSort, setKanbanSort] = useState(() => lsGet("rnp.kanbanSort", "created")); // created | priority
   const [kanbanWide, setKanbanWide] = useState(() => lsGet("rnp.kanbanWide", false)); // широкий вид столбцов (2 подколонки по приоритету)
-  const [fltPrio, setFltPrio] = useState(null);
-  const [fltMark, setFltMark] = useState(null); // метка: urgent|edu|long|__none
-  const [fltStatus, setFltStatus] = useState(null); // статус: wait|progress|done
+  const [fltPrio, setFltPrio] = useState([]);
+  const [fltMark, setFltMark] = useState([]); // метки (мультивыбор): urgent|edu|long|__none
+  const [fltStatus, setFltStatus] = useState([]); // статусы (мультивыбор): wait|progress|done
   const [fltTag, setFltTag] = useState(null);
-  const [fltAssignee, setFltAssignee] = useState(null);
+  const [fltAssignee, setFltAssignee] = useState([]); // исполнители (мультивыбор), "__none" — не назначен
+  const togV = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  const iAmOnly = !!myId && fltAssignee.length === 1 && fltAssignee[0] === myId;
+  const resetFilters = () => { setFltPrio([]); setFltMark([]); setFltStatus([]); setFltAssignee([]); };
   const [fltType, setFltType] = useState("project"); // тип задачи всегда выбран (у каждого — свой набор видов); по умолчанию проектные
   const [fltOpen, setFltOpen] = useState(null);
   const [fltSearch, setFltSearch] = useState(""); // поиск по названию задачи
@@ -7343,20 +7346,20 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
     : [["kanban", Columns3, "Канбан"], ["gantt", GanttChart, "Гант"]]; // Календарь/Список убраны
   useEffect(() => { if (fltType === "product") setView("prod"); /* товары — сразу вид «Товары» (по задачам) */ else if (!viewOptions.some(([id]) => id === view)) setView(viewOptions[0][0]); }, [fltType]);
   const GROUP_LABELS = { status: "Статусу", priority: "Приоритету" };
-  const activeFilters = (fltPrio ? 1 : 0) + (fltAssignee ? 1 : 0) + (fltMark ? 1 : 0) + (fltStatus ? 1 : 0);
+  const activeFilters = (fltPrio.length ? 1 : 0) + (fltAssignee.length ? 1 : 0) + (fltMark.length ? 1 : 0) + (fltStatus.length ? 1 : 0);
   const typeOf = (j) => (j && j.type === "op") ? "op" : jobType(j);
   const matchType = (j) => !fltType || typeOf(j) === fltType;
   const fJobs = jobs.filter((j) => {
     if (!matchType(j)) return false;
-    if (fltPrio && (j.priority || null) !== fltPrio) return false;
-    if (fltAssignee && (fltAssignee === "__none" ? jobAssignees(j).length > 0 : !jobAssignees(j).includes(fltAssignee))) return false;
-    if (fltMark && (fltMark === "__none" ? !!j.mark : (j.mark || null) !== fltMark)) return false;
-    if (fltStatus && stageOf(j) !== fltStatus) return false;
+    if (fltPrio.length && !fltPrio.includes(j.priority || null)) return false;
+    if (fltAssignee.length) { const as = jobAssignees(j); if (!((fltAssignee.includes("__none") && as.length === 0) || as.some((a) => fltAssignee.includes(a)))) return false; }
+    if (fltMark.length && !((fltMark.includes("__none") && !j.mark) || fltMark.includes(j.mark || null))) return false;
+    if (fltStatus.length && !fltStatus.includes(stageOf(j))) return false;
     if (fltSearch.trim() && !String(j.title || "").toLowerCase().includes(fltSearch.trim().toLowerCase())) return false;
     return true;
   });
   // операционные, отфильтрованные по исполнителю (для Ганта и вида «Сегодня»)
-  const opTypesF = fltAssignee ? (opTypes || []).filter((op) => fltAssignee === "__none" ? !op.assignee : (op.assignee || null) === fltAssignee) : (opTypes || []);
+  const opTypesF = fltAssignee.length ? (opTypes || []).filter((op) => (fltAssignee.includes("__none") && !op.assignee) || fltAssignee.includes(op.assignee || null)) : (opTypes || []);
 
   return (
     <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4" style={{ maxHeight: `calc(${zvh(100)} - 128px)` }}>
@@ -7400,7 +7403,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
             <button onClick={() => toggleSecDone(sid)} title={on ? "Скрыть выполненные" : "Показать выполненные"} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (on ? "border-neutral-300 bg-neutral-100 text-neutral-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{on ? <Eye size={15} /> : <EyeOff size={15} />}</button>
           ); })()}
           {myId && (
-            <button onClick={() => setFltAssignee(fltAssignee === myId ? null : myId)} title="Только мои задачи" className={"inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold " + (fltAssignee === myId ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><User size={14} className={fltAssignee === myId ? "" : "text-neutral-400"} />Свои</button>
+            <button onClick={() => setFltAssignee(iAmOnly ? [] : [myId])} title="Только мои задачи" className={"inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold " + (iAmOnly ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><User size={14} className={iAmOnly ? "" : "text-neutral-400"} />Свои</button>
           )}
           {view === "kanban" && (
             <div className="relative">
@@ -7422,21 +7425,36 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
           {(isBoard || view === "gantt" || view === "today") && (
             <div className="relative">
               <button onClick={() => setFltOpen(fltOpen === "filter" ? null : "filter")} title="Фильтр" className={"relative inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (activeFilters ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}><Filter size={15} />{activeFilters > 0 && <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">{activeFilters}</span>}</button>
-              {fltOpen === "filter" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-neutral-200 bg-white p-2.5 shadow-lg">
-                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Статус</span>{fltStatus && <button onClick={() => setFltStatus(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
-                <div className="mb-3 flex flex-wrap gap-1">{[["wait", "Ожидает", "#6b7280", "#f3f4f6"], ["progress", "В процессе", "#c77d1a", "#fff7ea"], ["done", "Готово", "#16a34a", "#ecfdf5"]].map(([k, lbl, c, bg]) => <button key={k} onClick={() => setFltStatus(fltStatus === k ? null : k)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltStatus === k ? { background: c, color: "#fff" } : { background: bg, color: c }}>{lbl}</button>)}</div>
-                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Приоритет</span>{fltPrio && <button onClick={() => setFltPrio(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
-                <div className="mb-3 flex flex-wrap gap-1">{Object.keys(PRIORITIES).map((k) => <button key={k} onClick={() => setFltPrio(fltPrio === k ? null : k)} className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={fltPrio === k ? { background: PRIORITIES[k].color, color: "#fff" } : { background: PRIORITIES[k].bg, color: PRIORITIES[k].color }}>{PRIORITIES[k].label}</button>)}</div>
-                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Исполнитель</span>{fltAssignee && <button onClick={() => setFltAssignee(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
-                <div className="mb-3 flex max-h-28 flex-wrap gap-1 overflow-auto">
-                  {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Исполнителей нет</span>}
-                  {(people || []).map((pr) => { const on = fltAssignee === pr.id; return <button key={pr.id} onClick={() => setFltAssignee(on ? null : pr.id)} className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={on ? { background: pr.color, color: "#fff" } : { background: (pr.color || "#999") + "22", color: pr.color || "#737373" }}><PersonAvatar p={pr} size={16} />{profileLabel(pr)}</button>; })}
-                  {(people || []).length > 0 && <button onClick={() => setFltAssignee(fltAssignee === "__none" ? null : "__none")} className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + (fltAssignee === "__none" ? "bg-neutral-700 text-white" : "bg-neutral-100 text-neutral-500")}>Не назначен</button>}
+              {fltOpen === "filter" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-[340px] rounded-2xl border border-neutral-200 bg-white p-3.5 shadow-xl">
+                <div className="mb-2.5 flex items-center"><b className="text-[14px] text-neutral-900">Фильтры</b>{activeFilters > 0 && <button onClick={resetFilters} className="ml-auto text-[12px] font-bold text-blue-600 hover:underline">Сбросить всё</button>}</div>
+                <div className="mb-3">
+                  <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wider text-neutral-400">Статус</div>
+                  <div className="flex gap-0.5 rounded-[10px] bg-neutral-100 p-[3px]">
+                    <button onClick={() => setFltStatus([])} className={"flex-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-[12.5px] font-bold transition " + (fltStatus.length === 0 ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800")}>Все</button>
+                    {[["wait", "Ожидает"], ["progress", "В процессе"], ["done", "Готово"]].map(([k, lbl]) => <button key={k} onClick={() => setFltStatus(togV(fltStatus, k))} className={"flex-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-[12.5px] font-bold transition " + (fltStatus.includes(k) ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800")}>{lbl}</button>)}
+                  </div>
                 </div>
-                <div className="mb-1 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Метка</span>{fltMark && <button onClick={() => setFltMark(null)} className="text-[10px] font-semibold text-neutral-400 hover:text-red-500">сброс</button>}</div>
-                <div className="flex flex-wrap items-center gap-1">
-                  {JOB_MARKS.map(([id, ic]) => <button key={id} onClick={() => setFltMark(fltMark === id ? null : id)} className={"rounded-full px-2 py-0.5 text-[13px] leading-none transition " + (fltMark === id ? "bg-violet-100 ring-1 ring-violet-400" : "bg-neutral-100 hover:bg-neutral-200")}>{ic}</button>)}
-                  <button onClick={() => setFltMark(fltMark === "__none" ? null : "__none")} className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + (fltMark === "__none" ? "bg-neutral-700 text-white" : "bg-neutral-100 text-neutral-500")}>Без метки</button>
+                <div className="mb-3">
+                  <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wider text-neutral-400">Приоритет</div>
+                  <div className="flex gap-0.5 rounded-[10px] bg-neutral-100 p-[3px]">
+                    <button onClick={() => setFltPrio([])} className={"flex-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-[12.5px] font-bold transition " + (fltPrio.length === 0 ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800")}>Все</button>
+                    {Object.keys(PRIORITIES).map((k) => <button key={k} onClick={() => setFltPrio(togV(fltPrio, k))} className={"flex-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-[12.5px] font-bold transition " + (fltPrio.includes(k) ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800")}>{PRIORITIES[k].label}</button>)}
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wider text-neutral-400">Исполнитель</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Исполнителей нет</span>}
+                    {(people || []).map((pr) => { const on = fltAssignee.includes(pr.id); return <button key={pr.id} onClick={() => setFltAssignee(togV(fltAssignee, pr.id))} title={profileLabel(pr)} className={"flex w-[58px] flex-col items-center gap-1 rounded-xl border-[1.5px] py-1.5 text-[11px] font-bold transition " + (on ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-500 hover:bg-neutral-50")}><PersonAvatar p={pr} size={30} /><span className="max-w-full truncate px-0.5">{profileLabel(pr)}</span></button>; })}
+                    {(people || []).length > 0 && <button onClick={() => setFltAssignee(togV(fltAssignee, "__none"))} className={"flex w-[58px] flex-col items-center gap-1 rounded-xl border-[1.5px] py-1.5 text-[11px] font-bold transition " + (fltAssignee.includes("__none") ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-500 hover:bg-neutral-50")}><span className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-neutral-200 text-neutral-400"><User size={15} /></span>Никто</button>}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wider text-neutral-400">Метка</div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {JOB_MARKS.map(([id, ic]) => <button key={id} onClick={() => setFltMark(togV(fltMark, id))} className={"rounded-full border px-2.5 py-1 text-[14px] leading-none transition " + (fltMark.includes(id) ? "border-neutral-900 bg-white" : "border-neutral-200 bg-white hover:bg-neutral-50")}>{ic}</button>)}
+                    <button onClick={() => setFltMark(togV(fltMark, "__none"))} className={"rounded-full border px-3 py-1 text-[12.5px] font-semibold transition " + (fltMark.includes("__none") ? "border-neutral-900 text-neutral-900" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>Без метки</button>
+                  </div>
                 </div>
               </div></>)}
             </div>
