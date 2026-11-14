@@ -7587,6 +7587,8 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const [draft, setDraft] = useState(focusLine || "");
   useEffect(() => { setDraft(focusLine || ""); }, [focusLine]);
   const [hidden, setHidden] = useState(() => lsGet("rnp.focusHidden", []));
+  const [fold, setFold] = useState(() => lsGet("rnp.focusFold", {})); // свёрнутые в полосу блоки: { ops, proj, prod }
+  const setFoldK = (k, v) => setFold((f) => { const n = { ...f, [k]: v }; lsSet("rnp.focusFold", n); return n; });
   const toggleHidden = (k) => setHidden((h) => { const n = h.includes(k) ? h.filter((x) => x !== k) : [...h, k]; lsSet("rnp.focusHidden", n); return n; });
   const flash = (t) => { setNote(t); setTimeout(() => setNote(""), 2800); };
 
@@ -7724,7 +7726,15 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   };
 
   const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "proj", label: "Горит", dot: "#ef4444" }, { k: "prod", label: "Главное ★", dot: "#e11d48" }];
-  const opsStrip = opsPending.length === 0 && !opsOpen;
+  const FoldStrip = ({ k, label, count }) => (
+    <button onClick={() => setFoldK(k, false)} title={"Развернуть «" + label + "»"} className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:justify-start md:border-b-0 md:border-r md:px-0 md:pb-3 md:pt-3.5">
+      <ChevronDown size={14} className="shrink-0" />
+      <span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-400 md:[writing-mode:vertical-rl] md:rotate-180">{label}</span>
+      <span className="text-[11px] font-bold tabular-nums text-neutral-500">{count}</span>
+    </button>
+  );
+  const foldBtn = (k) => <button onClick={() => setFoldK(k, true)} title="Свернуть" className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button>;
+  const opsStrip = !!fold.ops || (opsPending.length === 0 && !opsOpen);
   const showOps = !hidden.includes("ops"), showProj = !hidden.includes("proj"), showProd = !hidden.includes("prod");
 
   return (
@@ -7768,7 +7778,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       {/* колонки */}
       <div className="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row">
         {showOps && (opsStrip ? (
-          <button onClick={() => setOpsOpen(true)} title="Операционные: на сегодня всё закрыто. Нажми, чтобы развернуть" className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:justify-start md:border-b-0 md:border-r md:px-0 md:pb-3 md:pt-3.5">
+          <button onClick={() => { setOpsOpen(true); setFoldK("ops", false); }} title="Развернуть «Операционные»" className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:justify-start md:border-b-0 md:border-r md:px-0 md:pb-3 md:pt-3.5">
             <ChevronDown size={14} className="shrink-0" />
             <span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-400 md:[writing-mode:vertical-rl] md:rotate-180">Операционные</span>
             {myOpsToday.length > 0 && <span className="text-[11px] font-bold tabular-nums text-neutral-500">{opsDoneCount}/{myOpsToday.length}</span>}
@@ -7776,7 +7786,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         ) : (
           <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[300px] md:flex-none md:border-b-0 md:border-r">
             <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Операционные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{opsPending.length === 0 ? `${opsDoneCount}/${myOpsToday.length}` : opsPending.length}</span>
-              {opsPending.length === 0 && <button onClick={() => setOpsOpen(false)} title="Свернуть" className="ml-auto flex h-[22px] w-[22px] items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button>}</div>
+              <button onClick={() => { setOpsOpen(false); setFoldK("ops", true); }} title="Свернуть" className="ml-auto flex h-[22px] w-[22px] items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button></div>
             {myOpsToday.length === 0 ? (
               <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">На сегодня операционных нет</div>
             ) : [...opsPending, ...myOpsToday.filter(opIsDone)].map((op) => {
@@ -7791,19 +7801,20 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
           </div>
         ))}
 
-        {showProj && (
+        {showProj && (fold.proj ? <FoldStrip k="proj" label="Горит" count={hotList.length} /> : (
           <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[460px] md:flex-none md:border-b-0 md:border-r">
-            <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Горит</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotList.length}</span></div>
+            <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Горит</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotList.length}</span><span className="ml-auto" />{foldBtn("proj")}</div>
             {hotEntries.length === 0 ? (
               <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных задач нет" : "Горящих задач нет 🎉"}</div>
             ) : hotEntries.map((en) => en.g ? renderGroup(en.g) : <JobCard key={en.j.id} j={en.j} main={isMain(en.j)} />)}
           </div>
-        )}
+        ))}
 
-        {showProd && (
+        {showProd && (fold.prod ? <FoldStrip k="prod" label="Главное ★" count={mainList.length} /> : (
           <div className="min-w-0 p-3.5 md:w-[460px] md:flex-none">
             <div className="relative mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Главное ★</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{mainList.length}</span>
               <button onClick={() => setPickOpen((v) => !v)} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition " + (pickOpen ? "border-rose-300 bg-rose-100 text-rose-700" : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100")}><Plus size={12} />добавить</button>
+              {foldBtn("prod")}
               {pickOpen && (<>
                 <div className="fixed inset-0 z-20" onClick={() => setPickOpen(false)} />
                 <div className="absolute right-0 top-9 z-30 w-[400px] max-w-[92vw] rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl">
@@ -7831,7 +7842,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
               <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">Здесь ваши главные задачи. Нажмите «добавить» или ★ на любой карточке.</div>
             ) : mainList.map((j) => <JobCard key={j.id} j={j} main />)}
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
