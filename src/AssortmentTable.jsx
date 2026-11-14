@@ -2261,7 +2261,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             )}
             {productsView === "list" && (
               <>
-                <span className="hidden text-[11px] text-neutral-400 sm:inline">Колонки: тяните заголовок — поменять местами · правый край — ширина · <Filter size={10} className="inline" /> — фильтр</span>
                 {(JSON.stringify(colOrder) !== JSON.stringify(DCOL_ORDER) || Object.keys(colW).length > 0 || Object.values(colFilters).some((v) => (v || "").trim())) && (
                   <button onClick={resetCols} className="ml-auto rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-500 hover:bg-neutral-50">Сбросить колонки</button>
                 )}
