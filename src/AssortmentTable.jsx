@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment } from "react";
+import rnpLogo from "./logo.png";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow, deleteJobRow, subscribe } from "./lib/cloud";
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
@@ -985,6 +986,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   useEffect(() => { try { localStorage.setItem("rnp-navtabs", JSON.stringify(navCfg)); } catch {} }, [navCfg]);
   const [navMoreOpen, setNavMoreOpen] = useState(false);
   // личный масштаб интерфейса (по умолчанию 80%)
+  const [mq, setMq] = useState(() => { try { const r = JSON.parse(localStorage.getItem("rnp-marquee") || "null"); return r && typeof r === "object" ? { on: r.on !== false, speed: [1, 2, 3].includes(r.speed) ? r.speed : 2, text: typeof r.text === "string" ? r.text : "Работаем, братья!" } : { on: true, speed: 2, text: "Работаем, братья!" }; } catch { return { on: true, speed: 2, text: "Работаем, братья!" }; } });
+  useEffect(() => { try { localStorage.setItem("rnp-marquee", JSON.stringify(mq)); } catch {} }, [mq]);
   const [uiZoom, setUiZoom] = useState(() => { try { const z = parseFloat(localStorage.getItem("rnp-uizoom")); return z >= 0.6 && z <= 1.2 ? z : 0.8; } catch { return 0.8; } });
   useEffect(() => { try { localStorage.setItem("rnp-uizoom", String(uiZoom)); } catch {} document.documentElement.style.zoom = uiZoom === 1 ? "" : String(uiZoom); return () => { document.documentElement.style.zoom = ""; }; }, [uiZoom]);
   const navTabs = (() => { const ord = (navCfg.order || []).filter((id) => TABS.some((t) => t.id === id)); const all = [...ord, ...TABS.map((t) => t.id).filter((id) => !ord.includes(id))]; return all.map((id) => TABS.find((t) => t.id === id)); })();
@@ -2023,7 +2026,22 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
       {/* Верхняя шапка */}
       <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-1.5 text-sm">
-        <span className="font-semibold text-neutral-700">Работаем, братья!</span>
+        <div className="flex min-w-0 flex-1 items-center gap-3 pr-4">
+          <img src={rnpLogo} alt="РНП про" className="h-8 w-auto shrink-0" />
+          {mq.on && mq.text.split("\n").map((x) => x.trim()).filter(Boolean).length > 0 && (() => {
+            const ph = mq.text.split("\n").map((x) => x.trim()).filter(Boolean);
+            const w = ph.reduce((a, x) => a + x.length * 9 + 44, 0);
+            const rep = Math.max(1, Math.ceil(2600 / w));
+            const half = Array.from({ length: rep }).flatMap(() => ph);
+            const dur = Math.max(12, (w * rep) / (40 + mq.speed * 30));
+            const row = (k) => <span key={k} className="inline-flex shrink-0 items-center">{half.map((x, i) => <span key={i} className="inline-flex items-center"><span className="font-semibold text-neutral-700">{x}</span><span className="mx-5 text-[9px] text-blue-600">●</span></span>)}</span>;
+            return (
+              <div className="rnp-mq min-w-0 flex-1 overflow-hidden whitespace-nowrap">
+                <div className="rnp-mq-track inline-flex" style={{ animationDuration: dur + "s" }}>{row(0)}{row(1)}</div>
+              </div>
+            );
+          })()}
+        </div>
         <div className="relative">
           <button onClick={() => setProfileMenuOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-2.5 hover:bg-neutral-50">
             <PersonAvatar p={myProfile} size={26} />
@@ -2726,6 +2744,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           setNavCfg={setNavCfg}
           uiZoom={uiZoom}
           setUiZoom={setUiZoom}
+          mq={mq}
+          setMq={setMq}
           wbApiKey={wbApiKey}
           setWbApiKey={setWbApiKey}
           onFetchWb={() => { setSettingsOpen(false); fetchWbOrders(); }}
@@ -9803,7 +9823,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
   const toggleTrgOpen = (id) => setTrgOpen((o) => ({ ...o, [id]: !o[id] }));
@@ -9980,6 +10000,16 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                 <p className="mb-2 text-xs text-neutral-500">Личная настройка. Если вы уже уменьшали масштаб в браузере, поставьте 100%.</p>
                 <div className="mb-5 inline-flex rounded-xl border border-neutral-200 bg-white p-1">
                   {[0.7, 0.8, 0.9, 1].map((z) => <button key={z} onClick={() => setUiZoom(z)} className={"rounded-lg px-3.5 py-1.5 text-sm font-semibold transition " + (uiZoom === z ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100")}>{Math.round(z * 100)}%</button>)}
+                </div>
+                <h3 className="text-sm font-bold text-neutral-900">Бегущая строка с мотивацией</h3>
+                <p className="mb-2 text-xs text-neutral-500">Личная настройка, показывается в самой верхней строке рядом с логотипом. Каждая фраза с новой строки. Если поле пустое, остаётся один логотип.</p>
+                <textarea value={mq?.text || ""} onChange={(e) => setMq((m) => ({ ...m, text: e.target.value }))} rows={4} className="w-full max-w-xl rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-400" placeholder="Работаем, братья!" />
+                <div className="mb-5 mt-2 flex flex-wrap items-center gap-3 text-sm text-neutral-700">
+                  <label className="inline-flex items-center gap-2"><input type="checkbox" checked={!!mq?.on} onChange={(e) => setMq((m) => ({ ...m, on: e.target.checked }))} />Показывать строку</label>
+                  <span className="ml-3 text-neutral-500">Скорость</span>
+                  <div className="inline-flex rounded-xl border border-neutral-200 bg-white p-1">
+                    {[[1, "медленно"], [2, "средне"], [3, "быстро"]].map(([v, l]) => <button key={v} onClick={() => setMq((m) => ({ ...m, speed: v }))} className={"rounded-lg px-3 py-1 text-xs font-semibold transition " + (mq?.speed === v ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100")}>{l}</button>)}
+                  </div>
                 </div>
                 <h3 className="text-sm font-bold text-neutral-900">Быстрый доступ к блокам</h3>
                 <p className="mb-3 text-xs text-neutral-500">Выбранные блоки — на верхней панели, остальные — в меню «⋯». Настройка личная, на других пользователей не влияет.</p>
