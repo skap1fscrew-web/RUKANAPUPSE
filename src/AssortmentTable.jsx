@@ -7799,9 +7799,9 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const showOps = !hidden.includes("ops"), showProj = !hidden.includes("project"), showProd = !hidden.includes("product"), showPur = !hidden.includes("purchase");
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+    <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white">
       {/* шапка: ФОКУС + строка фокуса, счётчики, меню групп */}
-      <div className="relative flex items-center gap-3.5 bg-gradient-to-r from-[#e11d48] to-[#be123c] px-4" style={{ minHeight: 52 }}>
+      <div className="relative flex items-center gap-3.5 rounded-t-[15px] bg-gradient-to-r from-[#e11d48] to-[#be123c] px-4" style={{ minHeight: 52 }}>
         <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[14px] font-black tracking-wide text-white"><Target size={15} className="focus-pulse" />ФОКУС</span>
         {note && <span className="shrink-0 rounded-lg bg-neutral-900 px-2 py-0.5 text-[11px] font-semibold text-white">{note}</span>}
         <span className="h-[22px] w-px shrink-0 bg-white/35" />
@@ -7837,6 +7837,12 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       )}
 
       {/* колонки */}
+      {!showOps && !showProj && !showProd && !showPur && (
+        <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-[13px] text-neutral-500">
+          Все блоки скрыты.
+          <button onClick={() => { setHidden([]); lsSet("rnp.focusHidden", []); }} className="rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700">Показать все блоки</button>
+        </div>
+      )}
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ "--n": Math.max(1, [showOps, showProj, showProd, showPur].filter(Boolean).length) }}>
         {showOps && (opsStrip ? (
           <FoldStrip k="ops" label="Операционные" count={myOpsToday.length > 0 ? `${opsDoneCount}/${myOpsToday.length}` : ""} onOpen={() => { setOpsOpen(true); setFoldK("ops", false); }} />
