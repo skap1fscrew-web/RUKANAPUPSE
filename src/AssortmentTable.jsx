@@ -7758,9 +7758,9 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     const manual = isMain(j); const t = tierOf(j, "project"); const chip = t === 0 ? null : tileChip(j); const st = STAGES[stageOf(j)]; const overDays = t === 0 ? Math.round((new Date(todayStr) - new Date(j.date)) / 86400000) : 0;
     return (
       <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 ? "border-red-200 bg-red-50/60" : t === 1 ? "border-blue-200 bg-blue-50/50" : manual ? "border-rose-300 bg-white" : "border-neutral-200 bg-white")}>
-        {t === 0 && <span className="absolute -right-px -top-px rounded-bl-[12px] rounded-tr-[12px] bg-red-600 py-[3px] pl-[11px] pr-[9px] text-[11px] font-black leading-tight text-white">−{overDays} д</span>}
-        <span className={"line-clamp-3 text-[12.5px] font-bold leading-snug text-neutral-800 " + (t === 0 ? "pr-9" : "")}>{j.title}</span>
-        <div className="mt-auto flex items-center gap-1.5 pr-5 pt-2 text-[10.5px] font-extrabold">
+        {t === 0 && <span className="absolute -bottom-px -right-px rounded-br-[12px] rounded-tl-[12px] bg-red-600 py-[3px] pl-[11px] pr-[9px] text-[11px] font-black leading-tight text-white">−{overDays} д</span>}
+        <span className={"line-clamp-3 text-[12.5px] font-bold leading-snug text-neutral-800 pr-5"}>{j.title}</span>
+        <div className={"mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold " + (t === 0 ? "pr-12" : "pr-5")}>
           {chip ? <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span> : (<>
             {j.priority === "high" && <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-red-500" />}
             {manual && !j.priority && <span className="text-rose-600">◎</span>}
@@ -7768,7 +7768,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
           </>)}
           {j.mark === "urgent" && <span className="ml-auto text-[12px]">⚡</span>}
         </div>
-        <button onClick={(e) => { e.stopPropagation(); setMain(j, !manual); }} title={manual ? "Убрать из добавленных" : "Закрепить"} className={"absolute bottom-1.5 right-1.5 transition " + (manual ? "text-rose-600" : "text-neutral-300 opacity-0 hover:text-rose-400 group-hover:opacity-100")}><Target size={12} /></button>
+        <button onClick={(e) => { e.stopPropagation(); setMain(j, !manual); }} title={manual ? "Убрать из добавленных" : "Закрепить"} className={"absolute right-1.5 top-1.5 transition " + (manual ? "text-rose-600" : "text-neutral-300 opacity-0 hover:text-rose-400 group-hover:opacity-100")}><Target size={12} /></button>
       </div>
     );
   };
