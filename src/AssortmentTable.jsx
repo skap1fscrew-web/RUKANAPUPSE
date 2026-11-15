@@ -8039,10 +8039,10 @@ function ProductTasksView({ jobs, products, onOpen }) {
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <span className="text-[12px] text-neutral-400">{isTask ? `${nT} ${wT}` : `${nP} ${wP}`}</span>
         <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
           {[["prod", "По товарам"], ["task", "По задачам"]].map(([id, t]) => <button key={id} onClick={() => setGroupMode(id)} className={"rounded-md px-2.5 py-1 text-[12px] font-semibold transition " + (groupMode === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{t}</button>)}
         </div>
+        <span className="text-[12px] text-neutral-400">{isTask ? `${nT} ${wT}` : `${nP} ${wP}`}</span>
         <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[12px] text-neutral-500"><input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} className="accent-neutral-800" /> скрыть выполненные</label>
       </div>
 
