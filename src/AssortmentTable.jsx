@@ -2138,28 +2138,28 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           })()}
           <div className="flex items-center gap-2">
             {activeTab !== "base" && hasExpandable && products.length > 0 && (
-              <button onClick={allOpen ? collapseAll : expandAll} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+              <button onClick={allOpen ? collapseAll : expandAll} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white h-[42px] px-3.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
                 {allOpen ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
                 {allOpen ? "Свернуть всё" : "Развернуть всё"}
               </button>
             )}
             {activeTab === "purchases" && (
-            <button onClick={exportCsv} title={activeTab === "purchases" ? "Выгрузка партии в Excel (с фото)" : "Экспорт CSV"} className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
+            <button onClick={exportCsv} title={activeTab === "purchases" ? "Выгрузка партии в Excel (с фото)" : "Экспорт CSV"} className="rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white h-[42px] w-[42px] text-neutral-700 hover:bg-neutral-50">
               <Download size={16} />
             </button>
             )}
             {(activeTab === "tasks" || activeTab === "assortment" || activeTab === "duties") && (
-            <button onClick={() => openTrash(activeTab === "assortment" ? "products" : activeTab === "duties" ? "functions" : "jobs")} title="Корзина" className="relative rounded-xl inline-flex items-center justify-center border border-neutral-200 bg-white p-2 text-neutral-700 hover:bg-neutral-50">
+            <button onClick={() => openTrash(activeTab === "assortment" ? "products" : activeTab === "duties" ? "functions" : "jobs")} title="Корзина" className="relative rounded-xl inline-flex h-[42px] w-[42px] items-center justify-center border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50">
               <Trash2 size={16} />
             </button>
             )}
-            <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+            <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex h-[42px] items-center gap-1.5 border border-neutral-200 bg-white px-3.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Settings2 size={15} /> Настройки
             </button>
         <div className="relative">
-          <button onClick={() => setProfileMenuOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-2.5 hover:bg-neutral-50">
-            <PersonAvatar p={myProfile} size={26} />
-            <span className="text-[13px] font-medium text-neutral-800">{myProfile ? profileLabel(myProfile) : "Профиль"}</span>
+          <button onClick={() => setProfileMenuOpen((v) => !v)} className="inline-flex h-[42px] items-center gap-2 rounded-xl border border-neutral-200 bg-white pl-1.5 pr-3 hover:bg-neutral-50">
+            <PersonAvatar p={myProfile} size={28} />
+            <span className="text-sm font-medium text-neutral-800">{myProfile ? profileLabel(myProfile) : "Профиль"}</span>
             <ChevronDown size={13} className="text-neutral-400" />
           </button>
           {profileMenuOpen && (
