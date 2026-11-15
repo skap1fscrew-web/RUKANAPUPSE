@@ -7709,7 +7709,6 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
               return (
                 <div key={g.title} className="border-b border-neutral-100 last:border-b-0">
                   <button onClick={() => setOpenG((o) => ({ ...o, [g.title]: !o[g.title] }))} className="flex w-full items-center gap-2.5 px-1.5 py-2 text-left transition hover:bg-neutral-50">
-                    <span style={{ background: "#fff7ed", color: "#ea580c" }} className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md"><Box size={13} /></span>
                     <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-neutral-800">{g.title}</span>
                     <span className="shrink-0 text-[12px] font-bold text-neutral-400">x{n}</span>
                     {(() => { const dd = g.hasOver ? { txt: `−${g.maxOver} дн`, cls: "bg-red-100 text-red-700" } : dueChip(g.list.slice().sort((a, b) => dateKey(a).localeCompare(dateKey(b)))[0]); return dd ? <span className={"shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold " + dd.cls}>{dd.txt}</span> : null; })()}
@@ -7877,7 +7876,6 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
             {colHead("product", "Товары", prodGroups.length)}
             {prodGroups.map((g) => renderGroup(g))}
             {prodGroups.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
-            <AddBtn type="product" />
           </div>
         ))}
 
