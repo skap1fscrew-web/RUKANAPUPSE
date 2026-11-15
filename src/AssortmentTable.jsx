@@ -3563,7 +3563,7 @@ function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard,
                       <div key={s.id} className="relative min-w-[64px]" style={{ flex: wgt + " 1 0%" }}>
                         <button onClick={() => setStagePop(isOpen ? null : s.id)} title={s.name + " — даты этапа"} className="block w-full text-left">
                           <div className="flex h-7 items-center overflow-hidden whitespace-nowrap rounded-md px-2.5 text-[12px] font-bold transition hover:brightness-95" style={done ? { background: "#dcfce7", color: "#166534" } : cur ? { background: "#ffedd5", color: "#9a3412" } : { background: "#f4f4f5", color: "#a3a3a3" }}>
-                            <span className="truncate">{done ? "✓ " : ""}{s.name}</span>
+                            <span className="truncate">{s.name}</span>
                           </div>
                           <div className={"mt-1 truncate text-[11px] font-semibold " + (done ? "text-green-700" : cur ? "text-orange-700" : "text-neutral-400")}>
                             {done ? <>{s.actualDate ? fmtDM(s.actualDate) : "готово"}{dev != null && dev !== 0 && <span className={"ml-1 font-extrabold " + (dev > 0 ? "text-red-600" : "text-emerald-700")}>{dev > 0 ? "+" + dev : dev} дн</span>}</> : <>до {d ? d.endStr : "—"}</>}
