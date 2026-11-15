@@ -7774,20 +7774,19 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   );
   const foldBtn = (k) => <button onClick={() => setFoldK(k, true)} title="Свернуть" className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button>;
   const tileChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; return { txt: "до " + j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: inWindow(j) ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-600" }; };
+  const StIcon = ({ st }) => st === "progress"
+    ? <span title="В процессе" className="inline-flex shrink-0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#ea580c" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a9 9 0 1 0 9 9" /></svg></span>
+    : <span title="Ожидает" className="inline-flex shrink-0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#a3a3a3" strokeWidth="2" strokeLinecap="round"><line x1="12.00" y1="6.80" x2="12.00" y2="3.00" opacity="0.31" /><line x1="14.60" y1="7.50" x2="16.50" y2="4.21" opacity="0.38" /><line x1="16.50" y1="9.40" x2="19.79" y2="7.50" opacity="0.44" /><line x1="17.20" y1="12.00" x2="21.00" y2="12.00" opacity="0.50" /><line x1="16.50" y1="14.60" x2="19.79" y2="16.50" opacity="0.56" /><line x1="14.60" y1="16.50" x2="16.50" y2="19.79" opacity="0.62" /><line x1="12.00" y1="17.20" x2="12.00" y2="21.00" opacity="0.69" /><line x1="9.40" y1="16.50" x2="7.50" y2="19.79" opacity="0.75" /><line x1="7.50" y1="14.60" x2="4.21" y2="16.50" opacity="0.81" /><line x1="6.80" y1="12.00" x2="3.00" y2="12.00" opacity="0.88" /><line x1="7.50" y1="9.40" x2="4.21" y2="7.50" opacity="0.94" /><line x1="9.40" y1="7.50" x2="7.50" y2="4.21" opacity="1.00" /></svg></span>;
   const ProjTile = ({ j }) => {
     const manual = isMain(j); const t = tierOf(j, "project"); const chip = t === 0 ? null : tileChip(j); const st = STAGES[stageOf(j)]; const overDays = t === 0 ? Math.round((new Date(todayStr) - new Date(j.date)) / 86400000) : 0;
     return (
-      <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 ? "border-red-200 bg-red-50/60" : t === 1 ? "border-blue-200 bg-blue-50/50" : manual ? "border-rose-300 bg-white" : "border-neutral-200 bg-white")}>
+      <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 || j.priority === "high" ? "border-red-200 bg-red-50/60" : t === 1 ? "border-blue-200 bg-blue-50/50" : manual ? "border-rose-300 bg-white" : "border-neutral-200 bg-white")}>
         {t === 0 && <span className="absolute -bottom-px -right-px rounded-br-[12px] rounded-tl-[12px] bg-[#e11d48] py-[3px] pl-[11px] pr-[9px] text-[11px] font-black leading-tight text-white">−{overDays} д</span>}
-        <span className={"line-clamp-3 text-[12.5px] font-bold leading-snug text-neutral-800 pr-5"}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
+        <span className={"line-clamp-3 text-[12.5px] font-bold leading-snug text-neutral-800"}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
         <div className={"mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold " + (t === 0 ? "pr-12" : "pr-5")}>
-          {chip ? <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span> : (<>
-            {j.priority === "high" && <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-red-500" />}
-            {manual && !j.priority && <span className="text-rose-600">◎</span>}
-            <span className="truncate font-bold text-neutral-400">{manual && j.priority !== "high" ? "добавлено вами" : st ? st.label.toLowerCase() : ""}</span>
-          </>)}
+          <StIcon st={stageOf(j)} />
+          {chip && <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span>}
         </div>
-        <button onClick={(e) => { e.stopPropagation(); setMain(j, !manual); }} title={manual ? "Убрать из добавленных" : "Закрепить"} className={"absolute right-1.5 top-1.5 transition " + (manual ? "text-rose-600" : "text-neutral-300 opacity-0 hover:text-rose-400 group-hover:opacity-100")}><Target size={12} /></button>
       </div>
     );
   };
