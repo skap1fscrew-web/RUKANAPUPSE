@@ -7807,7 +7807,6 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор…" className="min-w-0 flex-1 rounded-lg border-0 bg-transparent px-1.5 py-1 text-[20px] font-extrabold tracking-tight text-white outline-none ring-0 transition placeholder:font-semibold placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15 focus:outline-none focus:ring-0" />
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {overdueCount > 0 && <button onClick={() => setOnlyOver((v) => !v)} title="Показать только просроченные" className={"rounded-[10px] px-3 py-1.5 text-[13px] font-extrabold transition " + (onlyOver ? "bg-neutral-900 text-white" : "bg-white text-rose-700 hover:bg-rose-50")}>{overdueCount} просрочено ›</button>}
-          {dueTodayCount > 0 && <span className="rounded-[10px] bg-white/20 px-3 py-1.5 text-[13px] font-extrabold text-white">{dueTodayCount} сегодня</span>}
           <div className="relative">
             <button onClick={() => setEyeOpen((v) => !v)} title="Показывать группы задач" className={"flex h-8 w-8 items-center justify-center rounded-[10px] border transition " + (hidden.length ? "border-white bg-white text-rose-600" : "border-white/40 bg-transparent text-white hover:bg-white/15")}>{hidden.length ? <EyeOff size={15} /> : <Eye size={15} />}</button>
             {eyeOpen && (<>
