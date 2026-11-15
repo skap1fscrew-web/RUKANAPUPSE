@@ -7676,6 +7676,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       if (type === "project") { const prog = stageOf(j) === "progress"; const z = j.mark === "urgent"; return prog ? (z ? 2 : 3) : (z ? 4 : 5); }
       return 2;
     }
+    if (type === "project" && j.priority === "med" && stageOf(j) === "wait") return 6; // проектные: ожидают, средний приоритет — в самый низ
     return isMain(j) ? 9 : null;
   };
   const cmpJobs = (a, b) => dateKey(a).localeCompare(dateKey(b)) || (a.title || "").localeCompare(b.title || "");
@@ -7776,7 +7777,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const tileChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; return { txt: "до " + j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: inWindow(j) ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-600" }; };
   const StIcon = ({ st }) => st === "progress"
     ? <span title="В процессе" className="inline-flex shrink-0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#a3a3a3" strokeWidth="2" strokeLinecap="round"><line x1="12.00" y1="6.80" x2="12.00" y2="3.00" opacity="0.31" /><line x1="14.60" y1="7.50" x2="16.50" y2="4.21" opacity="0.38" /><line x1="16.50" y1="9.40" x2="19.79" y2="7.50" opacity="0.44" /><line x1="17.20" y1="12.00" x2="21.00" y2="12.00" opacity="0.50" /><line x1="16.50" y1="14.60" x2="19.79" y2="16.50" opacity="0.56" /><line x1="14.60" y1="16.50" x2="16.50" y2="19.79" opacity="0.62" /><line x1="12.00" y1="17.20" x2="12.00" y2="21.00" opacity="0.69" /><line x1="9.40" y1="16.50" x2="7.50" y2="19.79" opacity="0.75" /><line x1="7.50" y1="14.60" x2="4.21" y2="16.50" opacity="0.81" /><line x1="6.80" y1="12.00" x2="3.00" y2="12.00" opacity="0.88" /><line x1="7.50" y1="9.40" x2="4.21" y2="7.50" opacity="0.94" /><line x1="9.40" y1="7.50" x2="7.50" y2="4.21" opacity="1.00" /></svg></span>
-    : <span title="Ожидает" className="inline-flex shrink-0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#8a8a8a" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span>;
+    : <span title="Ожидает" className="inline-flex shrink-0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#a3a3a3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span>;
   const ProjTile = ({ j }) => {
     const manual = isMain(j); const t = tierOf(j, "project"); const chip = t === 0 ? null : tileChip(j); const st = STAGES[stageOf(j)]; const overDays = t === 0 ? Math.round((new Date(todayStr) - new Date(j.date)) / 86400000) : 0;
     return (
@@ -7864,7 +7865,6 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
             {colHead("project", "Проектные", projList.length)}
             {projList.length > 0 && <div className="grid grid-cols-2 gap-2">{projList.map((j) => <ProjTile key={j.id} j={j} />)}</div>}
             {projList.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
-            <AddBtn type="project" />
           </div>
         ))}
 
