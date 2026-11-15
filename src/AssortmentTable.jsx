@@ -7755,11 +7755,12 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const foldBtn = (k) => <button onClick={() => setFoldK(k, true)} title="Свернуть" className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button>;
   const tileChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; return { txt: "до " + j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: inWindow(j) ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-600" }; };
   const ProjTile = ({ j }) => {
-    const manual = isMain(j); const t = tierOf(j, "project"); const chip = tileChip(j); const st = STAGES[stageOf(j)];
+    const manual = isMain(j); const t = tierOf(j, "project"); const chip = t === 0 ? null : tileChip(j); const st = STAGES[stageOf(j)]; const overDays = t === 0 ? Math.round((new Date(todayStr) - new Date(j.date)) / 86400000) : 0;
     return (
       <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 ? "border-red-200 bg-red-50/60" : t === 1 ? "border-blue-200 bg-blue-50/50" : manual ? "border-rose-300 bg-white" : "border-neutral-200 bg-white")}>
-        <span className="line-clamp-3 pr-4 text-[12.5px] font-bold leading-snug text-neutral-800">{j.title}</span>
-        <div className="mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold">
+        {t === 0 && <span className="absolute -right-px -top-px rounded-bl-[12px] rounded-tr-[12px] bg-red-600 py-[3px] pl-[11px] pr-[9px] text-[11px] font-black leading-tight text-white">−{overDays} д</span>}
+        <span className={"line-clamp-3 text-[12.5px] font-bold leading-snug text-neutral-800 " + (t === 0 ? "pr-9" : "")}>{j.title}</span>
+        <div className="mt-auto flex items-center gap-1.5 pr-5 pt-2 text-[10.5px] font-extrabold">
           {chip ? <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span> : (<>
             {j.priority === "high" && <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-red-500" />}
             {manual && !j.priority && <span className="text-rose-600">◎</span>}
@@ -7767,7 +7768,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
           </>)}
           {j.mark === "urgent" && <span className="ml-auto text-[12px]">⚡</span>}
         </div>
-        <button onClick={(e) => { e.stopPropagation(); setMain(j, !manual); }} title={manual ? "Убрать из добавленных" : "Закрепить"} className={"absolute right-1.5 top-1.5 transition " + (manual ? "text-rose-600" : "text-neutral-300 opacity-0 hover:text-rose-400 group-hover:opacity-100")}><Target size={12} /></button>
+        <button onClick={(e) => { e.stopPropagation(); setMain(j, !manual); }} title={manual ? "Убрать из добавленных" : "Закрепить"} className={"absolute bottom-1.5 right-1.5 transition " + (manual ? "text-rose-600" : "text-neutral-300 opacity-0 hover:text-rose-400 group-hover:opacity-100")}><Target size={12} /></button>
       </div>
     );
   };
