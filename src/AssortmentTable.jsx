@@ -7471,7 +7471,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {focusMode ? <FocusView jobs={jobs} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} products={products} people={people} myId={myId} now={now} onUpdateJob={onUpdateJob} onOpen={onOpen} focusLine={focusLine} onFocusLine={onFocusLine} />
+        {focusMode ? <FocusView jobs={jobs} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} products={products} people={people} batches={batches} myId={myId} now={now} onUpdateJob={onUpdateJob} onOpen={onOpen} focusLine={focusLine} onFocusLine={onFocusLine} />
           : view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
           : view === "today" ? <OpTodayView opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} people={people} now={now} onEditOp={onEditOp} />
@@ -7604,7 +7604,7 @@ function TrashPanel({ jobs, people = [], products = [], trashProducts = [], tras
   );
 }
 
-function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], myId = null, now, onUpdateJob, onOpen, focusLine = "", onFocusLine }) {
+function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], batches = [], myId = null, now, onUpdateJob, onOpen, focusLine = "", onFocusLine }) {
   const [pickOpen, setPickOpen] = useState(false);
   const [pickType, setPickType] = useState(null); // тип колонки, в которую добавляем задачи через «＋»
   const [eyeOpen, setEyeOpen] = useState(false);
@@ -7685,6 +7685,15 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const projList = buildCol("project");
   const prodGroups = groupList(buildCol("product"));
   const purList = buildCol("purchase");
+  // закупки: партии с запущенным циклом (в работе) и их открытые задачи
+  const cycBatches = (batches || []).filter((b) => b && b.cycle && b.cycle.started && Array.isArray(b.cycle.stages) && b.cycle.stages.some((x) => !x.done)).map((b) => {
+    const stg = b.cycle.stages; const ci = stg.findIndex((x) => !x.done); const cur = stg[ci];
+    const dts = cycleStageDates(b.cycle.startDate, stg); const endISO = cur && dts[cur.id] ? dts[cur.id].endISO : null;
+    const over = endISO && endISO < todayStr ? Math.round((new Date(todayStr) - new Date(endISO)) / 86400000) : 0;
+    const tasks = (jobs || []).filter((j) => j.batchId === b.id && !j.opId && stageOf(j) !== "done").sort((a, c) => dateKey(a).localeCompare(dateKey(c)) || sortP(a, c));
+    const taskOver = tasks.some((j) => j.date && j.date < todayStr);
+    return { b, stg, ci, cur, endISO, over, tasks, taskOver };
+  }).filter((x) => !onlyOver || x.over > 0 || x.taskOver).sort((a, c) => (c.over - a.over) || String(a.endISO || "9999").localeCompare(String(c.endISO || "9999")) || String(a.b.name || "").localeCompare(String(c.b.name || "")));
   const typeBadge = (j) => TASK_TYPE_META.find((x) => x.key === jobType(j)) || TASK_TYPE_META[2];
   const TypeIco = ({ j, size = 22 }) => { const tb = typeBadge(j); const Ic = tb.Icon; return <span title={tb.label} style={{ background: tb.bg, color: tb.tint, width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-md"><Ic size={Math.round(size * 0.58)} /></span>; };
   const dueChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} д`, cls: "bg-[#e11d48] text-white" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; if (dd === 1) return { txt: "завтра", cls: "bg-orange-100 text-orange-700" }; if (dd <= 3) return { txt: `через ${dd} дн`, cls: "bg-orange-100 text-orange-700" }; return { txt: j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: "bg-neutral-100 text-neutral-500" }; };
@@ -7876,11 +7885,28 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
           </div>
         ))}
 
-        {showPur && (fold.purchase ? <FoldStrip k="purchase" label="Закупки" count={purList.length} /> : (
+        {showPur && (fold.purchase ? <FoldStrip k="purchase" label="Закупки" count={cycBatches.length} /> : (
           <div className="min-w-0 p-3.5">
-            {colHead("purchase", "Закупки", purList.length)}
-            {purList.map((j) => <JobCard key={j.id} j={j} main={isMain(j)} />)}
-            {purList.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
+            {colHead("purchase", "Закупки", cycBatches.length)}
+            {cycBatches.map(({ b, stg, ci, cur, endISO, over, tasks }) => (
+              <div key={b.id} className={"mb-2.5 rounded-[14px] border p-2.5 " + (over > 0 ? "border-red-200 bg-red-50/40" : "border-neutral-200 bg-white")}>
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800">{b.name || "Партия"}</span>
+                  {cur && <span className="shrink-0 rounded-md bg-blue-50 px-1.5 py-px text-[11px] font-extrabold text-blue-600">{cur.name}</span>}
+                  {over > 0 ? <span className="shrink-0 rounded-full bg-[#e11d48] px-2 py-0.5 text-[11px] font-extrabold text-white">−{over} д</span> : endISO ? <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-extrabold text-blue-700">до {endISO.slice(8, 10)}.{endISO.slice(5, 7)}</span> : null}
+                </div>
+                <div className="mt-1.5 flex gap-[3px]">{stg.map((x, k) => <i key={x.id || k} title={x.name} className={"h-[5px] flex-1 rounded-[3px] " + (x.done ? "bg-[#a7e3b9]" : k === ci ? "bg-blue-400" : "bg-neutral-200")} />)}</div>
+                <div className="mt-0.5 flex justify-between text-[10.5px] font-semibold text-neutral-400"><span className="truncate">{stg[0]?.name}</span><b className="shrink-0 px-2 font-extrabold text-blue-600">{ci + 1} из {stg.length}</b><span className="truncate text-right">{stg[stg.length - 1]?.name}</span></div>
+                {tasks.length > 0 && <div className="mt-2 space-y-1">{tasks.map((j) => { const dc = dueChip(j); return (
+                  <div key={j.id} onClick={() => onOpen(j)} className={"flex cursor-pointer items-center gap-2 rounded-[9px] border px-2 py-1.5 transition hover:shadow-sm " + (j.priority === "high" ? "border-red-200 bg-red-50/60" : j.priority === "med" ? "border-amber-200 bg-amber-50/60" : "border-neutral-200 bg-white")}>
+                    <StIcon st={stageOf(j)} />
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-bold text-neutral-800">{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
+                    {dc && <span className={"shrink-0 rounded-full px-2 py-px text-[11px] font-extrabold " + dc.cls}>{dc.txt}</span>}
+                  </div>
+                ); })}</div>}
+              </div>
+            ))}
+            {cycBatches.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Нет партий с запущенным циклом"}</div>}
           </div>
         ))}
       </div>
