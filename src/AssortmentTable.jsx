@@ -7894,7 +7894,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
           <div className="min-w-0 p-3.5">
             {colHead("purchase", "Закупки", cycBatches.length)}
             {cycBatches.map(({ b, stg, ci, cur, endISO, over, tasks }) => (
-              <div key={b.id} className={"mb-2.5 rounded-[14px] border p-2.5 " + (over > 0 ? "border-red-200 bg-red-50/40" : "border-neutral-200 bg-white")}>
+              <div key={b.id} className={"mb-2.5 rounded-[14px] border p-2.5 " + "border-neutral-200 bg-white"}>
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800">{b.name || "Партия"}</span>
                   {cur && <span className="shrink-0 text-[11px] font-extrabold text-neutral-500">{cur.name}</span>}
