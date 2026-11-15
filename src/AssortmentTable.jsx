@@ -7895,11 +7895,11 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
             {colHead("purchase", "Закупки", cycBatches.length)}
             {cycBatches.map(({ b, stg, ci, cur, endISO, over, tasks }) => (
               <div key={b.id} className={"mb-2.5 rounded-[14px] border p-2.5 " + (over > 0 ? "border-red-200 bg-red-50/40" : "border-neutral-200 bg-white")}>
-                <div onClick={() => onOpenBatch && onOpenBatch(b.id)} title="Открыть партию в «Закупках»" className="group/bh -mx-1.5 -mt-1 flex cursor-pointer items-center gap-2 rounded-[9px] px-1.5 py-1 transition hover:bg-neutral-100">
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800 underline-offset-[3px] group-hover/bh:underline">{b.name || "Партия"}</span>
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800">{b.name || "Партия"}</span>
                   {cur && <span className="shrink-0 text-[11px] font-extrabold text-neutral-500">{cur.name}</span>}
                   {over > 0 && <span className="shrink-0 rounded-full bg-[#e11d48] px-2 py-0.5 text-[11px] font-extrabold text-white">−{over} д</span>}
-                  <ArrowUpRight size={13} className="shrink-0 text-neutral-300 transition group-hover/bh:text-neutral-600" />
+                  <button type="button" onClick={() => onOpenBatch && onOpenBatch(b.id)} title="Открыть партию в «Закупках»" className="-mr-1 shrink-0 rounded-md p-0.5 text-neutral-300 transition hover:text-[#e11d48]"><ArrowUpRight size={14} /></button>
                 </div>
                 <div className="mt-1.5 flex gap-[3px]">{stg.map((x, k) => <i key={x.id || k} title={x.name} className={"h-[5px] flex-1 rounded-[3px] " + (x.done ? "bg-[#a7e3b9]" : k === ci ? "bg-orange-400" : "bg-neutral-200")} />)}</div>
                 {tasks.length > 0 && <div className="mt-2 space-y-1">{tasks.map((j) => { const dc = dueChip(j); return (
