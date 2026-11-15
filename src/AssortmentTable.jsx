@@ -2136,7 +2136,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               </div>
             );
           })()}
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             {activeTab !== "base" && hasExpandable && products.length > 0 && (
               <button onClick={allOpen ? collapseAll : expandAll} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white h-[42px] px-3.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
                 {allOpen ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
