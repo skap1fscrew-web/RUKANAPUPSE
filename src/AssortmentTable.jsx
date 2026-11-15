@@ -7784,7 +7784,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     return (
       <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 || j.priority === "high" ? "border-red-200 bg-red-50/60" : t === 1 ? "border-blue-200 bg-blue-50/50" : j.priority === "med" ? "border-amber-200 bg-amber-50/60" : manual ? "border-rose-300 bg-white" : "border-neutral-200 bg-white")}>
         {t === 0 && <span className="absolute -bottom-px -right-px rounded-br-[12px] rounded-tl-[12px] bg-[#e11d48] py-[3px] pl-[11px] pr-[9px] text-[11px] font-black leading-tight text-white">−{overDays} д</span>}
-        <span className={"line-clamp-3 text-[12.5px] font-bold leading-snug text-neutral-800"}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
+        <span className={"line-clamp-3 text-[13.5px] font-bold leading-snug text-neutral-800"}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
         <div className={"mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold " + (t === 0 ? "pr-12" : "pr-5")}>
           <StIcon st={stageOf(j)} />
           {chip && <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span>}
