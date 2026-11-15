@@ -4,7 +4,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow,
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
+  Target, Flag, AlertTriangle, GitBranch, ArrowUpRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -976,6 +976,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [subjects, setSubjects] = useState([]); // предметы с комиссией ВБ — [{id, name, commission}]
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
   const [activeTab, setActiveTab] = useState("assortment");
+  const [purchFocusId, setPurchFocusId] = useState(null); // партия, на которую перешли из Фокуса
+  useEffect(() => { if (activeTab !== "purchases") setPurchFocusId(null); }, [activeTab]);
   const [productsView, setProductsView] = useState("list"); // list | tiles
   const [tileSize, setTileSize] = useState("m"); // xs | s | m — размер плиток
   const [expanded, setExpanded] = useState({});
@@ -2598,6 +2600,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
         {activeTab === "purchases" && (
           <PurchasesBoard
+            focusId={purchFocusId}
             batches={purchaseBatches}
             onChange={setPurchaseBatches}
             products={products}
@@ -2617,6 +2620,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
         {activeTab === "tasks" && (
           <TasksView
+            onOpenBatch={(id) => { setPurchFocusId(id); setActiveTab("purchases"); }}
             focusLine={focusLine}
             onFocusLine={setFocusLine}
             jobs={liveJobs}
@@ -3297,9 +3301,10 @@ function StagePicker({ label, current, options, onPick, dashed = false }) {
   );
 }
 
-function PurchasesBoard({ batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], cycles = [], cycleTriggers = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob }) {
+function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], cycles = [], cycleTriggers = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob }) {
   const list = Array.isArray(batches) ? batches : [];
-  const [activeId, setActiveId] = useState(list[0]?.id || null);
+  const [activeId, setActiveId] = useState((focusId && list.some((b) => b.id === focusId)) ? focusId : (list[0]?.id || null));
+  useEffect(() => { if (focusId && list.some((b) => b.id === focusId)) setActiveId(focusId); }, [focusId]);
   const [editingId, setEditingId] = useState(null);
   const [picker, setPicker] = useState(false);
   const [pickerUp, setPickerUp] = useState(false); // открывать выпадашку товаров вверх, если снизу мало места
@@ -7306,7 +7311,7 @@ function DaySummary({ jobs = [], opTypes = [], opDone = {}, people = [], product
   );
 }
 
-function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [], people = [], myId = null, onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen }) {
+function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [], people = [], myId = null, onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen, onOpenBatch }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
@@ -7471,7 +7476,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {focusMode ? <FocusView jobs={jobs} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} products={products} people={people} batches={batches} myId={myId} now={now} onUpdateJob={onUpdateJob} onOpen={onOpen} focusLine={focusLine} onFocusLine={onFocusLine} />
+        {focusMode ? <FocusView jobs={jobs} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} products={products} people={people} batches={batches} onOpenBatch={onOpenBatch} myId={myId} now={now} onUpdateJob={onUpdateJob} onOpen={onOpen} focusLine={focusLine} onFocusLine={onFocusLine} />
           : view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
           : view === "today" ? <OpTodayView opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} people={people} now={now} onEditOp={onEditOp} />
@@ -7604,7 +7609,7 @@ function TrashPanel({ jobs, people = [], products = [], trashProducts = [], tras
   );
 }
 
-function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], batches = [], myId = null, now, onUpdateJob, onOpen, focusLine = "", onFocusLine }) {
+function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], batches = [], onOpenBatch, myId = null, now, onUpdateJob, onOpen, focusLine = "", onFocusLine }) {
   const [pickOpen, setPickOpen] = useState(false);
   const [pickType, setPickType] = useState(null); // тип колонки, в которую добавляем задачи через «＋»
   const [eyeOpen, setEyeOpen] = useState(false);
@@ -7890,10 +7895,11 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
             {colHead("purchase", "Закупки", cycBatches.length)}
             {cycBatches.map(({ b, stg, ci, cur, endISO, over, tasks }) => (
               <div key={b.id} className={"mb-2.5 rounded-[14px] border p-2.5 " + (over > 0 ? "border-red-200 bg-red-50/40" : "border-neutral-200 bg-white")}>
-                <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800">{b.name || "Партия"}</span>
+                <div onClick={() => onOpenBatch && onOpenBatch(b.id)} title="Открыть партию в «Закупках»" className="group/bh -mx-1.5 -mt-1 flex cursor-pointer items-center gap-2 rounded-[9px] px-1.5 py-1 transition hover:bg-neutral-100">
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800 underline-offset-[3px] group-hover/bh:underline">{b.name || "Партия"}</span>
                   {cur && <span className="shrink-0 text-[11px] font-extrabold text-neutral-500">{cur.name}</span>}
                   {over > 0 && <span className="shrink-0 rounded-full bg-[#e11d48] px-2 py-0.5 text-[11px] font-extrabold text-white">−{over} д</span>}
+                  <ArrowUpRight size={13} className="shrink-0 text-neutral-300 transition group-hover/bh:text-neutral-600" />
                 </div>
                 <div className="mt-1.5 flex gap-[3px]">{stg.map((x, k) => <i key={x.id || k} title={x.name} className={"h-[5px] flex-1 rounded-[3px] " + (x.done ? "bg-[#a7e3b9]" : k === ci ? "bg-orange-400" : "bg-neutral-200")} />)}</div>
                 {tasks.length > 0 && <div className="mt-2 space-y-1">{tasks.map((j) => { const dc = dueChip(j); return (
