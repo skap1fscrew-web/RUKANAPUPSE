@@ -7781,7 +7781,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
       {/* шапка: ФОКУС + строка фокуса, счётчики, меню групп */}
       <div className="relative flex items-center gap-3.5 border-b border-rose-100 bg-gradient-to-r from-rose-50 to-white px-4" style={{ minHeight: 52 }}>
-        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[14px] font-black tracking-wide text-rose-700"><Target size={15} />ФОКУС</span>
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[14px] font-black tracking-wide text-rose-700"><Target size={15} className="focus-pulse" />ФОКУС</span>
         {note && <span className="shrink-0 rounded-lg bg-neutral-900 px-2 py-0.5 text-[11px] font-semibold text-white">{note}</span>}
         <span className="h-[22px] w-px shrink-0 bg-rose-200" />
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор…" className="min-w-0 flex-1 rounded-lg border-0 bg-transparent px-1.5 py-1 text-[20px] font-extrabold tracking-tight text-rose-900 outline-none ring-0 transition placeholder:font-semibold placeholder:text-rose-300 hover:bg-rose-100/50 focus:bg-rose-100/50 focus:outline-none focus:ring-0" />

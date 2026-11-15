@@ -3,3 +3,8 @@
 @tailwind utilities;
 html, body, #root { height: 100%; }
 body { margin: 0; }
+
+/* пульсация значка «Фокус» в шапке */
+@keyframes focusPulse { 0%, 100% { transform: scale(0.8); } 50% { transform: scale(1.2); } }
+.focus-pulse { animation: focusPulse 1.6s ease-in-out infinite; transform-origin: center; }
+@media (prefers-reduced-motion: reduce) { .focus-pulse { animation: none; } }
