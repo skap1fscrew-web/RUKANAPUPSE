@@ -7676,7 +7676,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       if (type === "project") { const prog = stageOf(j) === "progress"; const z = j.mark === "urgent"; return prog ? (z ? 2 : 3) : (z ? 4 : 5); }
       return 2;
     }
-    if (type === "project" && j.priority === "med" && stageOf(j) === "wait") return 6; // проектные: ожидают, средний приоритет — в самый низ
+    if (type === "project" && j.priority === "med" && stageOf(j) === "progress") return 6; // проектные: в процессе, средний приоритет — в самый низ
     return isMain(j) ? 9 : null;
   };
   const cmpJobs = (a, b) => dateKey(a).localeCompare(dateKey(b)) || (a.title || "").localeCompare(b.title || "");
