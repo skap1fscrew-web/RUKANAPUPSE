@@ -7898,7 +7898,6 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800">{b.name || "Партия"}</span>
                   {cur && <span className="shrink-0 text-[11px] font-extrabold text-neutral-500">{cur.name}</span>}
-                  {over > 0 && <span className="shrink-0 rounded-full bg-[#e11d48] px-2 py-0.5 text-[11px] font-extrabold text-white">−{over} д</span>}
                   <button type="button" onClick={() => onOpenBatch && onOpenBatch(b.id)} title="Открыть партию в «Закупках»" className="-mr-1 shrink-0 rounded-md p-0.5 text-neutral-300 transition hover:text-[#e11d48]"><ArrowUpRight size={14} /></button>
                 </div>
                 <div className="mt-1.5 flex gap-[3px]">{stg.map((x, k) => <i key={x.id || k} title={x.name} className={"h-[5px] flex-1 rounded-[3px] " + (x.done ? "bg-[#a7e3b9]" : k === ci ? "bg-orange-400" : "bg-neutral-200")} />)}</div>
