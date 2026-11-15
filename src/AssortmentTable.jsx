@@ -7687,7 +7687,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const purList = buildCol("purchase");
   const typeBadge = (j) => TASK_TYPE_META.find((x) => x.key === jobType(j)) || TASK_TYPE_META[2];
   const TypeIco = ({ j, size = 22 }) => { const tb = typeBadge(j); const Ic = tb.Icon; return <span title={tb.label} style={{ background: tb.bg, color: tb.tint, width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-md"><Ic size={Math.round(size * 0.58)} /></span>; };
-  const dueChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; if (dd === 1) return { txt: "завтра", cls: "bg-orange-100 text-orange-700" }; if (dd <= 3) return { txt: `через ${dd} дн`, cls: "bg-orange-100 text-orange-700" }; return { txt: j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: "bg-neutral-100 text-neutral-500" }; };
+  const dueChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} д`, cls: "bg-[#e11d48] text-white" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; if (dd === 1) return { txt: "завтра", cls: "bg-orange-100 text-orange-700" }; if (dd <= 3) return { txt: `через ${dd} дн`, cls: "bg-orange-100 text-orange-700" }; return { txt: j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: "bg-neutral-100 text-neutral-500" }; };
   const setMain = (j, on) => onUpdateJob({ ...j, pinned: on, ...(on ? {} : { focus: false }) });
   const pickCands = pickType ? allOpen.filter((j) => jobType(j) === pickType && tierOf(j, pickType) === null).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b)) : [];
   const pickList = pickCands.filter((j) => !pickQ.trim() || (j.title || "").toLowerCase().includes(pickQ.trim().toLowerCase())).slice(0, 200);
@@ -7711,7 +7711,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
                   <button onClick={() => setOpenG((o) => ({ ...o, [g.title]: !o[g.title] }))} className="flex w-full items-center gap-2.5 px-1.5 py-2 text-left transition hover:bg-neutral-50">
                     <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-neutral-800">{g.title}</span>
                     <span className="shrink-0 text-[12px] font-bold text-neutral-400">x{n}</span>
-                    {(() => { const dd = g.hasOver ? { txt: `−${g.maxOver} дн`, cls: "bg-red-100 text-red-700" } : dueChip(g.list.slice().sort((a, b) => dateKey(a).localeCompare(dateKey(b)))[0]); return dd ? <span className={"shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold " + dd.cls}>{dd.txt}</span> : null; })()}
+                    {(() => { const dd = g.hasOver ? { txt: `−${g.maxOver} д`, cls: "bg-[#e11d48] text-white" } : dueChip(g.list.slice().sort((a, b) => dateKey(a).localeCompare(dateKey(b)))[0]); return dd ? <span className={"shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold " + dd.cls}>{dd.txt}</span> : null; })()}
                     <ChevronRight size={14} className={"shrink-0 text-neutral-300 transition " + (open ? "rotate-90" : "")} />
                   </button>
                   {open && (
