@@ -7766,12 +7766,14 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   };
 
   const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "project", label: "Проектные", dot: "#7c3aed" }, { k: "product", label: "Товары", dot: "#ea580c" }, { k: "purchase", label: "Закупки", dot: "#0891b2" }];
-  const FoldStrip = ({ k, label, count }) => (
-    <button onClick={() => setFoldK(k, false)} title={"Развернуть «" + label + "»"} className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:justify-start md:border-b-0 md:border-r md:px-0 md:pb-3 md:pt-3.5">
-      <ChevronDown size={14} className="shrink-0" />
-      <span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-400 md:[writing-mode:vertical-rl] md:rotate-180">{label}</span>
-      <span className="text-[11px] font-bold tabular-nums text-neutral-500">{count}</span>
-    </button>
+  const FoldStrip = ({ k, label, count, onOpen }) => (
+    <div className="min-w-0 border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
+      <button onClick={onOpen || (() => setFoldK(k, false))} title={"Развернуть «" + label + "»"} className="flex w-full items-center gap-2 text-left">
+        <span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">{label}</span>
+        {count !== "" && count != null && <span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{count}</span>}
+        <span className="ml-auto flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} /></span>
+      </button>
+    </div>
   );
   const foldBtn = (k) => <button onClick={() => setFoldK(k, true)} title="Свернуть" className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button>;
   const tileChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; return { txt: "до " + j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: inWindow(j) ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-600" }; };
@@ -7835,15 +7837,11 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       )}
 
       {/* колонки */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ "--n": Math.max(1, [showOps, showProj, showProd, showPur].filter(Boolean).length) }}>
         {showOps && (opsStrip ? (
-          <button onClick={() => { setOpsOpen(true); setFoldK("ops", false); }} title="Развернуть «Операционные»" className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:justify-start md:border-b-0 md:border-r md:px-0 md:pb-3 md:pt-3.5">
-            <ChevronDown size={14} className="shrink-0" />
-            <span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-400 md:[writing-mode:vertical-rl] md:rotate-180">Операционные</span>
-            {myOpsToday.length > 0 && <span className="text-[11px] font-bold tabular-nums text-neutral-500">{opsDoneCount}/{myOpsToday.length}</span>}
-          </button>
+          <FoldStrip k="ops" label="Операционные" count={myOpsToday.length > 0 ? `${opsDoneCount}/${myOpsToday.length}` : ""} onOpen={() => { setOpsOpen(true); setFoldK("ops", false); }} />
         ) : (
-          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[300px] md:flex-none md:border-b-0 md:border-r">
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
             <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Операционные</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{opsPending.length === 0 ? `${opsDoneCount}/${myOpsToday.length}` : opsPending.length}</span>
               <button onClick={() => { setOpsOpen(false); setFoldK("ops", true); }} title="Свернуть" className="ml-auto flex h-[22px] w-[22px] items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button></div>
             {myOpsToday.length === 0 ? (
@@ -7861,15 +7859,15 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         ))}
 
         {showProj && (fold.project ? <FoldStrip k="project" label="Проектные" count={projList.length} /> : (
-          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[560px] md:flex-none md:border-b-0 md:border-r">
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
             {colHead("project", "Проектные", projList.length)}
-            {projList.length > 0 && <div className="grid grid-cols-2 gap-2">{projList.map((j) => <ProjTile key={j.id} j={j} />)}</div>}
+            {projList.length > 0 && <div className="grid grid-cols-1 gap-2">{projList.map((j) => <ProjTile key={j.id} j={j} />)}</div>}
             {projList.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
           </div>
         ))}
 
         {showProd && (fold.product ? <FoldStrip k="product" label="Товары" count={prodGroups.length} /> : (
-          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:min-w-[300px] md:flex-1 md:border-b-0 md:border-r">
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
             {colHead("product", "Товары", prodGroups.length)}
             {prodGroups.map((g) => renderGroup(g))}
             {prodGroups.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
@@ -7878,7 +7876,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         ))}
 
         {showPur && (fold.purchase ? <FoldStrip k="purchase" label="Закупки" count={purList.length} /> : (
-          <div className="min-w-0 p-3.5 md:min-w-[300px] md:flex-1">
+          <div className="min-w-0 p-3.5">
             {colHead("purchase", "Закупки", purList.length)}
             {purList.map((j) => <JobCard key={j.id} j={j} main={isMain(j)} />)}
             {purList.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
