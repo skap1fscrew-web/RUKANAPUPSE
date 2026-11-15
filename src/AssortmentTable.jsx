@@ -567,6 +567,7 @@ function normCycleTriggers(arr) {
     priority: (r.priority === "high" || r.priority === "med" || r.priority === "low") ? r.priority : null,
     assignee: r.assignee || null,
     hasDate: !!r.hasDate,
+    dateFrom: r.dateFrom === "end" ? "end" : "start",
     durDays: Math.max(1, parseInt(r.durDays) || 1),
   }));
 }
@@ -589,12 +590,21 @@ function cycleTriggersFromCycle(cyc) {
 }
 
 // даты задачи этапа: старт = плановое начало этапа, дедлайн = старт + длительность задачи
-function stageTaskDates(bc, stageId, durDays) {
-  const dts = cycleStageDates(bc && bc.startDate, (bc && bc.stages) || []);
+// даты задачи по триггеру этапа партии. Всегда от факта: начало этапа = факт окончания предыдущего
+// (у первого — старт цикла), конец этапа = его факт. Если факта ещё нет — берётся плановая дата.
+// from: "start" — старт задачи = начало этапа, "end" — старт задачи = конец этапа
+function stageTaskDates(bc, stageId, durDays, from = "start") {
+  const stages = (bc && bc.stages) || [];
+  const dts = cycleStageDates(bc && bc.startDate, stages);
   const sd = dts[stageId]; if (!sd) return { start: null, date: null };
-  const e = new Date(sd.start); e.setDate(e.getDate() + Math.max(1, parseInt(durDays) || 1) - 1);
+  const idx = stages.findIndex((x) => x.id === stageId);
+  const cur = stages[idx], prev = idx > 0 ? stages[idx - 1] : null;
+  const startISO = prev && prev.actualDate ? prev.actualDate : sd.startISO;
+  const endISO = cur && cur.actualDate ? cur.actualDate : sd.endISO;
+  const base = from === "end" ? endISO : startISO;
+  const e = new Date(base + "T00:00:00"); e.setDate(e.getDate() + Math.max(1, parseInt(durDays) || 1) - 1);
   const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
-  return { start: sd.startISO, date: iso(e) };
+  return { start: base, date: iso(e) };
 }
 
 const DEFAULT_METRICS_BY_GROUP = Object.fromEntries(
@@ -1215,7 +1225,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     const newJobs = []; const firedKeys = [];
     rules.forEach((r) => {
       const title = String(r.text).replace(/\{партия\}/g, b.name || "партия");
-      const dd = r.hasDate ? stageTaskDates(b.cycle, stageId, r.durDays) : { start: null, date: null };
+      const dd = r.hasDate ? stageTaskDates(b.cycle, stageId, r.durDays, r.dateFrom) : { start: null, date: null };
       const common = { date: dd.date, start: dd.start, done: false, labelId: null, priority: r.priority || "low", assignee: r.assignee || null, tags: [], stage: "wait", checklist: [], note: `Партия: «${b.name || ""}»`, createdAt: isoYMD(new Date()) };
       if (r.scope === "product") (b.items || []).forEach((it) => {
         const jt = String(title).trim();
@@ -9795,7 +9805,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
 
   // --- задачи по триггерам (этап партии / произв. цикл) ---
   // новое правило создаётся ВЫКЛЮЧЕННЫМ и РАСКРЫТЫМ
-  const addCycleTrigger = () => { const id = uid(); setCycleTriggers((list) => [...(list || []), { id, enabled: false, stageId: (cycStages[0] && cycStages[0].id) || "", when: "enter", scope: "product", text: "", priority: "low", assignee: null, hasDate: false, durDays: 1 }]); setTrgOpen((o) => ({ ...o, [id]: true })); };
+  const addCycleTrigger = () => { const id = uid(); setCycleTriggers((list) => [...(list || []), { id, enabled: false, stageId: (cycStages[0] && cycStages[0].id) || "", when: "enter", scope: "product", text: "", priority: "low", assignee: null, hasDate: false, dateFrom: "start", durDays: 1 }]); setTrgOpen((o) => ({ ...o, [id]: true })); };
   const patchCycleTrigger = (id, p) => setCycleTriggers((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
   const removeCycleTrigger = (id) => setCycleTriggers((list) => (list || []).filter((r) => r.id !== id));
   // сводка-чип и имена для свёрнутых строк правил
@@ -10143,7 +10153,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                           <select value={r.assignee || ""} onChange={(e) => patchCycleTrigger(r.id, { assignee: e.target.value || null })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none"><option value="">—</option>{(taskPeople || []).map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}</select>
                         </label>
                         <label className="inline-flex items-center gap-1.5">дата:
-                          <select value={r.hasDate ? "date" : "none"} onChange={(e) => patchCycleTrigger(r.id, { hasDate: e.target.value === "date" })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none" title="Старт задачи = начало этапа (попадёт на гант)"><option value="none">без даты</option><option value="date">от начала этапа</option></select>
+                          <select value={r.hasDate ? (r.dateFrom === "end" ? "end" : "start") : "none"} onChange={(e) => patchCycleTrigger(r.id, e.target.value === "none" ? { hasDate: false } : { hasDate: true, dateFrom: e.target.value })} className="rounded-md border border-neutral-200 bg-white px-1.5 py-1 focus:outline-none" title="Всегда от фактической даты: начало этапа = конец предыдущего, конец этапа = его факт. Пока факта нет — берётся план. Задача попадёт на гант"><option value="none">без даты</option><option value="start">от начала этапа</option><option value="end">от конца этапа</option></select>
                         </label>
                         {r.hasDate && (
                           <label className="inline-flex items-center gap-1.5">длительность:
