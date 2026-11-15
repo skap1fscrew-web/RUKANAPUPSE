@@ -7861,7 +7861,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         {showProj && (fold.project ? <FoldStrip k="project" label="Проектные" count={projList.length} /> : (
           <div className="min-w-0 border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
             {colHead("project", "Проектные", projList.length)}
-            {projList.length > 0 && <div className="grid grid-cols-1 gap-2">{projList.map((j) => <ProjTile key={j.id} j={j} />)}</div>}
+            {projList.length > 0 && <div className="grid grid-cols-2 gap-2">{projList.map((j) => <ProjTile key={j.id} j={j} />)}</div>}
             {projList.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
           </div>
         ))}
