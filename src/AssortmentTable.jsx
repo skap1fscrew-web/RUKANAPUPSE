@@ -2026,53 +2026,9 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
 
-      {/* Верхняя шапка */}
-      <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-1.5 text-sm">
-        <div className="flex min-w-0 flex-1 items-center gap-3 pr-4">
-          <img src={rnpLogo} alt="РНП про" className="h-8 w-auto shrink-0" />
-          {mq.on && mq.text.split("\n").map((x) => x.trim()).filter(Boolean).length > 0 && (() => {
-            const ph = mq.text.split("\n").map((x) => x.trim()).filter(Boolean);
-            const w = ph.reduce((a, x) => a + x.length * 9 + 44, 0);
-            const rep = Math.max(1, Math.ceil(2600 / w));
-            const half = Array.from({ length: rep }).flatMap(() => ph);
-            const dur = Math.max(12, (w * rep) / (40 + mq.speed * 30));
-            const row = (k) => <span key={k} className="inline-flex shrink-0 items-center">{half.map((x, i) => <span key={i} className="inline-flex items-center"><span className="font-semibold text-neutral-700">{x}</span><span className="mx-5 text-[9px] text-blue-600">●</span></span>)}</span>;
-            return (
-              <div className="rnp-mq min-w-0 flex-1 overflow-hidden whitespace-nowrap">
-                <div className="rnp-mq-track inline-flex" style={{ animationDuration: dur + "s" }}>{row(0)}{row(1)}</div>
-              </div>
-            );
-          })()}
-        </div>
-        <div className="relative">
-          <button onClick={() => setProfileMenuOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-2.5 hover:bg-neutral-50">
-            <PersonAvatar p={myProfile} size={26} />
-            <span className="text-[13px] font-medium text-neutral-800">{myProfile ? profileLabel(myProfile) : "Профиль"}</span>
-            <ChevronDown size={13} className="text-neutral-400" />
-          </button>
-          {profileMenuOpen && (
-            <>
-              <button className="fixed inset-0 z-[70] cursor-default" onClick={() => setProfileMenuOpen(false)} aria-label="Закрыть меню" />
-              <div className="absolute right-0 top-10 z-[71] w-60 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
-                <div className="mb-1.5 flex items-center gap-2.5 border-b border-neutral-100 px-2 pb-2.5 pt-1">
-                  <PersonAvatar p={myProfile} size={34} />
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold text-neutral-800">{myProfile ? profileLabel(myProfile) : "Профиль"}</div>
-                    <div className="truncate text-[11px] text-neutral-400">{userEmail}</div>
-                  </div>
-                </div>
-                <button onClick={() => { setProfileMenuOpen(false); setMyProfileOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[13px] text-neutral-700 hover:bg-neutral-50"><Settings2 size={15} className="text-neutral-400" />Мой профиль</button>
-                <div className="my-1 h-px bg-neutral-100" />
-                <button onClick={() => { setProfileMenuOpen(false); onSignOut && onSignOut(); }} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[13px] font-medium text-red-600 hover:bg-red-50"><LogOut size={15} />Выйти</button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
       <div className="mx-auto max-w-full px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-3">
         {/* Шапка */}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-3">
             <div className="rounded-xl inline-flex border border-neutral-200 bg-white p-1">
               {navShown.map((t) => {
@@ -2167,6 +2123,19 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               </div>
             )}
           </div>
+        {mq.on && mq.text.split("\n").map((x) => x.trim()).filter(Boolean).length > 0 && (() => {
+            const ph = mq.text.split("\n").map((x) => x.trim()).filter(Boolean);
+            const w = ph.reduce((a, x) => a + x.length * 9 + 44, 0);
+            const rep = Math.max(1, Math.ceil(2600 / w));
+            const half = Array.from({ length: rep }).flatMap(() => ph);
+            const dur = Math.max(12, (w * rep) / (40 + mq.speed * 30));
+            const row = (k) => <span key={k} className="inline-flex shrink-0 items-center">{half.map((x, i) => <span key={i} className="inline-flex items-center"><span className="font-semibold text-neutral-700">{x}</span><span className="mx-5 text-[9px] text-blue-600">●</span></span>)}</span>;
+            return (
+              <div className="rnp-mq min-w-[120px] flex-1 overflow-hidden whitespace-nowrap" style={{ WebkitMaskImage: "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)", maskImage: "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)" }}>
+                <div className="rnp-mq-track inline-flex" style={{ animationDuration: dur + "s" }}>{row(0)}{row(1)}</div>
+              </div>
+            );
+          })()}
           <div className="flex items-center gap-2">
             {activeTab !== "base" && hasExpandable && products.length > 0 && (
               <button onClick={allOpen ? collapseAll : expandAll} className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
@@ -2187,6 +2156,30 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex items-center gap-1.5 border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Settings2 size={15} /> Настройки
             </button>
+        <div className="relative">
+          <button onClick={() => setProfileMenuOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white py-0.5 pl-0.5 pr-2.5 hover:bg-neutral-50">
+            <PersonAvatar p={myProfile} size={26} />
+            <span className="text-[13px] font-medium text-neutral-800">{myProfile ? profileLabel(myProfile) : "Профиль"}</span>
+            <ChevronDown size={13} className="text-neutral-400" />
+          </button>
+          {profileMenuOpen && (
+            <>
+              <button className="fixed inset-0 z-[70] cursor-default" onClick={() => setProfileMenuOpen(false)} aria-label="Закрыть меню" />
+              <div className="absolute right-0 top-10 z-[71] w-60 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
+                <div className="mb-1.5 flex items-center gap-2.5 border-b border-neutral-100 px-2 pb-2.5 pt-1">
+                  <PersonAvatar p={myProfile} size={34} />
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-semibold text-neutral-800">{myProfile ? profileLabel(myProfile) : "Профиль"}</div>
+                    <div className="truncate text-[11px] text-neutral-400">{userEmail}</div>
+                  </div>
+                </div>
+                <button onClick={() => { setProfileMenuOpen(false); setMyProfileOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[13px] text-neutral-700 hover:bg-neutral-50"><Settings2 size={15} className="text-neutral-400" />Мой профиль</button>
+                <div className="my-1 h-px bg-neutral-100" />
+                <button onClick={() => { setProfileMenuOpen(false); onSignOut && onSignOut(); }} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[13px] font-medium text-red-600 hover:bg-red-50"><LogOut size={15} />Выйти</button>
+              </div>
+            </>
+          )}
+        </div>
           </div>
         </div>
 
