@@ -7586,6 +7586,7 @@ function TrashPanel({ jobs, people = [], products = [], trashProducts = [], tras
 
 function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], myId = null, now, onUpdateJob, onOpen, focusLine = "", onFocusLine }) {
   const [pickOpen, setPickOpen] = useState(false);
+  const [pickType, setPickType] = useState(null); // тип колонки, в которую добавляем задачи через «＋»
   const [eyeOpen, setEyeOpen] = useState(false);
   const [pickSel, setPickSel] = useState([]);
   const [pickQ, setPickQ] = useState("");
@@ -7641,27 +7642,35 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const dueTodayCount = (jobs || []).filter((j) => mine(j) && j.date === todayStr && stageOf(j) !== "done").length;
   const opPct = myOpsToday.length ? Math.round((opsDoneCount / myOpsToday.length) * 360) : 0;
 
-  // — новая раскладка: Операционные → Горит (все типы: есть срок и начало уже наступило) → Главное ★ (закреплённые вручную) —
-  const isMain = (j) => !!(j.pinned || j.focus);
+  // — четыре колонки: Операционные / Проектные / Товары / Закупки; в каждой своя сортировка —
+  const isMain = (j) => !!(j.pinned || j.focus); // добавлено вручную через «＋»
   const allOpen = (jobs || []).filter((j) => !j.opId && mine(j) && stageOf(j) !== "done");
   const dateKey = (j) => j.date || "9999-99-99";
-  const mainList = allOpen.filter(isMain).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
-  const limISO = isoYMD(new Date(y, m, d + 3));
-  const hotAll = allOpen.filter((j) => j.date && (!j.start || j.start <= todayStr));
-  const hotList = (onlyOver ? hotAll.filter(isOver) : hotAll).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
-  const hotGroupsMap = {};
-  hotList.filter((j) => jobType(j) === "product").forEach((j) => { const t = stripProdSuffix(j.title, prodById[j.productId]?.name) || "Задача"; (hotGroupsMap[t] = hotGroupsMap[t] || []).push(j); });
-  const hotEntries = [
-    ...hotList.filter((j) => jobType(j) !== "product").map((j) => ({ j, date: dateKey(j) })),
-    ...Object.entries(hotGroupsMap).map(([title, list]) => ({ g: { title, list, maxOver: Math.max(0, ...list.map((j) => (dueBadge(j)?.over ? dueBadge(j).dd : 0))), hasOver: list.some((j) => dueBadge(j)?.over) }, date: list.reduce((mn, j) => (dateKey(j) < mn ? dateKey(j) : mn), "9999-99-99") })),
-  ].sort((a, b) => a.date.localeCompare(b.date));
+  // сегодня между началом и сроком (не просрочено)
+  const inWindow = (j) => !!j.date && j.date >= todayStr && (!j.start || j.start <= todayStr);
+  // номер группы сортировки: 0 просрочено, 1 идёт по датам, 2+ приоритет (у проектных — по статусу и молнии), 9 — добавлено вручную; null — не показывается
+  const tierOf = (j, type) => {
+    if (isOver(j)) return 0;
+    if (inWindow(j)) return 1;
+    if (j.priority === "high") {
+      if (type === "project") { const prog = stageOf(j) === "progress"; const z = j.mark === "urgent"; return prog ? (z ? 2 : 3) : (z ? 4 : 5); }
+      return 2;
+    }
+    return isMain(j) ? 9 : null;
+  };
+  const cmpJobs = (a, b) => dateKey(a).localeCompare(dateKey(b)) || (a.title || "").localeCompare(b.title || "");
+  const buildCol = (type) => allOpen.filter((j) => jobType(j) === type).map((j) => ({ j, t: tierOf(j, type) })).filter((x) => x.t !== null && (!onlyOver || x.t === 0)).sort((a, b) => a.t - b.t || cmpJobs(a.j, b.j)).map((x) => x.j);
+  const groupList = (list) => { const map = new Map(); list.forEach((j) => { const t = stripProdSuffix(j.title, prodById[j.productId]?.name) || "Задача"; if (!map.has(t)) map.set(t, []); map.get(t).push(j); }); return [...map.entries()].map(([title, l]) => ({ title, list: l, maxOver: Math.max(0, ...l.map((j) => (dueBadge(j)?.over ? dueBadge(j).dd : 0))), hasOver: l.some((j) => dueBadge(j)?.over) })); };
+  const projList = buildCol("project");
+  const prodGroups = groupList(buildCol("product"));
+  const purList = buildCol("purchase");
   const typeBadge = (j) => TASK_TYPE_META.find((x) => x.key === jobType(j)) || TASK_TYPE_META[2];
   const TypeIco = ({ j, size = 22 }) => { const tb = typeBadge(j); const Ic = tb.Icon; return <span title={tb.label} style={{ background: tb.bg, color: tb.tint, width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-md"><Ic size={Math.round(size * 0.58)} /></span>; };
   const dueChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; if (dd === 1) return { txt: "завтра", cls: "bg-orange-100 text-orange-700" }; if (dd <= 3) return { txt: `через ${dd} дн`, cls: "bg-orange-100 text-orange-700" }; return { txt: j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: "bg-neutral-100 text-neutral-500" }; };
   const setMain = (j, on) => onUpdateJob({ ...j, pinned: on, ...(on ? {} : { focus: false }) });
-  const pickCands = allOpen.filter((j) => !isMain(j)).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b));
+  const pickCands = pickType ? allOpen.filter((j) => jobType(j) === pickType && tierOf(j, pickType) === null).sort((a, b) => dateKey(a).localeCompare(dateKey(b)) || sortP(a, b)) : [];
   const pickList = pickCands.filter((j) => !pickQ.trim() || (j.title || "").toLowerCase().includes(pickQ.trim().toLowerCase())).slice(0, 200);
-  const addToMain = () => { const sel = allOpen.filter((j) => pickSel.includes(j.id)); sel.forEach((j) => onUpdateJob({ ...j, pinned: true })); setPickSel([]); setPickOpen(false); setPickQ(""); if (sel.length) flash(`В «Главное» добавлено: ${sel.length}`); };
+  const addToMain = () => { const sel = allOpen.filter((j) => pickSel.includes(j.id)); sel.forEach((j) => onUpdateJob({ ...j, pinned: true })); setPickSel([]); setPickType(null); setPickQ(""); if (sel.length) flash(`В Фокус добавлено: ${sel.length}`); };
   const JobCard = ({ j, main = false }) => {
     const dc = dueChip(j); const st = STAGES[stageOf(j)]; const pr = (people || []).find((q) => q.id === j.assignee);
     return (
@@ -7735,7 +7744,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     );
   };
 
-  const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "proj", label: "Горит", dot: "#ef4444" }, { k: "prod", label: "Главное ★", dot: "#e11d48" }];
+  const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "project", label: "Проектные", dot: "#7c3aed" }, { k: "product", label: "Товары", dot: "#ea580c" }, { k: "purchase", label: "Закупки", dot: "#0891b2" }];
   const FoldStrip = ({ k, label, count }) => (
     <button onClick={() => setFoldK(k, false)} title={"Развернуть «" + label + "»"} className="flex items-center justify-center gap-2.5 border-b border-neutral-100 px-3 py-2.5 text-neutral-400 hover:bg-neutral-50 md:w-[42px] md:flex-none md:flex-col md:justify-start md:border-b-0 md:border-r md:px-0 md:pb-3 md:pt-3.5">
       <ChevronDown size={14} className="shrink-0" />
@@ -7744,8 +7753,28 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     </button>
   );
   const foldBtn = (k) => <button onClick={() => setFoldK(k, true)} title="Свернуть" className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><ChevronDown size={14} className="rotate-180" /></button>;
+  const tileChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} дн`, cls: "bg-red-100 text-red-700" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; return { txt: "до " + j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: inWindow(j) ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-600" }; };
+  const ProjTile = ({ j }) => {
+    const manual = isMain(j); const t = tierOf(j, "project"); const chip = tileChip(j); const st = STAGES[stageOf(j)];
+    return (
+      <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 ? "border-red-200 bg-red-50/60" : t === 1 ? "border-blue-200 bg-blue-50/50" : manual ? "border-rose-300 bg-white" : "border-neutral-200 bg-white")}>
+        <span className="line-clamp-3 pr-4 text-[12.5px] font-bold leading-snug text-neutral-800">{j.title}</span>
+        <div className="mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold">
+          {chip ? <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span> : (<>
+            {j.priority === "high" && <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-red-500" />}
+            {manual && !j.priority && <span className="text-rose-600">◎</span>}
+            <span className="truncate font-bold text-neutral-400">{manual && j.priority !== "high" ? "добавлено вами" : st ? st.label.toLowerCase() : ""}</span>
+          </>)}
+          {j.mark === "urgent" && <span className="ml-auto text-[12px]">⚡</span>}
+        </div>
+        <button onClick={(e) => { e.stopPropagation(); setMain(j, !manual); }} title={manual ? "Убрать из добавленных" : "Закрепить"} className={"absolute right-1.5 top-1.5 transition " + (manual ? "text-rose-600" : "text-neutral-300 opacity-0 hover:text-rose-400 group-hover:opacity-100")}><Target size={12} /></button>
+      </div>
+    );
+  };
+  const AddBtn = ({ type }) => <button onClick={() => { setPickType(type); setPickSel([]); setPickQ(""); }} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-rose-200 bg-rose-50/40 py-2 text-[12px] font-bold text-rose-700 transition hover:bg-rose-50"><Plus size={13} />добавить</button>;
+  const colHead = (k, label, count) => <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">{label}</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{count}</span><span className="ml-auto" />{foldBtn(k)}</div>;
   const opsStrip = !!fold.ops || (opsPending.length === 0 && !opsOpen);
-  const showOps = !hidden.includes("ops"), showProj = !hidden.includes("proj"), showProd = !hidden.includes("prod");
+  const showOps = !hidden.includes("ops"), showProj = !hidden.includes("project"), showProd = !hidden.includes("product"), showPur = !hidden.includes("purchase");
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white">
@@ -7811,49 +7840,55 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
           </div>
         ))}
 
-        {showProj && (fold.proj ? <FoldStrip k="proj" label="Горит" count={hotList.length} /> : (
-          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[460px] md:flex-none md:border-b-0 md:border-r">
-            <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Горит</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{hotList.length}</span><span className="ml-auto" />{foldBtn("proj")}</div>
-            {hotEntries.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных задач нет" : "Горящих задач нет 🎉"}</div>
-            ) : hotEntries.map((en) => en.g ? renderGroup(en.g) : <JobCard key={en.j.id} j={en.j} main={isMain(en.j)} />)}
+        {showProj && (fold.project ? <FoldStrip k="project" label="Проектные" count={projList.length} /> : (
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:w-[430px] md:flex-none md:border-b-0 md:border-r">
+            {colHead("project", "Проектные", projList.length)}
+            {projList.length > 0 && <div className="grid grid-cols-2 gap-2">{projList.map((j) => <ProjTile key={j.id} j={j} />)}</div>}
+            {projList.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
+            <AddBtn type="project" />
           </div>
         ))}
 
-        {showProd && (fold.prod ? <FoldStrip k="prod" label="Главное ★" count={mainList.length} /> : (
-          <div className="min-w-0 p-3.5 md:w-[460px] md:flex-none">
-            <div className="relative mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">Главное ★</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{mainList.length}</span>
-              <button onClick={() => setPickOpen((v) => !v)} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition " + (pickOpen ? "border-rose-300 bg-rose-100 text-rose-700" : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100")}><Plus size={12} />добавить</button>
-              {foldBtn("prod")}
-              {pickOpen && (<>
-                <div className="fixed inset-0 z-20" onClick={() => setPickOpen(false)} />
-                <div className="absolute right-0 top-9 z-30 w-[400px] max-w-[92vw] rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl">
-                  <div className="mb-2 flex items-center text-[13px] font-extrabold text-neutral-800">Добавить в «Главное»<button onClick={() => setPickOpen(false)} className="ml-auto text-neutral-300 hover:text-neutral-600"><X size={14} /></button></div>
-                  <input value={pickQ} onChange={(e) => setPickQ(e.target.value)} placeholder="Поиск по задачам…" className="mb-1.5 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[12.5px] outline-none focus:ring-2 focus:ring-rose-200" />
-                  <div className="max-h-[320px] overflow-y-auto">
-                    {pickList.length === 0 && <div className="py-4 text-center text-[12px] text-neutral-400">Нет подходящих задач</div>}
-                    {pickList.map((j) => (
-                      <label key={j.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1.5 text-[12.5px] font-semibold text-neutral-700 hover:bg-neutral-50">
-                        <input type="checkbox" checked={pickSel.includes(j.id)} onChange={() => setPickSel((s) => s.includes(j.id) ? s.filter((x) => x !== j.id) : [...s, j.id])} className="h-4 w-4 accent-rose-600" />
-                        <TypeIco j={j} size={20} />
-                        <span className="min-w-0 flex-1 truncate">{stripProdSuffix(j.title, prodById[j.productId]?.name)}</span>
-                        <span className="text-[10.5px] font-bold text-neutral-400">{dueChip(j) ? dueChip(j).txt : ""}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex items-center border-t border-neutral-100 pt-2.5">
-                    <span className="text-[11.5px] text-neutral-500">Выбрано: {pickSel.length}</span>
-                    <button onClick={addToMain} disabled={!pickSel.length} className="ml-auto rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700 disabled:opacity-40">Добавить</button>
-                  </div>
-                </div>
-              </>)}
-            </div>
-            {mainList.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center text-[12px] text-neutral-400">Здесь ваши главные задачи. Нажмите «добавить» или ★ на любой карточке.</div>
-            ) : mainList.map((j) => <JobCard key={j.id} j={j} main />)}
+        {showProd && (fold.product ? <FoldStrip k="product" label="Товары" count={prodGroups.length} /> : (
+          <div className="min-w-0 border-b border-neutral-100 p-3.5 md:min-w-[300px] md:flex-1 md:border-b-0 md:border-r">
+            {colHead("product", "Товары", prodGroups.length)}
+            {prodGroups.map((g) => renderGroup(g))}
+            {prodGroups.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
+            <AddBtn type="product" />
+          </div>
+        ))}
+
+        {showPur && (fold.purchase ? <FoldStrip k="purchase" label="Закупки" count={purList.length} /> : (
+          <div className="min-w-0 p-3.5 md:min-w-[300px] md:flex-1">
+            {colHead("purchase", "Закупки", purList.length)}
+            {purList.map((j) => <JobCard key={j.id} j={j} main={isMain(j)} />)}
+            {purList.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
+            <AddBtn type="purchase" />
           </div>
         ))}
       </div>
+      {pickType && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/25 p-4" onClick={() => setPickType(null)}>
+          <div className="w-[420px] max-w-full rounded-2xl border border-neutral-200 bg-white p-3.5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center text-[13px] font-extrabold text-neutral-800">Добавить в Фокус · {(COLS.find((c) => c.k === pickType) || {}).label}<button onClick={() => setPickType(null)} className="ml-auto text-neutral-300 hover:text-neutral-600"><X size={14} /></button></div>
+            <input autoFocus value={pickQ} onChange={(e) => setPickQ(e.target.value)} placeholder="Поиск по задачам…" className="mb-1.5 w-full rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[12.5px] outline-none focus:ring-2 focus:ring-rose-200" />
+            <div className="max-h-[320px] overflow-y-auto">
+              {pickList.length === 0 && <div className="py-4 text-center text-[12px] text-neutral-400">Нет подходящих задач</div>}
+              {pickList.map((j) => (
+                <label key={j.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1.5 text-[12.5px] font-semibold text-neutral-700 hover:bg-neutral-50">
+                  <input type="checkbox" checked={pickSel.includes(j.id)} onChange={() => setPickSel((x) => x.includes(j.id) ? x.filter((y2) => y2 !== j.id) : [...x, j.id])} className="h-4 w-4 accent-rose-600" />
+                  <span className="min-w-0 flex-1 truncate">{stripProdSuffix(j.title, prodById[j.productId]?.name)}</span>
+                  <span className="text-[10.5px] font-bold text-neutral-400">{j.date ? j.date.slice(8, 10) + "." + j.date.slice(5, 7) : ""}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center border-t border-neutral-100 pt-2.5">
+              <span className="text-[11.5px] text-neutral-500">Выбрано: {pickSel.length}</span>
+              <button onClick={addToMain} disabled={!pickSel.length} className="ml-auto rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700 disabled:opacity-40">Добавить</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
