@@ -2102,7 +2102,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                 </div>
               )}
             </div>
-            <span className="text-sm text-neutral-400">{activeTab === "duties" ? `${(duties.functions || []).filter((f) => !f.deletedAt).length} функций` : activeTab === "assortment" ? `${filteredProducts.length} товаров` : ""}</span>
+            <span className="text-sm text-neutral-400">{activeTab === "duties" ? `${(duties.functions || []).filter((f) => !f.deletedAt).length} функций` : ""}</span>
             {activeTab === "assortment" && (
               (prodSearchOpen || codeFilter) ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5 py-1.5" style={{ width: 230 }}>
