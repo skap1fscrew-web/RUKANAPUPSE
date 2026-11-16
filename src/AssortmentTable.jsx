@@ -2020,10 +2020,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
   return (
     <div
-      style={{ fontFamily: '"Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', minHeight: (100 / uiZoom) + "vh" }}
+      style={{ fontFamily: '"Manrope", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', minHeight: (100 / uiZoom) + "vh" }}
       className="w-full bg-neutral-100 text-neutral-900"
     >
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
 
       <div className="mx-auto max-w-full px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-3">
