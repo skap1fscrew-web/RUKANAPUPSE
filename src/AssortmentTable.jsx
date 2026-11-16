@@ -7807,11 +7807,11 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   return (
     <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white">
       {/* шапка: ФОКУС + строка фокуса, счётчики, меню групп */}
-      <div className="relative flex items-center gap-3.5 rounded-t-[15px] bg-gradient-to-r from-[#e11d48] to-[#be123c] px-4" style={{ minHeight: 52 }}>
+      <div className="relative flex items-center gap-3.5 rounded-t-[15px] bg-gradient-to-r from-[#e11d48] to-[#be123c] px-4" style={{ minHeight: 42 }}>
         <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[14px] font-black tracking-wide text-white"><Target size={15} className="focus-pulse" />ФОКУС</span>
         {note && <span className="shrink-0 rounded-lg bg-neutral-900 px-2 py-0.5 text-[11px] font-semibold text-white">{note}</span>}
         <span className="h-[22px] w-px shrink-0 bg-white/35" />
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор…" className="min-w-0 flex-1 rounded-lg border-0 bg-transparent px-1.5 py-1 text-[20px] font-extrabold tracking-tight text-white outline-none ring-0 transition placeholder:font-semibold placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15 focus:outline-none focus:ring-0" />
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор…" className="min-w-0 flex-1 rounded-lg border-0 bg-transparent px-1.5 py-0.5 text-[18px] font-extrabold tracking-tight text-white outline-none ring-0 transition placeholder:font-semibold placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15 focus:outline-none focus:ring-0" />
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {overdueCount > 0 && <button onClick={() => setOnlyOver((v) => !v)} title="Показать только просроченные" className={"rounded-[10px] px-3 py-1.5 text-[13px] font-extrabold transition " + (onlyOver ? "bg-neutral-900 text-white" : "bg-white text-rose-700 hover:bg-rose-50")}>{overdueCount} просрочено ›</button>}
           <div className="relative">
