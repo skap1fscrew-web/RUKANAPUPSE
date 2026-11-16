@@ -7787,12 +7787,12 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const ProjTile = ({ j }) => {
     const manual = isMain(j); const t = tierOf(j, "project"); const isToday = t !== 0 && j.date === todayStr; const chip = null; const dueTxt = (t === 0 || isToday || !j.date || stageOf(j) === "done") ? null : "до " + j.date.slice(8, 10) + "." + j.date.slice(5, 7); const st = STAGES[stageOf(j)]; const overDays = t === 0 ? Math.round((new Date(todayStr) - new Date(j.date)) / 86400000) : 0;
     return (
-      <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 || j.priority === "high" ? "border-red-200 bg-red-50" : j.priority === "med" ? "border-amber-200 bg-amber-50" : "border-neutral-200 bg-neutral-100")}>
-        {t === 0 && <span className="absolute bottom-2 right-2 rounded-[7px] bg-[#e11d48] px-[9px] py-[3px] text-[11px] font-black leading-tight text-white">−{overDays} д</span>}
+      <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 ? "border-[#e11d48] bg-[#e11d48]" : isToday ? "border-amber-500 bg-amber-500" : j.priority === "high" ? "border-red-200 bg-red-50" : j.priority === "med" ? "border-amber-200 bg-amber-50" : "border-neutral-200 bg-neutral-100")}>
+        {t === 0 && <span className="absolute bottom-2 right-2 rounded-[7px] bg-white px-[9px] py-[3px] text-[11px] font-black leading-tight text-[#e11d48]">−{overDays} д</span>}
         {dueTxt && <span className="absolute bottom-2 right-2 rounded-[7px] bg-neutral-200 px-[9px] py-[3px] text-[11px] font-black leading-tight text-neutral-600">{dueTxt}</span>}
-        {isToday && <span className="absolute bottom-2 right-2 rounded-[7px] bg-amber-500 px-[9px] py-[3px] text-[11px] font-black leading-tight text-white">сегодня</span>}
-        <span className={"line-clamp-3 text-[13.5px] font-bold leading-snug text-neutral-800"}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
-        <div className={"mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold " + ((t === 0 || isToday || dueTxt) ? "pr-16" : "pr-5")}>
+        {isToday && <span className="absolute bottom-2 right-2 rounded-[7px] bg-white px-[9px] py-[3px] text-[11px] font-black leading-tight text-amber-700">сегодня</span>}
+        <span className={"line-clamp-3 text-[13.5px] font-bold leading-snug " + ((t === 0 || isToday) ? "text-white" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
+        <div className={"mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold " + ((t === 0 || isToday || dueTxt) ? "pr-16" : "pr-5") + ((t === 0 || isToday) ? " [&_svg]:stroke-white [&_svg]:opacity-80" : "")}>
           <StIcon st={stageOf(j)} />
           {chip && <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span>}
         </div>
