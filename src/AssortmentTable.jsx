@@ -7785,17 +7785,16 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     ? <span title="В процессе" className="inline-flex shrink-0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#a3a3a3" strokeWidth="2" strokeLinecap="round"><line x1="12.00" y1="6.80" x2="12.00" y2="3.00" opacity="0.31" /><line x1="14.60" y1="7.50" x2="16.50" y2="4.21" opacity="0.38" /><line x1="16.50" y1="9.40" x2="19.79" y2="7.50" opacity="0.44" /><line x1="17.20" y1="12.00" x2="21.00" y2="12.00" opacity="0.50" /><line x1="16.50" y1="14.60" x2="19.79" y2="16.50" opacity="0.56" /><line x1="14.60" y1="16.50" x2="16.50" y2="19.79" opacity="0.62" /><line x1="12.00" y1="17.20" x2="12.00" y2="21.00" opacity="0.69" /><line x1="9.40" y1="16.50" x2="7.50" y2="19.79" opacity="0.75" /><line x1="7.50" y1="14.60" x2="4.21" y2="16.50" opacity="0.81" /><line x1="6.80" y1="12.00" x2="3.00" y2="12.00" opacity="0.88" /><line x1="7.50" y1="9.40" x2="4.21" y2="7.50" opacity="0.94" /><line x1="9.40" y1="7.50" x2="7.50" y2="4.21" opacity="1.00" /></svg></span>
     : <span title="Ожидает" className="inline-flex shrink-0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#a3a3a3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span>;
   const ProjTile = ({ j }) => {
-    const t = tierOf(j, "project"); const isToday = t !== 0 && j.date === todayStr; const done = stageOf(j) === "done";
-    const overDays = t === 0 ? Math.round((new Date(todayStr) - new Date(j.date)) / 86400000) : 0;
-    const dayWord = (n) => (n % 10 === 1 && n % 100 !== 11 ? "день" : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "дня" : "дней"));
-    const lbl = t === 0 ? `−${overDays} ${dayWord(overDays)}` : isToday ? "сегодня" : (j.date && !done ? j.date.slice(8, 10) + "." + j.date.slice(5, 7) : "");
-    const pal = t === 0 ? { bg: "#CF364C", ft: "#99162F", dark: true } : isToday ? { bg: "#FF9F40", ft: "#D8741A", dark: true } : j.priority === "high" ? { bg: "#FBE9EB", ft: "#F7D1D9" } : j.priority === "med" ? { bg: "#FDEFE1", ft: "#FADCBF" } : { bg: "#F4F4F4", ft: "#E8E8E8" };
+    const manual = isMain(j); const t = tierOf(j, "project"); const isToday = t !== 0 && j.date === todayStr; const chip = null; const dueTxt = (t === 0 || isToday || !j.date || stageOf(j) === "done") ? null : "до " + j.date.slice(8, 10) + "." + j.date.slice(5, 7); const st = STAGES[stageOf(j)]; const overDays = t === 0 ? Math.round((new Date(todayStr) - new Date(j.date)) / 86400000) : 0;
     return (
-      <div onClick={() => onOpen(j)} className="group relative flex min-h-[88px] cursor-pointer flex-col overflow-hidden rounded-[16px] transition hover:shadow-sm" style={{ background: pal.bg }}>
-        <span className={"line-clamp-3 flex-1 px-3 pb-2 pt-2.5 text-[13.5px] font-bold leading-snug " + (pal.dark ? "text-white" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
-        <div className={"flex h-7 items-center justify-between px-3 text-[12.5px] font-extrabold " + (pal.dark ? "text-white [&_svg]:stroke-white [&_svg]:opacity-80" : "text-neutral-800")} style={{ background: pal.ft }}>
+      <div onClick={() => onOpen(j)} className={"group relative flex min-h-[88px] cursor-pointer flex-col rounded-xl border p-2.5 transition hover:shadow-sm " + (t === 0 ? "border-[#e11d48] bg-[#e11d48]" : isToday ? "border-amber-500 bg-amber-500" : j.priority === "high" ? "border-red-200 bg-red-50" : j.priority === "med" ? "border-amber-200 bg-amber-50" : "border-neutral-200 bg-neutral-100")}>
+        {t === 0 && <span className="absolute bottom-2 right-2 rounded-[7px] bg-white px-[9px] py-[3px] text-[11px] font-black leading-tight text-[#e11d48]">−{overDays} д</span>}
+        {dueTxt && <span className="absolute bottom-2 right-2 rounded-[7px] bg-neutral-200 px-[9px] py-[3px] text-[11px] font-black leading-tight text-neutral-600">{dueTxt}</span>}
+        {isToday && <span className="absolute bottom-2 right-2 rounded-[7px] bg-white px-[9px] py-[3px] text-[11px] font-black leading-tight text-amber-700">сегодня</span>}
+        <span className={"line-clamp-3 text-[13.5px] font-bold leading-snug " + ((t === 0 || isToday) ? "text-white" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
+        <div className={"mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold " + ((t === 0 || isToday || dueTxt) ? "pr-16" : "pr-5") + ((t === 0 || isToday) ? " [&_svg]:stroke-white [&_svg]:opacity-80" : "")}>
           <StIcon st={stageOf(j)} />
-          <span>{lbl}</span>
+          {chip && <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span>}
         </div>
       </div>
     );
