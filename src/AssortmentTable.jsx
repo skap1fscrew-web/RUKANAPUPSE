@@ -7364,15 +7364,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
   return (
     <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4" style={{ maxHeight: `calc(${zvh(100)} - 128px)` }}>
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
-        {(isBoard || view === "today" || focusMode) ? (
-          <h2 className="text-base font-semibold text-neutral-900">Задачи</h2>
-        ) : (
-          <>
-            <button onClick={prevM} className="rounded-lg flex h-7 w-7 items-center justify-center border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /></button>
-            <button onClick={nextM} className="rounded-lg flex h-7 w-7 items-center justify-center border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} /></button>
-            <h2 className="ml-1 text-base font-semibold capitalize text-neutral-900">{MONTHS_FULL[ym.m]} {ym.y}</h2>
-          </>
-        )}
+        <h2 className="text-base font-semibold text-neutral-900">Задачи</h2>
         <div className="ml-3 inline-flex rounded-lg bg-neutral-100 p-0.5" title="Быстрый фильтр по типу задачи">
           {TASK_TYPE_META.map(({ key, label, Icon, tint }) => { const on = fltType === key && !focusMode; return (
             <button key={key} title={label} onClick={() => { setFocusMode(false); setFltType(key); }} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
@@ -7473,7 +7465,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
           : view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
           : view === "today" ? <OpTodayView opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} people={people} now={now} onEditOp={onEditOp} />
-          : <GanttBoard jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} secDone={secDone} toggleSecDone={toggleSecDone} />}
+          : <GanttBoard onPrevM={prevM} onNextM={nextM} jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} secDone={secDone} toggleSecDone={toggleSecDone} />}
       </div>
     </div>
   );
@@ -8287,7 +8279,7 @@ function CalendarGrid({ jobs, products, ym, todayStr, labelColor, onAddOnDay, on
   );
 }
 
-function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob, onlyType = null, secDone = {}, toggleSecDone = () => {} }) {
+function GanttBoard({ onPrevM, onNextM, jobs, products, batches = [], people = [], opTypes, opDone, onToggleDone, onEditOp, ym, todayStr, labelColor, onAddJob, onOpen, onUpdateJob, onlyType = null, secDone = {}, toggleSecDone = () => {} }) {
   const productOnly = onlyType === "product";
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const LW = 320;      // ширина колонки с подписями
@@ -8616,7 +8608,11 @@ function GanttBoard({ jobs, products, batches = [], people = [], opTypes, opDone
 
         {/* шапка дней */}
         <div className="flex" style={{ height: 36 }}>
-          <div className="shrink-0" style={{ width: LW }} />
+          <div className="flex shrink-0 items-center gap-1.5 pl-1" style={{ width: LW }}>
+            <button onClick={onPrevM} title="Предыдущий месяц" className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /></button>
+            <button onClick={onNextM} title="Следующий месяц" className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><ChevronRight size={16} /></button>
+            <h2 className="ml-1 whitespace-nowrap text-base font-semibold capitalize text-neutral-900">{MONTHS_FULL[ym.m]} {ym.y}</h2>
+          </div>
           <div ref={timelineRef} className="flex shrink-0" style={{ width: timelineW }}>
             {Array.from({ length: daysInMonth }, (_, i) => {
               const d = new Date(ym.y, ym.m, i + 1);
