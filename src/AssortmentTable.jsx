@@ -694,7 +694,7 @@ function AssigneeAvatars({ j, personById, size = 20, ringAlways = false }) {
 const jobAuthor = (j, people) => {
   const c = (j && Array.isArray(j.log) ? j.log : []).find((e) => e && e.kind === "created");
   const by = c && c.by; if (!by || by === "system") return null;
-  const pr = (people || []).find((x) => x && (x.email === by || x.id === by));
+  const bl = String(by).toLowerCase(); const pr = (people || []).find((x) => x && (String(x.email || "").toLowerCase() === bl || x.id === by));
   if (!pr || jobAssignees(j).includes(pr.id)) return null;
   return pr;
 };
