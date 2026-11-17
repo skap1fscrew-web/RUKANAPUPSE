@@ -8148,12 +8148,17 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
   const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const open_ = !j.done && stageOf(j) !== "done" && !!j.date; const over = open_ && j.date < todayStr; const tdy = open_ && j.date === todayStr; const bright = over || tdy; const overDays = over ? Math.round((new Date(todayStr) - new Date(j.date)) / 86400000) : 0; const tone = over ? { bg: "#CF364C", bd: "#CF364C" } : tdy ? { bg: "#FF9F40", bd: "#FF9F40" } : j.priority === "high" ? { bg: "#fef2f2", bd: "#fecaca" } : j.priority === "med" ? { bg: "#fffbeb", bd: "#fde68a" } : { bg: "#f5f5f5", bd: "#e5e5e5" }; return (
     <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 transition hover:shadow-sm" style={{ background: tone.bg, border: `1px solid ${tone.bd}` }}>
       <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : bright ? "text-white" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, prod && prod.name) || "Без названия")}</div>
-      <div className={"flex flex-wrap items-center gap-1.5" + (bright ? " [&_svg]:stroke-white [&_svg]:opacity-90" : "")}>
-        {groupBy !== "status" && <StageIcon j={j} />}
-        {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
-        {bright && <span className={"ml-auto inline-flex items-center justify-center rounded-[7px] bg-white px-[10px] py-[5px] text-[11px] font-black leading-none " + (over ? "text-[#CF364C]" : "text-amber-700")}>{over ? "−" + overDays + " д" : "сегодня"}</span>}
-        {!bright && (prod || j.date) && <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-neutral-400">{prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-semibold text-neutral-500">{prod.code || "товар"}</span>}{j.date && fmtD(j.date)}</span>}
-        <AssigneeAvatars j={j} personById={personById} size={20} />
+      <div className={"grid min-h-[22px] grid-cols-[1fr_auto_1fr] items-center gap-1.5" + (bright ? " [&_svg]:stroke-white [&_svg]:opacity-90" : "")}>
+        <div className="flex min-w-0 items-center gap-1.5 justify-self-start">
+          {groupBy !== "status" && <StageIcon j={j} />}
+          {cl.length > 0 && <span className={"inline-flex items-center gap-1 text-[11px] font-semibold " + (bright ? "text-white" : cdone === cl.length ? "text-green-600" : "text-neutral-400")}><ListChecks size={12} />{cdone}/{cl.length}</span>}
+          {prod && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-semibold text-neutral-500">{prod.code || "товар"}</span>}
+        </div>
+        <div className="justify-self-center">
+          {bright ? <span className={"inline-flex items-center justify-center rounded-[7px] bg-white px-[10px] py-[5px] text-[11px] font-black leading-none " + (over ? "text-[#CF364C]" : "text-amber-700")}>{over ? "−" + overDays + " д" : "сегодня"}</span>
+            : j.date ? <span className="inline-flex items-center justify-center rounded-[7px] bg-white px-[10px] py-[5px] text-[11px] font-black leading-none text-neutral-700">{fmtD(j.date)}</span> : null}
+        </div>
+        <div className="justify-self-end"><AssigneeAvatars j={j} personById={personById} size={20} /></div>
       </div>
     </div>
   ); };
