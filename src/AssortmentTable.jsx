@@ -1205,7 +1205,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         const title = String(r.text).replace(/\{товар\}/g, p.name || "товар").replace(/\{статус\}/g, r.statusName);
         const type = r.taskType || "product";
         const exists = (jobs || []).some((j) => {
-          if (!j) return false;
+          if (!j || j.deletedAt) return false; // задачи из корзины дублями не считаются
           if (type === "product") return j.productId === p.id && (j.trgId === r.id || j.title === title);
           return jobType(j) !== "product" && j.title === title;
         });
@@ -1236,13 +1236,13 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       if (r.scope === "product") (b.items || []).forEach((it) => {
         const jt = String(title).trim();
         const legacy = `${jt} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
-        const dup = (jobs || []).some((j) => j && j.productId === it.productId && (j.title === jt || j.title === legacy)) || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
+        const dup = (jobs || []).some((j) => j && !j.deletedAt && j.productId === it.productId && (j.title === jt || j.title === legacy)) || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
         if (!dup) newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
       });
       else {
         // проектная задача с партией в названии (если её там ещё нет)
         const bn = String(b.name || "партия").trim(); const full = title.includes(bn) ? title : `${title} · ${bn}`;
-        const dup = (jobs || []).some((j) => j && j.batchId === b.id && (j.title === full || j.title === title)) || newJobs.some((j) => j.batchId === b.id && (j.title === full || j.title === title));
+        const dup = (jobs || []).some((j) => j && !j.deletedAt && j.batchId === b.id && (j.title === full || j.title === title)) || newJobs.some((j) => j.batchId === b.id && (j.title === full || j.title === title));
         if (!dup) newJobs.push({ id: uid(), title: full, type: "project", batchId: b.id, productId: null, ...common, log: [mkLog("created", {}, "system")] });
       }
       firedKeys.push(r.id);
