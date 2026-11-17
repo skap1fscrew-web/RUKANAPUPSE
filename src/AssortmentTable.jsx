@@ -8075,7 +8075,7 @@ function ProductTasksView({ jobs, products, onOpen }) {
         <div className="flex gap-3 overflow-x-auto pb-2">
           {taskRows.map(({ title, jobs: js }) => { const bp = groupPrio(js); const clr = (PRIORITIES[bp] || {}).color || "#cbd5e1"; return (
             <div key={title} className="flex w-[230px] shrink-0 flex-col rounded-xl border border-neutral-200 bg-neutral-50/40 p-2.5">
-              <div className="mb-2.5 flex min-h-[34px] items-center gap-2 rounded-[10px] bg-[#eeeef0] px-2.5 py-1.5"><div className="min-w-0 flex-1 text-[13px] font-extrabold leading-tight text-neutral-800">{title}</div><span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[11px] font-extrabold leading-none text-neutral-600">{js.length}</span></div>
+              <div className="mb-2.5 flex min-h-[34px] items-center gap-2 px-1 py-1.5"><div className="min-w-0 flex-1 text-[13.5px] font-extrabold leading-tight text-neutral-800">{title}</div><span className="shrink-0 rounded-full bg-neutral-200/70 px-2 py-0.5 text-[11px] font-extrabold leading-none text-neutral-600">{js.length}</span></div>
               <div className="flex flex-col gap-1.5">{sortProds(js).map((j) => prodCard(j))}</div>
             </div>
           ); })}
