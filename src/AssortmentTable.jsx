@@ -7378,6 +7378,11 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
             <button key={key} title={label} onClick={() => { setFocusMode(false); setFltType(key); }} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
           ); })}
         </div>
+        {!focusMode && <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
+          {viewOptions.map(([id, Icon, title]) => (
+              <button key={id} onClick={() => setView(id)} title={title} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Icon size={16} /></button>
+          ))}
+        </div>}
         <button onClick={() => setFocusMode((f) => !f)} title="Фокус — повестка на сегодня" className={"group inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-extrabold transition " + (focusMode ? "text-white shadow-[0_2px_8px_rgba(225,29,72,0.35)]" : "border border-neutral-200 text-neutral-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600")} style={focusMode ? { background: "#e11d48" } : undefined}><Target size={15} className={focusMode ? "" : "text-neutral-400 transition group-hover:text-rose-600"} />ФОКУС</button>
         <button onClick={() => setReportsOpen(true)} title="Итоги — отчёт по выполненным задачам" aria-label="Итоги" className={"group inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-extrabold transition " + (reportsOpen ? "bg-blue-600 text-white shadow-[0_2px_8px_rgba(37,99,235,0.35)]" : "border border-neutral-200 text-neutral-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600")}><ClipboardCheck size={15} className={reportsOpen ? "" : "text-neutral-400 transition group-hover:text-blue-600"} />ИТОГИ</button>
         {reportsOpen && <DaySummary jobs={jobs} opTypes={opTypes} opDone={opDone} people={people} products={products} batches={batches} onClose={() => setReportsOpen(false)} />}
@@ -7459,11 +7464,6 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
               </div></>)}
             </div>
           )}
-          <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-            {viewOptions.map(([id, Icon, title]) => (
-              <button key={id} onClick={() => setView(id)} title={title} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Icon size={16} /></button>
-            ))}
-          </div>
           <button onClick={() => onAddJob({})} title="Добавить задачу" className="inline-flex h-8 items-center gap-1 rounded-lg bg-neutral-900 px-2.5 text-white hover:bg-neutral-800"><Plus size={16} /><span className="hidden text-sm font-semibold sm:inline">Задача</span></button>
         </div>}
       </div>
