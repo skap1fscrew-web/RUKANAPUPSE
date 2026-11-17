@@ -3684,6 +3684,7 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
               <th className="px-3 py-2 text-right font-semibold">Сумма ₽</th>
               <th className="px-3 py-2 text-left font-semibold">Ссылка</th>
               <th className="px-3 py-2 text-center font-semibold" title="Отметьте, когда товар заказан у поставщика">Заказан <span className="font-bold text-neutral-400">{rows.filter((r) => r.it.ordered).length}/{rows.length}</span></th>
+              <th className="px-3 py-2 text-center font-semibold" title="Отметьте, когда на товар есть сертификат">Сертификат <span className="font-bold text-neutral-400">{rows.filter((r) => r.it.cert).length}/{rows.length}</span></th>
               <th className="px-3 py-2" />
             </tr></thead>
             <tbody>
@@ -3748,6 +3749,7 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
                   <td className="px-3 py-2 text-right font-semibold text-neutral-900">{fmtRub(sumRub)}</td>
                   <td className="px-3 py-2 text-left">{p?.purchase?.link ? <a href={p.purchase.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">ссылка <ExternalLink size={11} /></a> : <span className="text-xs text-neutral-300">—</span>}</td>
                   <td className="px-3 py-2 text-center"><input type="checkbox" checked={!!it.ordered} onChange={(e) => setItem(it.id, "ordered", e.target.checked)} title={it.ordered ? "Заказан" : "Ещё не заказан"} className="h-4 w-4 cursor-pointer accent-green-600" /></td>
+                  <td className="px-3 py-2 text-center"><input type="checkbox" checked={!!it.cert} onChange={(e) => setItem(it.id, "cert", e.target.checked)} title={it.cert ? "Сертификат есть" : "Сертификата ещё нет"} className="h-4 w-4 cursor-pointer accent-green-600" /></td>
                   <td className="px-3 py-2 text-right"><button onClick={() => removeItem(it.id)} className="text-neutral-300 hover:text-red-500" title="Убрать из партии"><X size={14} /></button></td>
                 </tr>
                 </Fragment>
