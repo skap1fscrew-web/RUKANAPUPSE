@@ -8097,6 +8097,7 @@ function ProductTasksView({ jobs, products, onOpen }) {
 }
 
 function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, taskLabels, people = [], products, onOpen, onAddJob, onUpdateJob }) {
+  const todayStr = isoYMD(new Date());
   const personById = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const dragRef = useRef(null);
   const [overCol, setOverCol] = useState(null);
