@@ -77,7 +77,8 @@ const JOB_TYPES = {
   project: { label: "Проектная", section: "Проектные" },
   product: { label: "Товар", section: "Задачи по товарам" },
 };
-const jobType = (j) => (j && j.type && JOB_TYPES[j.type]) ? j.type : (j && j.batchId ? "purchase" : (j && j.productId ? "product" : "project"));
+// тип «Закупки» упразднён: старые задачи-закупки и задачи с партией считаются проектными (привязка к партии — поле batchId)
+const jobType = (j) => (j && j.type && j.type !== "purchase" && JOB_TYPES[j.type]) ? j.type : (j && j.productId ? "product" : "project");
 // В видах задач товар виден контекстно (строка/колонка/карточка/столбец «Товар»),
 // поэтому из названия убираем хвост «· Название товара», если он есть (старый формат автозадач).
 function stripProdSuffix(title, name) {
@@ -1238,7 +1239,12 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         const dup = (jobs || []).some((j) => j && j.productId === it.productId && (j.title === jt || j.title === legacy)) || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
         if (!dup) newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
       });
-      else { const dup = (jobs || []).some((j) => j && j.batchId === b.id && j.title === title) || newJobs.some((j) => j.batchId === b.id && j.title === title); if (!dup) newJobs.push({ id: uid(), title, type: "purchase", batchId: b.id, productId: null, ...common, log: [mkLog("created", {}, "system")] }); }
+      else {
+        // проектная задача с партией в названии (если её там ещё нет)
+        const bn = String(b.name || "партия").trim(); const full = title.includes(bn) ? title : `${title} · ${bn}`;
+        const dup = (jobs || []).some((j) => j && j.batchId === b.id && (j.title === full || j.title === title)) || newJobs.some((j) => j.batchId === b.id && (j.title === full || j.title === title));
+        if (!dup) newJobs.push({ id: uid(), title: full, type: "project", batchId: b.id, productId: null, ...common, log: [mkLog("created", {}, "system")] });
+      }
       firedKeys.push(r.id);
     });
     if (!newJobs.length) { setToast({ text: "Задачи этого этапа уже созданы" }); return; }
@@ -3536,7 +3542,7 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
                         ); })}
                         {batchJobs.length === 0 && <p className="px-1 py-6 text-center text-[12px] text-neutral-400">Задач по этой партии ещё нет</p>}
                       </div>
-                      <button onClick={() => { setTasksOpen(false); onAddJob && onAddJob({ type: "purchase", batchId: active.id, note: `Партия: «${active.name || ""}»` }); }} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-cyan-400 hover:text-cyan-700"><Plus size={14} /> Задача по партии</button>
+                      <button onClick={() => { setTasksOpen(false); onAddJob && onAddJob({ type: "project", batchId: active.id, note: `Партия: «${active.name || ""}»` }); }} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-cyan-400 hover:text-cyan-700"><Plus size={14} /> Задача по партии</button>
                     </div>
                   </div></>)}
               </div>
@@ -7206,7 +7212,7 @@ function DaySummary({ jobs = [], opTypes = [], opDone = {}, people = [], product
     const t = jobType(j);
     const prod = j.productId ? (products || []).find((p) => p.id === j.productId) : null;
     const batch = j.batchId ? (batches || []).find((b) => b.id === j.batchId) : null;
-    const ctx = t === "product" ? (prod ? [prod.code, prod.name].filter(Boolean).join(" · ") : "") : t === "purchase" ? (batch ? batch.name || "" : "") : "";
+    const ctx = t === "product" ? (prod ? [prod.code, prod.name].filter(Boolean).join(" · ") : "") : (batch ? batch.name || "" : "");
     const doneS = doneEv ? isoYMD(new Date(doneEv.ts)) : null;
     const lateDays = doneS && j.date && doneS > j.date ? Math.round((new Date(doneS) - new Date(j.date)) / 86400000) : 0;
     const item = { kind: "job", id: j.id, title: t === "product" ? stripProdSuffix(j.title, prod && prod.name) : (j.title || "—"), ctx, ts: doneEv ? doneEv.ts : subs[0].ts, done: !!doneEv, lateDays, subs: subs.map((e) => e.text.trim()) };
@@ -7224,7 +7230,7 @@ function DaySummary({ jobs = [], opTypes = [], opDone = {}, people = [], product
     s.tasks += days.length; totalTasks += days.length; onTime += days.length;
   });
   const persons = Object.keys(per).sort((a, b) => per[b].tasks - per[a].tasks);
-  const SEC = [["purchase", "Закупки"], ["project", "Проектные"], ["op", "Операционные"], ["product", "Товары"]];
+  const SEC = [["project", "Проектные"], ["op", "Операционные"], ["product", "Товары"]];
   const nameOf = (pid) => pid === "__none" ? "Без исполнителя" : profileLabel(personById[pid]);
   const when = (it) => it.kind === "op" ? (mode === "day" ? "" : dm(it.day)) : (mode === "day" ? hhmm(it.ts) : dm(isoYMD(new Date(it.ts))) + " " + hhmm(it.ts));
   const textFor = (pid) => {
@@ -7688,7 +7694,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     const taskOver = tasks.some((j) => j.date && j.date < todayStr);
     return { b, stg, ci, cur, endISO, over, tasks, taskOver };
   }).filter((x) => !onlyOver || x.over > 0 || x.taskOver).sort((a, c) => (c.over - a.over) || String(a.endISO || "9999").localeCompare(String(c.endISO || "9999")) || String(a.b.name || "").localeCompare(String(c.b.name || "")));
-  const typeBadge = (j) => TASK_TYPE_META.find((x) => x.key === jobType(j)) || TASK_TYPE_META[2];
+  const typeBadge = (j) => TASK_TYPE_META.find((x) => x.key === jobType(j)) || TASK_TYPE_META[1];
   const TypeIco = ({ j, size = 22 }) => { const tb = typeBadge(j); const Ic = tb.Icon; return <span title={tb.label} style={{ background: tb.bg, color: tb.tint, width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-md"><Ic size={Math.round(size * 0.58)} /></span>; };
   const dueChip = (j) => { if (!j.date) return null; const dd = Math.round((new Date(j.date) - new Date(todayStr)) / 86400000); if (dd < 0) return { txt: `−${-dd} д`, cls: "bg-[#e11d48] text-white" }; if (dd === 0) return { txt: "сегодня", cls: "bg-orange-100 text-orange-700" }; if (dd === 1) return { txt: "завтра", cls: "bg-orange-100 text-orange-700" }; if (dd <= 3) return { txt: `через ${dd} дн`, cls: "bg-orange-100 text-orange-700" }; return { txt: j.date.slice(8, 10) + "." + j.date.slice(5, 7), cls: "bg-neutral-100 text-neutral-500" }; };
   const setMain = (j, on) => onUpdateJob({ ...j, pinned: on, ...(on ? {} : { focus: false }) });
@@ -7765,7 +7771,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     );
   };
 
-  const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "project", label: "Проектные", dot: "#7c3aed" }, { k: "product", label: "Товары", dot: "#ea580c" }, { k: "purchase", label: "Закупки", dot: "#0891b2" }];
+  const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "project", label: "Проектные", dot: "#7c3aed" }, { k: "product", label: "Товары", dot: "#ea580c" }];
   const FoldStrip = ({ k, label, count, onOpen }) => (
     <div className="min-w-0 border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
       <button onClick={onOpen || (() => setFoldK(k, false))} title={"Развернуть «" + label + "»"} className="flex w-full items-center gap-2 text-left">
@@ -7795,7 +7801,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const AddBtn = ({ type }) => <button onClick={() => { setPickType(type); setPickSel([]); setPickQ(""); }} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-rose-200 bg-rose-50/40 py-2 text-[12px] font-bold text-rose-700 transition hover:bg-rose-50"><Plus size={13} />добавить</button>;
   const colHead = (k, label, count) => <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">{label}</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{count}</span><span className="ml-auto" />{foldBtn(k)}</div>;
   const opsStrip = !!fold.ops || (opsPending.length === 0 && !opsOpen);
-  const showOps = !hidden.includes("ops"), showProj = !hidden.includes("project"), showProd = !hidden.includes("product"), showPur = !hidden.includes("purchase");
+  const showOps = !hidden.includes("ops"), showProj = !hidden.includes("project"), showProd = !hidden.includes("product");
 
   return (
     <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white">
@@ -7836,13 +7842,13 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       )}
 
       {/* колонки */}
-      {!showOps && !showProj && !showProd && !showPur && (
+      {!showOps && !showProj && !showProd && (
         <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-[13px] text-neutral-500">
           Все блоки скрыты.
           <button onClick={() => { setHidden([]); lsSet("rnp.focusHidden", []); }} className="rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700">Показать все блоки</button>
         </div>
       )}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ "--n": Math.max(1, [showOps, showProj, showProd, showPur].filter(Boolean).length) }}>
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ "--n": Math.max(1, [showOps, showProj, showProd].filter(Boolean).length) }}>
         {showOps && (opsStrip ? (
           <FoldStrip k="ops" label="Операционные" count={myOpsToday.length > 0 ? `${opsDoneCount}/${myOpsToday.length}` : ""} onOpen={() => { setOpsOpen(true); setFoldK("ops", false); }} />
         ) : (
@@ -7876,30 +7882,6 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
             {colHead("product", "Товары", prodGroups.length)}
             {prodGroups.map((g) => renderGroup(g))}
             {prodGroups.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
-          </div>
-        ))}
-
-        {showPur && (fold.purchase ? <FoldStrip k="purchase" label="Закупки" count={cycBatches.length} /> : (
-          <div className="min-w-0 p-3.5">
-            {colHead("purchase", "Закупки", cycBatches.length)}
-            {cycBatches.map(({ b, stg, ci, cur, endISO, over, tasks }) => (
-              <div key={b.id} className={"mb-2.5 rounded-[14px] border p-2.5 " + "border-neutral-200 bg-white"}>
-                <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800">{b.name || "Партия"}</span>
-                  {cur && <span className="shrink-0 text-[11px] font-extrabold text-neutral-500">{cur.name}</span>}
-                  <button type="button" onClick={() => onOpenBatch && onOpenBatch(b.id)} title="Открыть партию в «Закупках»" className="-mr-1 shrink-0 rounded-md p-0.5 text-neutral-300 transition hover:text-[#e11d48]"><ArrowUpRight size={14} /></button>
-                </div>
-                <div className="mt-1.5 flex gap-[3px]">{stg.map((x, k) => <i key={x.id || k} title={x.name} className={"h-[5px] flex-1 rounded-[3px] " + (x.done ? "bg-[#a7e3b9]" : k === ci ? "bg-orange-400" : "bg-neutral-200")} />)}</div>
-                {tasks.length > 0 && <div className="mt-2 space-y-1">{tasks.map((j) => { const dc = dueChip(j); return (
-                  <div key={j.id} onClick={() => onOpen(j)} className={"flex cursor-pointer items-center gap-2 rounded-[9px] border px-2 py-1.5 transition hover:shadow-sm " + (j.priority === "high" ? "border-red-200 bg-red-50/60" : j.priority === "med" ? "border-amber-200 bg-amber-50/60" : "border-neutral-200 bg-white")}>
-                    <StIcon st={stageOf(j)} />
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-bold text-neutral-800">{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
-                    {dc && <span className={"shrink-0 rounded-full px-2 py-px text-[11px] font-extrabold " + dc.cls}>{dc.txt}</span>}
-                  </div>
-                ); })}</div>}
-              </div>
-            ))}
-            {cycBatches.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Нет партий с запущенным циклом"}</div>}
           </div>
         ))}
       </div>
@@ -8645,15 +8627,6 @@ function GanttBoard({ onPrevM, onNextM, jobs, products, batches = [], people = [
               : (opTypes || []).map((op) => <OpRow key={op.id} op={op} />)}
           </Section>
           )}
-          {(!onlyType || onlyType === "purchase") && (
-          <Section id="pur" title="Закупки" count={purCount} doneCount={purDoneCount}>
-            {batchRows.length === 0
-              ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Нет задач по закупкам в этом месяце</div>
-              : purRowsShown.length === 0
-              ? <div className="border-t border-neutral-100 px-2 py-2 text-[11px] text-neutral-400" style={{ width: LW + timelineW }}>Все задачи по закупкам выполнены — нажмите глаз, чтобы показать</div>
-              : purRowsShown.map((row) => <Row key={row.key} row={row} />)}
-          </Section>
-          )}
           {(!onlyType || onlyType === "project") && (
           <Section id="gen" title="Проектные" count={projItems.length} doneCount={projDone.length}>
             {projItems.length === 0
@@ -8720,7 +8693,6 @@ function GanttBoard({ onPrevM, onNextM, jobs, products, batches = [], people = [
 
 const TASK_TYPE_META = [
   { key: "op", label: "Операционная", short: "Операц.", Icon: Repeat, tint: "#6366f1", bg: "#eef2ff", hint: "раздел «Операционные»" },
-  { key: "purchase", label: "Закупки", short: "Закупки", Icon: ShoppingCart, tint: "#0891b2", bg: "#ecfeff", hint: "привязка к партии" },
   { key: "project", label: "Проектная", short: "Проектная", Icon: FileText, tint: "#7c3aed", bg: "#f5f3ff", hint: "раздел «Проектные»" },
   { key: "product", label: "Товар", short: "Товар", Icon: Box, tint: "#ea580c", bg: "#fff7ed", hint: "раздел «Задачи по товарам»" },
 ];
@@ -8743,7 +8715,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
     const n = { ...o, type: t };
     if (t === "op") n.recur = normRecur(o.recur);
     if (t !== "product") n.productId = null;
-    if (t !== "purchase") n.batchId = null;
+    if (t === "op" || t === "product") n.batchId = null;
     return n;
   });
   useEffect(() => { onChange(j); }, [j]); // автосохранение при любом изменении
@@ -8814,6 +8786,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
   const STAGE_LBL = { wait: "Ожидает", progress: "В процессе", done: "Готово" };
   const authorName = (by) => { if (by == null) return "Вы"; if (by === "system") return "Триггер"; if (typeof by === "string" && by.includes("@")) return by; return ((people || []).find((p) => p.id === by) || {}).name || "Вы"; };
   const LOG_ICON = { created: [Plus, "#6366f1"], done: [Check, "#16a34a"], reopen: [Repeat, "#0ea5e9"], status: [Repeat, "#0ea5e9"], prio: [Flag, "#f59e0b"], assignee: [Users, "#8b5cf6"], date: [CalendarIcon, "#14b8a6"], sub_done: [ListChecks, "#64748b"], sub_del: [X, "#ef4444"] };
+  const fmtD = (d) => d ? `${String(d).slice(8, 10)}.${String(d).slice(5, 7)}.${String(d).slice(2, 4)}` : "—";
   const logText = (e) => {
     switch (e.kind) {
       case "created": return <b>Создана</b>;
@@ -9040,11 +9013,11 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
                 </select>
               </div>
             )}
-            {curType === "purchase" && (
+            {curType === "project" && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-sm text-neutral-600">Партия</span>
+                <span className="text-sm text-neutral-600">Партия (необязательно)</span>
                 <select value={j.batchId || ""} onChange={(e) => set("batchId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-                  <option value="">— выберите партию —</option>
+                  <option value="">— без партии —</option>
                   {(batches || []).map((b) => (<option key={b.id} value={b.id}>{b.name || "Партия"}</option>))}
                 </select>
                 {(batches || []).length === 0 && <span className="text-[11px] text-neutral-400">Партий пока нет — создайте в разделе «Закупки».</span>}
