@@ -7469,7 +7469,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {focusMode ? <FocusView jobs={jobs} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} products={products} people={people} batches={batches} onOpenBatch={onOpenBatch} myId={myId} now={now} onUpdateJob={onUpdateJob} onOpen={onOpen} focusLine={focusLine} onFocusLine={onFocusLine} />
+        {focusMode ? <FocusView jobs={jobs} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} products={products} people={people} batches={batches} onOpenBatch={onOpenBatch} myId={myId} now={now} onUpdateJob={onUpdateJob} onOpen={onOpen} onAddJob={onAddJob} focusLine={focusLine} onFocusLine={onFocusLine} />
           : view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
           : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
           : view === "today" ? <OpTodayView opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} people={people} now={now} onEditOp={onEditOp} />
@@ -7602,7 +7602,7 @@ function TrashPanel({ jobs, people = [], products = [], trashProducts = [], tras
   );
 }
 
-function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], batches = [], onOpenBatch, myId = null, now, onUpdateJob, onOpen, focusLine = "", onFocusLine }) {
+function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditOp, products = [], people = [], batches = [], onOpenBatch, myId = null, now, onUpdateJob, onOpen, onAddJob, focusLine = "", onFocusLine }) {
   const [pickOpen, setPickOpen] = useState(false);
   const [pickType, setPickType] = useState(null); // тип колонки, в которую добавляем задачи через «＋»
   const [eyeOpen, setEyeOpen] = useState(false);
@@ -7813,6 +7813,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         <span className="h-[22px] w-px shrink-0 bg-white/35" />
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitLine} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} placeholder="На чём сейчас делаем упор…" className="min-w-0 flex-1 rounded-lg border-0 bg-transparent px-1.5 py-0.5 text-[14px] font-extrabold tracking-tight text-white outline-none ring-0 transition placeholder:font-semibold placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15 focus:outline-none focus:ring-0" />
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {onAddJob && <button onClick={() => onAddJob({})} title="Добавить задачу (необязательно попадёт в фокус)" className="inline-flex h-8 items-center gap-1 rounded-[10px] border border-white/40 bg-transparent px-2.5 text-[13px] font-extrabold text-white transition hover:bg-white/15"><Plus size={15} />Задача</button>}
           {overdueCount > 0 && <button onClick={() => setOnlyOver((v) => !v)} title="Показать только просроченные" className={"rounded-[10px] px-3 py-1.5 text-[13px] font-extrabold transition " + (onlyOver ? "bg-neutral-900 text-white" : "bg-white text-rose-700 hover:bg-rose-50")}>{overdueCount} просрочено ›</button>}
           <div className="relative">
             <button onClick={() => setEyeOpen((v) => !v)} title="Показывать группы задач" className={"flex h-8 w-8 items-center justify-center rounded-[10px] border transition " + (hidden.length ? "border-white bg-white text-rose-600" : "border-white/40 bg-transparent text-white hover:bg-white/15")}>{hidden.length ? <EyeOff size={15} /> : <Eye size={15} />}</button>
