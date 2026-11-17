@@ -7776,7 +7776,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
     );
   };
 
-  const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "project", label: "Проектные", dot: "#7c3aed" }, { k: "product", label: "Товары", dot: "#ea580c" }];
+  const COLS = [{ k: "ops", label: "Операционные", dot: "#6366f1" }, { k: "project", label: "Проектные", dot: "#7c3aed" }, { k: "product", label: "Товары", dot: "#ea580c" }, { k: "purchase", label: "Закупки", dot: "#0891b2" }];
   const FoldStrip = ({ k, label, count, onOpen }) => (
     <div className="min-w-0 border-b border-neutral-100 p-3.5 md:border-b-0 md:border-r">
       <button onClick={onOpen || (() => setFoldK(k, false))} title={"Развернуть «" + label + "»"} className="flex w-full items-center gap-2 text-left">
@@ -7806,7 +7806,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
   const AddBtn = ({ type }) => <button onClick={() => { setPickType(type); setPickSel([]); setPickQ(""); }} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-rose-200 bg-rose-50/40 py-2 text-[12px] font-bold text-rose-700 transition hover:bg-rose-50"><Plus size={13} />добавить</button>;
   const colHead = (k, label, count) => <div className="mb-2.5 flex items-center gap-2"><span className="text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">{label}</span><span className="rounded-full bg-neutral-100 px-2 text-[10px] font-bold text-neutral-500">{count}</span><span className="ml-auto" />{foldBtn(k)}</div>;
   const opsStrip = !!fold.ops || (opsPending.length === 0 && !opsOpen);
-  const showOps = !hidden.includes("ops"), showProj = !hidden.includes("project"), showProd = !hidden.includes("product");
+  const showOps = !hidden.includes("ops"), showProj = !hidden.includes("project"), showProd = !hidden.includes("product"), showPur = !hidden.includes("purchase");
 
   return (
     <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white">
@@ -7847,13 +7847,13 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
       )}
 
       {/* колонки */}
-      {!showOps && !showProj && !showProd && (
+      {!showOps && !showProj && !showProd && !showPur && (
         <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-[13px] text-neutral-500">
           Все блоки скрыты.
           <button onClick={() => { setHidden([]); lsSet("rnp.focusHidden", []); }} className="rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700">Показать все блоки</button>
         </div>
       )}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ "--n": Math.max(1, [showOps, showProj, showProd].filter(Boolean).length) }}>
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto md:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ "--n": Math.max(1, [showOps, showProj, showProd, showPur].filter(Boolean).length) }}>
         {showOps && (opsStrip ? (
           <FoldStrip k="ops" label="Операционные" count={myOpsToday.length > 0 ? `${opsDoneCount}/${myOpsToday.length}` : ""} onOpen={() => { setOpsOpen(true); setFoldK("ops", false); }} />
         ) : (
@@ -7887,6 +7887,29 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
             {colHead("product", "Товары", prodGroups.length)}
             {prodGroups.map((g) => renderGroup(g))}
             {prodGroups.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Пока пусто"}</div>}
+          </div>
+        ))}
+        {showPur && (fold.purchase ? <FoldStrip k="purchase" label="Закупки" count={cycBatches.length} /> : (
+          <div className="min-w-0 p-3.5">
+            {colHead("purchase", "Закупки", cycBatches.length)}
+            {cycBatches.map(({ b, stg, ci, cur, endISO, over, tasks }) => (
+              <div key={b.id} className={"mb-2.5 rounded-[14px] border p-2.5 " + "border-neutral-200 bg-white"}>
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold text-neutral-800">{b.name || "Партия"}</span>
+                  {cur && <span className="shrink-0 text-[11px] font-extrabold text-neutral-500">{cur.name}</span>}
+                  <button type="button" onClick={() => onOpenBatch && onOpenBatch(b.id)} title="Открыть партию в «Закупках»" className="-mr-1 shrink-0 rounded-md p-0.5 text-neutral-300 transition hover:text-[#e11d48]"><ArrowUpRight size={14} /></button>
+                </div>
+                <div className="mt-1.5 flex gap-[3px]">{stg.map((x, k) => <i key={x.id || k} title={x.name} className={"h-[5px] flex-1 rounded-[3px] " + (x.done ? "bg-[#a7e3b9]" : k === ci ? "bg-orange-400" : "bg-neutral-200")} />)}</div>
+                {tasks.length > 0 && <div className="mt-2 space-y-1">{tasks.map((j) => { const dc = dueChip(j); return (
+                  <div key={j.id} onClick={() => onOpen(j)} className={"flex cursor-pointer items-center gap-2 rounded-[9px] border px-2 py-1.5 transition hover:shadow-sm " + (j.priority === "high" ? "border-red-200 bg-red-50/60" : j.priority === "med" ? "border-amber-200 bg-amber-50/60" : "border-neutral-200 bg-white")}>
+                    <StIcon st={stageOf(j)} />
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-bold text-neutral-800">{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
+                    {dc && <span className={"shrink-0 rounded-full px-2 py-px text-[11px] font-extrabold " + dc.cls}>{dc.txt}</span>}
+                  </div>
+                ); })}</div>}
+              </div>
+            ))}
+            {cycBatches.length === 0 && <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-[12px] text-neutral-400">{onlyOver ? "Просроченных нет" : "Нет партий с запущенным циклом"}</div>}
           </div>
         ))}
       </div>
