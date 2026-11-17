@@ -165,6 +165,7 @@ const uiZ = () => { try { const z = parseFloat(document.documentElement.style.zo
 const zvh = (n) => (n / uiZ()) + "vh";
 const TABS = [
   { id: "assortment", label: "Товары" },
+  { id: "rnp", label: "РНП" },
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
   { id: "strategy", label: "Карты" },
@@ -2638,6 +2639,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             onOpen={(job) => setJobEditor({ ...job })}
           />
         )}
+
+        {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} onOpen={(id) => setCardModal(id)} />}
 
         {activeTab === "strategy" && (
           <StrategySection
@@ -9191,6 +9194,112 @@ function computeStratLayout(nodes, edges, rootId, template, hOf) {
 function nodeIsDone(n) { return (n.checklist && n.checklist.length) ? n.checklist.every((c) => c.done) : !!n.done; }
 
 // Обёртка: список карт-стратегий + переключатель. Новая карта создаётся по выбранному шаблону.
+// ---- Вкладка «РНП»: данные РНП из карточек по всем товарам (дни × строки) ----
+function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen }) {
+  const iso = (d) => { const x = new Date(d); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); };
+  const todayISO = iso(new Date());
+  const SPAN = 14;
+  const [endOff, setEndOff] = useState(0); // сдвиг конца периода от сегодня, дней
+  const [rows, setRows] = useState(() => lsGet("rnp.ovRows", ["orders", "bloggers", "razdachi"]));
+  const [onlyData, setOnlyData] = useState(() => lsGet("rnp.ovOnly", true));
+  const [st, setSt] = useState("");
+  const [q, setQ] = useState("");
+  useEffect(() => lsSet("rnp.ovRows", rows), [rows]);
+  useEffect(() => lsSet("rnp.ovOnly", onlyData), [onlyData]);
+  const end = new Date(); end.setHours(0, 0, 0, 0); end.setDate(end.getDate() + endOff);
+  const start = new Date(end); start.setDate(start.getDate() - (SPAN - 1));
+  const dayList = buildDays(iso(start), SPAN);
+  const fmtRange = (a, b) => { const f = (d) => d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" }); return f(a) + " – " + f(b) + " " + b.getFullYear(); };
+  const dow = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+  const statusColor = (name) => (statuses.find((x) => x.name === name) || {}).color || "#a3a3a3";
+  const shownTasks = RNP_TASKS.filter((t) => rows.includes(t.id));
+  const hasData = (p) => {
+    const r = p.rnp || {};
+    return Object.keys(r.entries || {}).some((k) => (r.entries[k] || []).length) || Object.keys(r.cells || {}).some((k) => String(r.cells[k] || "") !== "") || Object.keys(r.flags || {}).some((k) => r.flags[k]) || (parseFloat(String(r.budget?.allocated || "").replace(/\s/g, "").replace(",", ".")) > 0)
+      || dayList.some((d) => (wbOrders[`${p.code || p.wb || ""}:${d.key}`] || wbOrders[`${p.wb}:${d.key}`] || 0) > 0);
+  };
+  const list = (products || []).filter((p) => p && !p.deletedAt && p.rnp)
+    .filter((p) => !st || p.status === st)
+    .filter((p) => !q.trim() || ((p.name || "") + " " + (p.code || "") + " " + (p.wb || "")).toLowerCase().includes(q.trim().toLowerCase()))
+    .filter((p) => !onlyData || hasData(p));
+  const rub = (n) => Math.round(n).toLocaleString("ru-RU");
+  const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return String(v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
+  // итого по дням (по показанным товарам)
+  const totOrders = dayList.map((d) => list.reduce((a, p) => a + (wbOrders[`${p.code || p.wb || ""}:${d.key}`] || wbOrders[`${p.wb}:${d.key}`] || 0), 0));
+  const totCost = dayList.map((d) => list.reduce((a, p) => a + RNP_COST_TASKS.reduce((s, t) => s + rnpDayCost(t, p, d.key), 0), 0));
+  const W_P = 240, W_F = 150, W_L = 140;
+  const stk = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
+  const chip = "rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition ";
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-3.5">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="mr-2 text-lg font-extrabold text-neutral-900">РНП</h2>
+        <button onClick={() => setEndOff((o) => o - 7)} className={chip + "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}>‹</button>
+        <span className={chip + "border-neutral-200 bg-white text-neutral-700"}>{fmtRange(start, end)}</span>
+        <button onClick={() => setEndOff((o) => o + 7)} className={chip + "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}>›</button>
+        <button onClick={() => setEndOff(0)} className={chip + "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}>Сегодня</button>
+        <span className="mx-1 h-5 w-px bg-neutral-200" />
+        <span className="text-[11.5px] font-semibold text-neutral-400">Строки:</span>
+        {RNP_TASKS.map((t) => { const on = rows.includes(t.id); return <button key={t.id} onClick={() => setRows((r) => on ? r.filter((x) => x !== t.id) : [...r, t.id])} className={chip + (on ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>{t.label}</button>; })}
+        <span className="ml-auto" />
+        <button onClick={() => setOnlyData((v) => !v)} className={chip + (onlyData ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-500")} title="Показывать только товары, у которых есть данные РНП">Только с данными</button>
+        <select value={st} onChange={(e) => setSt(e.target.value)} className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[11.5px] font-bold text-neutral-600 focus:outline-none">
+          <option value="">Статус: все</option>
+          {statuses.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+        </select>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск…" className="w-40 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11.5px] font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200" />
+      </div>
+      {list.length === 0 ? <div className="py-12 text-center text-sm text-neutral-400">Нет товаров с данными РНП за выбранные фильтры</div> : (
+        <div className="overflow-auto rounded-xl border border-neutral-100" style={{ maxHeight: "calc(100vh / " + 0.8 + " - 190px)" }}>
+          <table className="border-separate text-[11.5px]" style={{ borderSpacing: 0, minWidth: "100%" }}>
+            <thead>
+              <tr>
+                <th style={{ ...stk(0, W_P + W_F + W_L, "#fff", 5), position: "sticky", top: 0, textAlign: "left", padding: "6px 10px", color: "#a3a3a3", fontWeight: 600, borderBottom: "1px solid #e5e5e5" }} colSpan={3}>Товар · Фонд маркетинга · Строка</th>
+                {dayList.map((d) => { const dt = new Date(d.key + "T00:00:00"); const tdy = d.key === todayISO; return <th key={d.key} style={{ position: "sticky", top: 0, zIndex: 4, background: tdy ? "#fff7ed" : "#fff", minWidth: 50, padding: "4px 0", textAlign: "center", borderBottom: "1px solid #e5e5e5", color: tdy ? "#c2410c" : "#a3a3a3", fontWeight: 600 }}><div style={{ fontSize: 12, fontWeight: 800, color: tdy ? "#c2410c" : "#525252" }}>{dt.getDate()}</div><div style={{ fontSize: 10 }}>{dow[dt.getDay()]}</div></th>; })}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colSpan={3} style={{ ...stk(0, W_P + W_F + W_L, "#fafafa", 2), padding: "8px 12px", fontWeight: 800, borderBottom: "2px solid #d4d4d4" }}>Итого по товарам<div style={{ fontSize: 10, color: "#a3a3a3", fontWeight: 600 }}>заказы · затраты за день</div></td>
+                {dayList.map((d, i) => <td key={d.key} style={{ background: d.key === todayISO ? "#fff7ed" : "#fafafa", textAlign: "center", fontWeight: 800, borderBottom: "2px solid #d4d4d4", borderLeft: "1px solid #f1f1f1" }}>{totOrders[i] || ""}<div style={{ fontSize: 9.5, color: "#a3a3a3", fontWeight: 700 }}>{totCost[i] ? (totCost[i] >= 10000 ? (Math.round(totCost[i] / 100) / 10).toLocaleString("ru-RU") + " т" : rub(totCost[i])) : ""}</div></td>)}
+              </tr>
+              {list.map((p) => {
+                const b = rnpBudget(p); const pct = b.allocated > 0 ? Math.min(100, Math.round(b.spent / b.allocated * 100)) : 0; const bar = pct < 70 ? "#16a34a" : pct < 95 ? "#f59e0b" : "#dc2626";
+                const trs = shownTasks.length ? shownTasks : [null];
+                return trs.map((t, ti) => (
+                  <tr key={p.id + ":" + (t ? t.id : "none")}>
+                    {ti === 0 && (
+                      <>
+                        <td rowSpan={trs.length} style={{ ...stk(0, W_P, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: 0 }}>
+                          <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-neutral-50" title="Открыть карточку">
+                            {p.image ? <img src={p.image} alt="" className="h-[46px] w-[38px] shrink-0 rounded-md object-cover" /> : <span className="h-[46px] w-[38px] shrink-0 rounded-md bg-neutral-100" />}
+                            <span className="flex min-w-0 flex-col gap-px"><span className="text-[10px] font-extrabold text-neutral-400">{p.code || "—"}</span><span className="line-clamp-2 text-[12px] font-bold leading-tight text-neutral-800">{p.name || "Без названия"}</span>{p.status && <span className="mt-0.5 self-start rounded-full px-1.5 py-px text-[10px] font-extrabold" style={{ background: statusColor(p.status) + "22", color: statusColor(p.status) }}>{p.status}</span>}</span>
+                          </button>
+                        </td>
+                        <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: "0 10px" }}>
+                          <div className="flex justify-between text-[11px] text-neutral-500"><span>Фонд</span><b className="text-neutral-800">{b.allocated ? rub(b.allocated) + " ₽" : "—"}</b></div>
+                          <div className="my-1 h-[5px] overflow-hidden rounded-full bg-neutral-100"><i className="block h-full" style={{ width: pct + "%", background: bar }} /></div>
+                          <div className="flex justify-between text-[10px] text-neutral-400"><span>Затрач. {rub(b.spent)}</span><span>ост. {rub(b.ostatok)}</span></div>
+                        </td>
+                      </>
+                    )}
+                    <td style={{ ...stk(W_P + W_F, W_L, "#fff", 2), padding: "0 10px", fontWeight: 700, color: "#525252", whiteSpace: "nowrap", borderRight: "1px solid #f1f1f1", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" }}>{t ? <><span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: RNP_COLORS[t.id] || "#64748b", marginRight: 6 }} />{t.label}</> : ""}</td>
+                    {t ? dayList.map((d) => {
+                      const v = rnpDayActivity(t, p, d.key, wbOrders); const fill = (p.rnp.fills || {})[`${t.id}:${d.key}`]; const col = RNP_COLORS[t.id] || "#64748b";
+                      const bg = fill || (v ? (t.kind === "wbOrders" ? "#f0fdf4" : col + "22") : (d.key === todayISO ? "#fff7ed" : "transparent"));
+                      return <td key={d.key} onClick={() => onOpen && onOpen(p.id)} title={t.label} style={{ background: bg, color: t.kind === "wbOrders" ? "#15803d" : col, textAlign: "center", fontWeight: 700, height: 27, cursor: "pointer", borderLeft: "1px solid #f7f7f7", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" }}>{cellTxt(t, v)}</td>;
+                    }) : <td colSpan={dayList.length} style={{ borderBottom: "2px solid #e5e5e5", color: "#a3a3a3", padding: "0 12px" }}>Включите строки РНП выше</td>}
+                  </tr>
+                ));
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StrategySection({ strategy, onChange, onCreateTask, onOpenTask }) {
   const st = normStrategy(strategy);
   const maps = st.maps;
