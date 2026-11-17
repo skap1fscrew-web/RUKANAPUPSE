@@ -2567,7 +2567,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                     </button>
                     {p.status && (compact
                       ? <span className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white" style={{ background: sc }} title={p.status} />
-                      : <span className="rounded-full absolute left-2 top-2 px-2 py-0.5 text-[11px] font-semibold" style={{ background: sc + "26", color: sc }}>{p.status}</span>)}
+                      : <span className="absolute left-2 top-2 inline-flex items-center justify-center rounded-[7px] px-2.5 py-1 text-[11px] font-extrabold leading-none text-white shadow-sm" style={{ background: sc }}>{p.status}</span>)}
                     {tileSize !== "xs" && <button onClick={() => triggerUpload(p.id)} className="rounded-lg absolute bottom-2 left-2 bg-white/90 p-1.5 text-neutral-500 opacity-0 shadow transition hover:text-neutral-800 group-hover:opacity-100" title="Загрузить фото"><ImagePlus size={14} /></button>}
                     {(() => { const inSupply = (purchaseBatches || []).some((b) => (b.items || []).some((it) => it.productId === p.id)); return (
                       <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setSupplyMenu({ productId: p.id, x: r.right, y: r.bottom }); }} className={"rounded-md absolute right-2 top-2 p-1 shadow transition " + (inSupply ? "bg-teal-600 text-white opacity-100" : "bg-white/90 text-neutral-500 opacity-0 hover:text-teal-700 group-hover:opacity-100")} title="Добавить в поставку"><PackagePlus size={14} /></button>
