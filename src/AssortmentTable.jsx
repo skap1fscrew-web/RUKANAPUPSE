@@ -690,6 +690,20 @@ function AssigneeAvatars({ j, personById, size = 20, ringAlways = false }) {
   // первый исполнитель всегда сверху (z-index убывает), второй выглядывает из-под него
   return <span className="ml-auto inline-flex items-center">{list.map((pr, i) => <span key={pr.id} className={"relative flex shrink-0 leading-none " + (i ? "-ml-1.5" : "")} style={{ zIndex: list.length - i }}>{i ? <span className="relative flex overflow-hidden rounded-full" style={{ width: size, height: size }}><span className="absolute rounded-full bg-white" style={{ width: size + 3, height: size + 3, left: 4.5 - size, top: -1.5 }} /><span className="relative flex"><PersonAvatar p={pr} size={size} /></span></span> : <PersonAvatar p={pr} size={size} ring={ringAlways} />}</span>)}</span>;
 }
+// Автор задачи (кто создал) — из записи «created» в логе; null, если автор неизвестен/системный или он же исполнитель
+const jobAuthor = (j, people) => {
+  const c = (j && Array.isArray(j.log) ? j.log : []).find((e) => e && e.kind === "created");
+  const by = c && c.by; if (!by || by === "system") return null;
+  const pr = (people || []).find((x) => x && (x.email === by || x.id === by));
+  if (!pr || jobAssignees(j).includes(pr.id)) return null;
+  return pr;
+};
+// «автор → исполнитель» (без обводок у аватаров)
+function AuthorFlow({ j, people, personById, size = 22, light = false }) {
+  const au = jobAuthor(j, people);
+  if (!au || !jobAssignees(j).length) return <AssigneeAvatars j={j} personById={personById} size={size} />;
+  return <span className="ml-auto inline-flex items-center gap-1" title={"Поручил: " + profileLabel(au)}><PersonAvatar p={au} size={size - 4} /><span className={"text-[11px] font-bold leading-none " + (light ? "text-white/70" : "text-neutral-400")}>→</span><AssigneeAvatars j={j} personById={personById} size={size} /></span>;
+}
 // Ужать изображение (File) до data-URL ~квадрат maxPx, jpeg.
 function fileToAvatarDataURL(file, maxPx = 256) {
   return new Promise((resolve, reject) => {
@@ -7798,6 +7812,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
         <span className={"line-clamp-3 text-[13.5px] font-bold leading-snug " + ((t === 0 || isToday) ? "text-white" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + j.title}</span>
         <div className={"mt-auto flex items-center gap-1.5 pt-2 text-[10.5px] font-extrabold " + ((t === 0 || isToday || dueTxt) ? "pr-16" : "pr-5") + ((t === 0 || isToday) ? " [&_svg]:stroke-white [&_svg]:opacity-80" : "")}>
           <StIcon st={stageOf(j)} />
+          {(() => { const au = jobAuthor(j, people); if (!au || !jobAssignees(j).length) return null; const pb = Object.fromEntries((people || []).map((x) => [x.id, x])); return <span className="ml-1 inline-flex items-center gap-1" title={"Поручил: " + profileLabel(au)}><PersonAvatar p={au} size={18} /><span className={"text-[11px] font-bold leading-none " + ((t === 0 || isToday) ? "text-white/70" : "text-neutral-400")}>→</span><AssigneeAvatars j={j} personById={pb} size={18} /></span>; })()}
           {chip && <span className={"rounded-full px-2 py-px " + chip.cls}>{chip.txt}</span>}
         </div>
       </div>
@@ -8166,7 +8181,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
           {bright ? <span className={"inline-flex items-center justify-center rounded-[7px] bg-white px-[10px] py-[5px] text-[11px] font-black leading-none " + (over ? "text-[#CF364C]" : "text-amber-700")}>{over ? "−" + overDays + " д" : "сегодня"}</span>
             : j.date ? <span className="inline-flex items-center justify-center rounded-[7px] bg-white px-[10px] py-[5px] text-[11px] font-black leading-none text-neutral-700">{fmtD(j.date)}</span> : null}
         </div>
-        <div className="flex items-center justify-self-end"><AssigneeAvatars j={j} personById={personById} size={22} /></div>
+        <div className="flex items-center justify-self-end"><AuthorFlow j={j} people={people} personById={personById} size={22} light={bright} /></div>
       </div>
     </div>
   ); };
