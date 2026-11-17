@@ -8140,8 +8140,8 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
   sortedJobs.forEach((j) => { const c = columns.find((c) => c.match(j)); if (c) byCol[c.key].push(j); });
   const moveJob = (id, col) => { const j = jobs.find((x) => x.id === id); if (j && !col.match(j)) onUpdateJob({ ...j, ...col.preset }); };
   const [doneOpen, setDoneOpen] = useState({});
-  const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const pm = PRIORITIES[j.priority]; return (
-    <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 shadow-sm transition hover:shadow-md" style={{ background: pm ? pm.soft : "#fff", border: `1.5px solid ${pm ? pm.color : "#e5e5e5"}` }}>
+  const jobCard = (j) => { const prod = prodById[j.productId]; const jtags = (Array.isArray(j.tags) ? j.tags : []).map((id) => tagById[id]).filter(Boolean); const cl = Array.isArray(j.checklist) ? j.checklist : []; const cdone = cl.filter((c) => c.done).length; const tone = j.priority === "high" ? { bg: "#fef2f2", bd: "#fecaca" } : j.priority === "med" ? { bg: "#fffbeb", bd: "#fde68a" } : { bg: "#f5f5f5", bd: "#e5e5e5" }; return (
+    <div key={j.id} draggable onDragStart={() => { dragRef.current = j.id; }} onClick={() => onOpen(j)} className="cursor-pointer rounded-xl p-2.5 transition hover:shadow-sm" style={{ background: tone.bg, border: `1px solid ${tone.bd}` }}>
       <div className={"mb-2 text-sm font-semibold leading-snug " + (j.done ? "text-neutral-400 line-through" : "text-neutral-800")}>{(markIcon(j.mark) ? markIcon(j.mark) + " " : "") + (stripProdSuffix(j.title, prod && prod.name) || "Без названия")}</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {groupBy !== "status" && <StageIcon j={j} />}
