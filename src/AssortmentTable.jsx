@@ -1236,13 +1236,13 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       if (r.scope === "product") (b.items || []).forEach((it) => {
         const jt = String(title).trim();
         const legacy = `${jt} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
-        const dup = (jobs || []).some((j) => j && j.productId === it.productId && (j.title === jt || j.title === legacy)) || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
+        const dup = (jobs || []).some((j) => j && !j.deletedAt && j.productId === it.productId && (j.title === jt || j.title === legacy)) || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
         if (!dup) newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
       });
       else {
         // проектная задача с партией в названии (если её там ещё нет)
         const bn = String(b.name || "партия").trim(); const full = title.includes(bn) ? title : `${title} · ${bn}`;
-        const dup = (jobs || []).some((j) => j && j.batchId === b.id && (j.title === full || j.title === title)) || newJobs.some((j) => j.batchId === b.id && (j.title === full || j.title === title));
+        const dup = (jobs || []).some((j) => j && !j.deletedAt && j.batchId === b.id && (j.title === full || j.title === title)) || newJobs.some((j) => j.batchId === b.id && (j.title === full || j.title === title));
         if (!dup) newJobs.push({ id: uid(), title: full, type: "project", batchId: b.id, productId: null, ...common, log: [mkLog("created", {}, "system")] });
       }
       firedKeys.push(r.id);
@@ -1517,6 +1517,13 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     const j = jobs.find((x) => x.id === id);
     setJobs((js) => js.map((x) => x.id === id ? { ...x, deletedAt: new Date().toISOString(), deletedBy: (myProfile && myProfile.id) || userEmail || null } : x));
     if (j) setUndoDel({ id, title: j.title || "Без названия" });
+  };
+  // массовое удаление в корзину (восстановимо 30 дней)
+  const trashManyJobs = (ids) => {
+    if (!ids || !ids.length) return;
+    const stamp = new Date().toISOString(); const by = (myProfile && myProfile.id) || userEmail || null;
+    setJobs((js) => js.map((x) => ids.includes(x.id) ? { ...x, deletedAt: stamp, deletedBy: by } : x));
+    setToast({ text: `В корзину: ${ids.length}` });
   };
   const restoreJob = (id) => setJobs((js) => js.map((x) => { if (x.id !== id) return x; const { deletedAt, deletedBy, ...rest } = x; return rest; }));
   useEffect(() => { if (!undoDel) return; const t = setTimeout(() => setUndoDel(null), 8000); return () => clearTimeout(t); }, [undoDel]);
@@ -2619,6 +2626,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
         {activeTab === "tasks" && (
           <TasksView
+            onTrashJobs={trashManyJobs}
             onOpenBatch={(id) => { setPurchFocusId(id); setActiveTab("purchases"); }}
             focusLine={focusLine}
             onFocusLine={setFocusLine}
@@ -7315,7 +7323,7 @@ function DaySummary({ jobs = [], opTypes = [], opDone = {}, people = [], product
   );
 }
 
-function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [], people = [], myId = null, onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen, onOpenBatch }) {
+function TasksView({ onTrashJobs, focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [], people = [], myId = null, onUpdateJob, products, batches = [], opTypes, opDone, onToggleDone, onEditOp, onAddJob, onOpen, onOpenBatch }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [view, setView] = useState("kanban"); // kanban | list | cal | gantt
@@ -7474,7 +7482,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
       <div className="min-h-0 flex-1 overflow-auto">
         {focusMode ? <FocusView jobs={jobs} opTypes={opTypes} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} products={products} people={people} batches={batches} onOpenBatch={onOpenBatch} myId={myId} now={now} onUpdateJob={onUpdateJob} onOpen={onOpen} onAddJob={onAddJob} focusLine={focusLine} onFocusLine={onFocusLine} />
           : view === "kanban" ? <KanbanBoard jobs={fJobs} groupBy={groupBy} sortBy={kanbanSort} wide={kanbanWide} tags={taskTags} taskLabels={taskLabels} people={people} products={products} onOpen={onOpen} onAddJob={onAddJob} onUpdateJob={onUpdateJob} />
-          : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} />
+          : view === "prod" ? <ProductTasksView jobs={fJobs} products={products} onOpen={onOpen} onTrashJobs={onTrashJobs} />
           : view === "today" ? <OpTodayView opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} people={people} now={now} onEditOp={onEditOp} />
           : <GanttBoard onPrevM={prevM} onNextM={nextM} jobs={fJobs} products={products} batches={batches} people={people} opTypes={opTypesF} opDone={opDone} onToggleDone={onToggleDone} onEditOp={onEditOp} ym={ym} todayStr={todayStr} labelColor={labelColor} onAddJob={onAddJob} onOpen={onOpen} onUpdateJob={onUpdateJob} onlyType={fltType} secDone={secDone} toggleSecDone={toggleSecDone} />}
       </div>
@@ -7992,7 +8000,8 @@ function OpTodayView({ opTypes = [], opDone = {}, onToggleDone, people = [], now
 }
 
 // Вид «Товары» для задач по товарам: товар (фото·код·название) + все его задачи. Раскладки: строки | колонки.
-function ProductTasksView({ jobs, products, onOpen }) {
+function ProductTasksView({ jobs, products, onOpen, onTrashJobs }) {
+  const [delTitle, setDelTitle] = useState(null); // колонка, для которой запрошено массовое удаление
   const [hideDone, setHideDone] = useState(() => lsGet("rnp.prodHideDone", false));
   const [groupMode, setGroupMode] = useState(() => lsGet("rnp.prodGroup2", "task")); // prod: товар→задачи | task: задача→товары
   useEffect(() => lsSet("rnp.prodHideDone", hideDone), [hideDone]);
@@ -8077,7 +8086,9 @@ function ProductTasksView({ jobs, products, onOpen }) {
         <div className="flex gap-3 overflow-x-auto pb-2">
           {taskRows.map(({ title, jobs: js }) => { const bp = groupPrio(js); const clr = (PRIORITIES[bp] || {}).color || "#cbd5e1"; return (
             <div key={title} className="flex w-[230px] shrink-0 flex-col rounded-xl border border-neutral-200 bg-neutral-50/40 p-2.5">
-              <div className="mb-2.5 flex min-h-[34px] items-center gap-2 px-1 py-1.5"><div className="min-w-0 flex-1 text-[13.5px] font-extrabold leading-tight text-neutral-800">{title}</div><span className="shrink-0 rounded-full bg-neutral-200/70 px-2 py-0.5 text-[11px] font-extrabold leading-none text-neutral-600">{js.length}</span></div>
+              <div className="mb-2.5 flex min-h-[34px] items-center gap-2 px-1 py-1.5"><div className="min-w-0 flex-1 text-[13.5px] font-extrabold leading-tight text-neutral-800">{title}</div><span className="shrink-0 rounded-full bg-neutral-200/70 px-2 py-0.5 text-[11px] font-extrabold leading-none text-neutral-600">{js.length}</span>{onTrashJobs && (delTitle === title
+                ? <span className="flex shrink-0 items-center gap-1"><button onClick={() => { onTrashJobs(js.map((x) => x.id)); setDelTitle(null); }} className="rounded-md bg-red-600 px-1.5 py-0.5 text-[10.5px] font-bold text-white hover:bg-red-700">Удалить {js.length}?</button><button onClick={() => setDelTitle(null)} className="rounded-md px-1 py-0.5 text-[10.5px] font-bold text-neutral-400 hover:bg-neutral-100">Нет</button></span>
+                : <button onClick={() => setDelTitle(title)} title="Удалить все задачи колонки (в корзину)" className="shrink-0 rounded-md p-1 text-neutral-300 transition hover:bg-red-50 hover:text-red-600"><Trash2 size={13} /></button>)}</div>
               <div className="flex flex-col gap-1.5">{sortProds(js).map((j) => prodCard(j))}</div>
             </div>
           ); })}
