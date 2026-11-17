@@ -8000,8 +8000,10 @@ function ProductTasksView({ jobs, products, onOpen }) {
 
   const prodById = Object.fromEntries((products || []).map((p) => [p.id, p]));
   const byProd = new Map();
+  const totByProd = new Map(); // порядок колонок считаем по ВСЕМ задачам (и выполненным), чтобы они не прыгали при выполнении
   (jobs || []).forEach((j) => {
     if (jobType(j) !== "product" || !j.productId) return;
+    totByProd.set(j.productId, (totByProd.get(j.productId) || 0) + 1);
     if (hideDone && stageOf(j) === "done") return;
     if (!byProd.has(j.productId)) byProd.set(j.productId, []);
     byProd.get(j.productId).push(j);
@@ -8009,7 +8011,7 @@ function ProductTasksView({ jobs, products, onOpen }) {
   const rows = [...byProd.entries()]
     .map(([pid, js]) => ({ p: prodById[pid] || { id: pid, code: "—", name: "Без товара", image: null }, jobs: js }))
     .filter((r) => r.jobs.length)
-    .sort((a, b) => (b.jobs.length - a.jobs.length) || String(a.p.code || "").localeCompare(String(b.p.code || "")));
+    .sort((a, b) => ((totByProd.get(b.p.id) || 0) - (totByProd.get(a.p.id) || 0)) || String(a.p.code || "").localeCompare(String(b.p.code || "")));
 
   const sortJobs = (js) => js.slice().sort((a, b) => {
     const da = stageOf(a) === "done" ? 1 : 0, db = stageOf(b) === "done" ? 1 : 0; if (da !== db) return da - db;
@@ -8033,15 +8035,17 @@ function ProductTasksView({ jobs, products, onOpen }) {
 
   // «по задачам»: группируем по нормализованному названию задачи → товары
   const byTask = new Map();
+  const totByTask = new Map();
   (jobs || []).forEach((j) => {
     if (jobType(j) !== "product" || !j.productId) return;
-    if (hideDone && stageOf(j) === "done") return;
     const key = stripProd(j.title, (prodById[j.productId] || {}).name) || "—";
+    totByTask.set(key, (totByTask.get(key) || 0) + 1);
+    if (hideDone && stageOf(j) === "done") return;
     if (!byTask.has(key)) byTask.set(key, []);
     byTask.get(key).push(j);
   });
   const taskRows = [...byTask.entries()].map(([title, js]) => ({ title, jobs: js })).filter((r) => r.jobs.length)
-    .sort((a, b) => (b.jobs.length - a.jobs.length) || a.title.localeCompare(b.title));
+    .sort((a, b) => ((totByTask.get(b.title) || 0) - (totByTask.get(a.title) || 0)) || a.title.localeCompare(b.title));
   const nT = taskRows.length;
   const wT = (nT % 10 === 1 && nT % 100 !== 11) ? "задача" : ([2, 3, 4].includes(nT % 10) && ![12, 13, 14].includes(nT % 100)) ? "задачи" : "задач";
   const groupPrio = (js) => { const rank = { high: 0, med: 1, low: 2 }; let best = 3, bp = ""; js.forEach((j) => { const r = rank[j.priority] ?? 3; if (r < best) { best = r; bp = j.priority; } }); return bp; };
