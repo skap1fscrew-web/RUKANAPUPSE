@@ -110,7 +110,7 @@ function diffJobEvents(prev, next, by) {
   const nc = Array.isArray(next.checklist) ? next.checklist : [];
   const pMap = Object.fromEntries(pc.map((c) => [c.id, c]));
   const nMap = Object.fromEntries(nc.map((c) => [c.id, c]));
-  nc.forEach((c) => { const old = pMap[c.id]; if (old && !old.done && c.done && (c.text || "").trim()) ev.push(mkLog("sub_done", { text: c.text }, by)); });
+  nc.forEach((c) => { const old = pMap[c.id]; if (old && !old.done && c.done && (c.text || "").trim()) ev.push(mkLog("sub_done", { text: c.text, cid: c.id }, by)); });
   pc.forEach((c) => { if (!nMap[c.id] && (c.text || "").trim()) ev.push(mkLog("sub_del", { text: c.text }, by)); });
   return ev;
 }
@@ -7207,7 +7207,10 @@ function DaySummary({ jobs = [], opTypes = [], opDone = {}, people = [], product
     const log = Array.isArray(j.log) ? j.log : [];
     const doneEv = log.filter((e) => e.kind === "done" && e.ts && inR(isoYMD(new Date(e.ts)))).sort((a, b) => (a.ts < b.ts ? 1 : -1))[0];
     const seen = {};
-    const subs = log.filter((e) => e.kind === "sub_done" && e.ts && inR(isoYMD(new Date(e.ts))) && (e.text || "").trim()).filter((e) => { const k = e.text + "|" + e.ts; if (seen[k]) return false; seen[k] = 1; return true; });
+    const cl0 = Array.isArray(j.checklist) ? j.checklist : [];
+    // подзадача, у которой сейчас снят чек-бокс (отмечена по ошибке), в отчёт не попадает
+    const stillDone = (e) => { const c = (e.cid && cl0.find((x) => x.id === e.cid)) || cl0.find((x) => (x.text || "").trim() === (e.text || "").trim()); return !c || !!c.done; };
+    const subs = log.filter((e) => e.kind === "sub_done" && e.ts && inR(isoYMD(new Date(e.ts))) && (e.text || "").trim() && stillDone(e)).filter((e) => { const k = (e.cid || e.text.trim()); if (seen[k]) return false; seen[k] = 1; return true; });
     if (!doneEv && !subs.length) return;
     const t = jobType(j);
     const prod = j.productId ? (products || []).find((p) => p.id === j.productId) : null;
