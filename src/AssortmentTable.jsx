@@ -1518,13 +1518,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     setJobs((js) => js.map((x) => x.id === id ? { ...x, deletedAt: new Date().toISOString(), deletedBy: (myProfile && myProfile.id) || userEmail || null } : x));
     if (j) setUndoDel({ id, title: j.title || "Без названия" });
   };
-  // массовое удаление в корзину (восстановимо 30 дней)
-  const trashManyJobs = (ids) => {
-    if (!ids || !ids.length) return;
-    const stamp = new Date().toISOString(); const by = (myProfile && myProfile.id) || userEmail || null;
-    setJobs((js) => js.map((x) => ids.includes(x.id) ? { ...x, deletedAt: stamp, deletedBy: by } : x));
-    setToast({ text: `В корзину: ${ids.length}` });
-  };
   const restoreJob = (id) => setJobs((js) => js.map((x) => { if (x.id !== id) return x; const { deletedAt, deletedBy, ...rest } = x; return rest; }));
   useEffect(() => { if (!undoDel) return; const t = setTimeout(() => setUndoDel(null), 8000); return () => clearTimeout(t); }, [undoDel]);
   // автоочистка: старше 30 дней удаляем окончательно
@@ -2618,7 +2611,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             cycleTriggers={cycleTriggers}
             onCreateStageTask={createCycleStageTasks}
             jobs={liveJobs}
-            onTrashJobs={trashManyJobs}
             people={profiles}
             onOpenJob={(job) => setJobEditor({ ...job })}
             onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()), _new: true, ...preset })}
@@ -3308,7 +3300,7 @@ function StagePicker({ label, current, options, onPick, dashed = false }) {
   );
 }
 
-function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], cycles = [], cycleTriggers = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob, onTrashJobs }) {
+function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRates, onOpenCard, onActiveChange, cycleStages = [], cycles = [], cycleTriggers = [], onCreateStageTask, jobs = [], people = [], onOpenJob, onAddJob }) {
   const list = Array.isArray(batches) ? batches : [];
   const [activeId, setActiveId] = useState((focusId && list.some((b) => b.id === focusId)) ? focusId : (list[0]?.id || null));
   useEffect(() => { if (focusId && list.some((b) => b.id === focusId)) setActiveId(focusId); }, [focusId]);
@@ -3329,8 +3321,6 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
   const [stageToasts, setStageToasts] = useState([]); // уведомления после ввода факта: [{id, text, actions:[{label, primary, fn}], sticky}]
   const [ratesOpen, setRatesOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false); // поповер «Задачи по партии»
-  const [selMode, setSelMode] = useState(false); const [selIds, setSelIds] = useState([]); const [confirmDel, setConfirmDel] = useState(false); // массовое удаление задач партии
-  useEffect(() => { if (!tasksOpen) { setSelMode(false); setSelIds([]); setConfirmDel(false); } }, [tasksOpen]);
   const [qtyPop, setQtyPop] = useState(null); // мини-окно размеров: {id, top, right, up}
   const qtyOpen = qtyPop ? { [qtyPop.id]: true } : {};
   const toggleQty = (iid, el) => setQtyPop((cur) => {
@@ -3538,14 +3528,12 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
                     <div className="flex items-center gap-2.5 border-b border-neutral-100 px-4 py-3">
                       <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600"><ListChecks size={15} /></span>
                       <div className="min-w-0"><div className="text-[13px] font-bold text-neutral-900">Задачи по партии</div><div className="truncate text-[11px] text-neutral-400">{active.name || "Партия"} · {batchJobs.length} {batchJobs.length === 1 ? "задача" : batchJobs.length >= 2 && batchJobs.length <= 4 ? "задачи" : "задач"}</div></div>
-                      {batchJobs.length > 0 && onTrashJobs && <button onClick={() => { setSelMode((m) => !m); setSelIds([]); setConfirmDel(false); }} className={"ml-auto rounded-md px-2 py-1 text-[11.5px] font-bold transition " + (selMode ? "bg-cyan-50 text-cyan-700" : "text-neutral-500 hover:bg-neutral-100")}>{selMode ? "Готово" : "Выбрать"}</button>}
-                      <button onClick={() => setTasksOpen(false)} className={(batchJobs.length > 0 && onTrashJobs ? "" : "ml-auto ") + "rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"}><X size={16} /></button>
+                      <button onClick={() => setTasksOpen(false)} className="ml-auto rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><X size={16} /></button>
                     </div>
                     <div className="max-h-[340px] overflow-auto p-2.5">
                       <div className="space-y-1.5">
                         {batchJobs.map((j) => { const pr = personById[j.assignee]; const st = STAGES[stageOf(j)]; const done = stageOf(j) === "done"; return (
-                          <button key={j.id} onClick={() => { if (selMode) { setConfirmDel(false); setSelIds((x) => x.includes(j.id) ? x.filter((y) => y !== j.id) : [...x, j.id]); return; } setTasksOpen(false); onOpenJob && onOpenJob(j); }} className={"flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition hover:border-cyan-300 hover:bg-cyan-50/40 " + (selMode && selIds.includes(j.id) ? "border-cyan-400 bg-cyan-50/60" : "border-neutral-200")}>
-                            {selMode && <input type="checkbox" readOnly checked={selIds.includes(j.id)} className="h-4 w-4 shrink-0 accent-cyan-600" />}
+                          <button key={j.id} onClick={() => { setTasksOpen(false); onOpenJob && onOpenJob(j); }} className="flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 px-3 py-2 text-left transition hover:border-cyan-300 hover:bg-cyan-50/40">
                             <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: st ? st.color : "#d4d4d8" }} />
                             <span className={"min-w-0 flex-1 truncate text-[13.5px] " + (done ? "text-neutral-400 line-through" : "text-neutral-700")}>{j.title || "Без названия"}</span>
                             {j.date && <span className="shrink-0 text-[11px] text-neutral-400">{fmtD(j.date)}</span>}
@@ -3554,15 +3542,6 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
                         ); })}
                         {batchJobs.length === 0 && <p className="px-1 py-6 text-center text-[12px] text-neutral-400">Задач по этой партии ещё нет</p>}
                       </div>
-                      {selMode && (
-                        <div className="sticky bottom-0 mt-2 flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2">
-                          <button onClick={() => { setConfirmDel(false); setSelIds(selIds.length === batchJobs.length ? [] : batchJobs.map((j) => j.id)); }} className="text-[12px] font-bold text-cyan-700 hover:underline">{selIds.length === batchJobs.length ? "Снять все" : "Выбрать все"}</button>
-                          <span className="text-[11.5px] text-neutral-400">Выбрано: {selIds.length}</span>
-                          {!confirmDel
-                            ? <button disabled={!selIds.length} onClick={() => setConfirmDel(true)} className="ml-auto rounded-lg bg-red-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-red-700 disabled:opacity-40">Удалить</button>
-                            : <span className="ml-auto flex items-center gap-1.5"><button onClick={() => { onTrashJobs(selIds); setSelIds([]); setConfirmDel(false); setSelMode(false); }} className="rounded-lg bg-red-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-red-700">Да, в корзину ({selIds.length})</button><button onClick={() => setConfirmDel(false)} className="rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[12px] font-bold text-neutral-500 hover:bg-neutral-50">Нет</button></span>}
-                        </div>
-                      )}
                       <button onClick={() => { setTasksOpen(false); onAddJob && onAddJob({ type: "project", batchId: active.id, note: `Партия: «${active.name || ""}»` }); }} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-semibold text-neutral-500 hover:border-cyan-400 hover:text-cyan-700"><Plus size={14} /> Задача по партии</button>
                     </div>
                   </div></>)}
