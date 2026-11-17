@@ -9016,17 +9016,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
                 </select>
               </div>
             )}
-            {curType === "project" && j.batchId && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-sm text-neutral-600">Партия</span>
-                <select value={j.batchId || ""} onChange={(e) => set("batchId", e.target.value || null)} className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
-                  <option value="">— без партии —</option>
-                  {(batches || []).map((b) => (<option key={b.id} value={b.id}>{b.name || "Партия"}</option>))}
-                </select>
-                {(batches || []).length === 0 && <span className="text-[11px] text-neutral-400">Партий пока нет — создайте в разделе «Закупки».</span>}
-              </div>
-            )}
-
+            
             <div className="border-t border-neutral-200/70" />
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Исполнители</span>
