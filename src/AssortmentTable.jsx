@@ -1251,7 +1251,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         const jt = String(title).trim();
         const legacy = `${jt} · ${(products.find((p) => p.id === it.productId) || {}).name || ""}`.trim();
         const dup = (jobs || []).some((j) => j && !j.deletedAt && j.productId === it.productId && (j.title === jt || j.title === legacy)) || newJobs.some((j) => j.productId === it.productId && (j.title === jt || j.title === legacy));
-        if (!dup) newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common });
+        if (!dup) newJobs.push({ id: uid(), title: jt, type: "product", productId: it.productId || null, ...common, log: [mkLog("created", {}, "system")] });
       });
       else {
         // проектная задача с партией в названии (если её там ещё нет)
@@ -8849,7 +8849,9 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
     }
   };
   const renderLog = () => {
-    const items = (liveLog || []).slice().reverse();
+    let items = (liveLog || []).slice().reverse();
+    // у старых задач (и созданных автоматически до появления логов) записи нет — показываем «Создана» по дате создания
+    if (!items.length && j.createdAt) { const cd = new Date(j.createdAt); if (!isNaN(cd)) items = [{ id: "created-fallback", ts: cd.toISOString(), kind: "created", by: (j.trgId || /^(Триггер|Партия)/.test(String(j.note || ""))) ? "system" : null }]; }
     const groups = [];
     items.forEach((e) => { const d = new Date(e.ts); const key = isoYMD(d); let g = groups.find((x) => x.key === key); if (!g) { g = { key, d, list: [] }; groups.push(g); } g.list.push(e); });
     const today = isoYMD(new Date()), yd = isoYMD(new Date(Date.now() - 864e5));
