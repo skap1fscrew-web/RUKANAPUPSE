@@ -8125,16 +8125,16 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
     ];
   }
   const byCol = Object.fromEntries(columns.map((c) => [c.key, []]));
-  // сортировка карточек внутри колонок (при сортировке по приоритету сначала просроченные): по дате добавления (новые сверху) или по приоритету (высокий сверху);
+  // сортировка карточек внутри колонок (при сортировке по приоритету сначала задачи со сроком, самые срочные выше): по дате добавления (новые сверху) или по приоритету (высокий сверху);
   // при равенстве — новые выше (стабильно по исходному индексу)
   const jobIdx = new Map(jobs.map((j, i) => [j.id, i]));
   const PRIO_RANK = { high: 0, med: 1, low: 2 };
   const sortedJobs = jobs.slice().sort((a, b) => {
     if (sortBy === "priority") {
-      // просроченные всегда выше; чем больше просрочка (раньше срок) — тем выше
-      const oa = !a.done && stageOf(a) !== "done" && a.date && a.date < todayStr, ob = !b.done && stageOf(b) !== "done" && b.date && b.date < todayStr;
-      if (oa !== ob) return oa ? -1 : 1;
-      if (oa && ob && a.date !== b.date) return a.date.localeCompare(b.date);
+      // задачи со сроком всегда выше задач без срока; чем раньше срок (просрочка — самая срочная) — тем выше
+      const da = !a.done && stageOf(a) !== "done" && a.date ? a.date : "", db = !b.done && stageOf(b) !== "done" && b.date ? b.date : "";
+      if (!!da !== !!db) return da ? -1 : 1;
+      if (da && db && da !== db) return da.localeCompare(db);
       const pa = PRIO_RANK[a.priority] ?? 3, pb = PRIO_RANK[b.priority] ?? 3;
       if (pa !== pb) return pa - pb;
     }
