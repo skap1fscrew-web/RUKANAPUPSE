@@ -17,4 +17,5 @@ body { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .rnp-mq-track { animation: none; } }
 
 .rnp-dim > td { pointer-events: none; }
-.rnp-dim > td > * { filter: blur(3px) grayscale(.7); opacity: .45; transition: filter .2s, opacity .2s; }
+.rnp-dim > td:not([style*="sticky"]) { position: relative; }
+.rnp-dim > td::after { content: ""; position: absolute; inset: 0; background: rgba(255,255,255,.93); z-index: 1; }
