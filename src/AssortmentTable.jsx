@@ -4,7 +4,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow,
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Flag, AlertTriangle, GitBranch, ArrowUpRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
+  Target, Focus, Flag, AlertTriangle, GitBranch, ArrowUpRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -9212,6 +9212,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const [st, setSt] = useState("");
   const [pur, setPur] = useState(""); // фильтр по закупке (партии)
   const [rowsOpen, setRowsOpen] = useState(false);
+  const [focusId, setFocusId] = useState(null); // фокус на одном товаре: остальные размыты
   const [q, setQ] = useState("");
   useEffect(() => lsSet("rnp.ovRows", rows), [rows]);
   useEffect(() => lsSet("rnp.ovOnly", onlyData), [onlyData]);
@@ -9289,14 +9290,17 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                 const b = rnpBudget(p); const pct = b.allocated > 0 ? Math.min(100, Math.round(b.spent / b.allocated * 100)) : 0; const bar = pct < 70 ? "#16a34a" : pct < 95 ? "#f59e0b" : "#dc2626";
                 const trs = shownTasks.length ? shownTasks : [null];
                 return trs.map((t, ti) => (
-                  <tr key={p.id + ":" + (t ? t.id : "none")}>
+                  <tr key={p.id + ":" + (t ? t.id : "none")} className={focusId && focusId !== p.id && list.some((x) => x.id === focusId) ? "rnp-dim" : ""}>
                     {ti === 0 && (
                       <>
                         <td rowSpan={trs.length} style={{ ...stk(0, W_P, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: 0 }}>
+                          <div className="group/foc relative">
                           <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-stretch gap-2.5 px-2 py-2 text-left hover:bg-neutral-50" title="Открыть карточку">
                             {p.image ? <img src={p.image} alt="" className="w-[54px] shrink-0 self-stretch rounded-lg object-cover" /> : <span className="w-[54px] shrink-0 self-stretch rounded-lg bg-neutral-100" />}
                             <span className="flex min-w-0 flex-col justify-between gap-0.5"><span className="text-[10px] font-extrabold leading-none text-neutral-400">{p.code || "—"}</span><span className="line-clamp-2 text-[12px] font-bold leading-tight text-neutral-800">{p.name || "Без названия"}</span>{p.status ? <span className="self-start rounded-full px-1.5 text-[10px] font-extrabold leading-[14px]" style={{ background: statusColor(p.status) + "22", color: statusColor(p.status) }}>{p.status}</span> : <span />}</span>
                           </button>
+                          <button onClick={() => setFocusId((f) => (f === p.id ? null : p.id))} title={focusId === p.id ? "Выйти из фокуса" : "Фокус на этом товаре"} className={"absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-lg border transition " + (focusId === p.id ? "border-neutral-900 bg-neutral-900 text-white opacity-100" : "border-neutral-200 bg-white text-neutral-400 opacity-0 hover:text-neutral-800 group-hover/foc:opacity-100")}><Focus size={13} /></button>
+                          </div>
                         </td>
                         <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: "0 10px" }}>
                           <div className="flex flex-col leading-[1.15]">

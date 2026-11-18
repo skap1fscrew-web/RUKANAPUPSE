@@ -15,3 +15,6 @@ body { margin: 0; }
 .rnp-mq-track { animation: rnpMq 40s linear infinite; will-change: transform; }
 .rnp-mq:hover .rnp-mq-track { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) { .rnp-mq-track { animation: none; } }
+
+.rnp-dim > td { pointer-events: none; }
+.rnp-dim > td > * { filter: blur(3px) grayscale(.7); opacity: .45; transition: filter .2s, opacity .2s; }
