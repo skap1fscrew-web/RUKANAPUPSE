@@ -9501,7 +9501,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const rub = (n) => Math.round(n).toLocaleString("ru-RU");
   const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return rnpWbFmt(t, v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
   // итого по дням (по показанным товарам)
-  const W_P = 240, W_F = 96, W_L = 130;
+  const W_P = 240, W_F = 96, W_L = 156;
   const stk = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
   const chip = "rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition ";
   return (
