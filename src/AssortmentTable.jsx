@@ -224,8 +224,10 @@ const AB_FIELDS = [
 
 const RNP_TASKS = [
   { id: "orders",   label: "Заказы", kind: "wbOrders" },
+  { id: "orderSum", label: "Сумма заказов", kind: "wbOrders", src: "orderSum" },
   { id: "sales",    label: "Выкупы", kind: "wbOrders", src: "sales" },
   { id: "internal", label: "Внутренняя реклама", kind: "singleCost", cost: true },
+  { id: "drr",      label: "ДРРвз", kind: "wbOrders", src: "drr" },
   { id: "vykupy",   label: "Самовыкупы", kind: "twoRow", top: "entries", cost: true, fields: VYKUP_FIELDS },
   { id: "bloggers", label: "Блогеры", kind: "twoRow", top: "entries", cost: true, fields: BLOGGER_FIELDS },
   { id: "razdachi", label: "Раздачи", kind: "twoRow", top: "entries", cost: true, fields: RAZDACHI_FIELDS },
@@ -242,7 +244,24 @@ let RNP_AD = {}, RNP_ADMETA = {};
 let RNP_SALES = {};
 function rnpSalesVal(product, dkey) { return RNP_SALES[`${product.code || product.wb || ""}:${dkey}`] || RNP_SALES[`${product.wb}:${dkey}`] || null; }
 // Число в строке «Заказы» / «Выкупы WB» за день
+let RNP_ORDSUM = {}; // сумма заказов по дням из WB: { "артикул|nmId:YYYY-MM-DD": ₽ }
+function rnpOrderSum(product, dkey) { return RNP_ORDSUM[`${product.code || product.wb || ""}:${dkey}`] || RNP_ORDSUM[`${product.wb}:${dkey}`] || 0; }
+// Формат значения строки: сумма компактно, ДРРвз в процентах
+function rnpWbFmt(task, n) {
+  if (!n) return "";
+  if (task.src === "orderSum") return n >= 10000 ? (Math.round(n / 100) / 10).toLocaleString("ru-RU") + "к" : Math.round(n).toLocaleString("ru-RU");
+  if (task.src === "drr") return (Math.round(n * 10) / 10).toLocaleString("ru-RU") + "%";
+  return String(n);
+}
+function rnpWbTip(task, product, dkey) {
+  if (task.src === "sales") { const v = rnpSalesVal(product, dkey); return v ? `Выкупов: ${v[0]}, возвратов: ${v[1]}` : undefined; }
+  if (task.src === "orderSum") { const n = rnpOrderSum(product, dkey); return n ? `Сумма заказов: ${Math.round(n).toLocaleString("ru-RU")} ₽` : undefined; }
+  if (task.src === "drr") { const n = rnpOrderSum(product, dkey), ad = rnpInternalDay(RNP_TASKS.find((t) => t.id === "internal"), product, dkey); return n && ad ? `ДРР ко всем заказам: реклама ${Math.round(ad).toLocaleString("ru-RU")} ₽ / заказы ${Math.round(n).toLocaleString("ru-RU")} ₽` : undefined; }
+  return undefined;
+}
 function rnpWbCount(task, product, dkey, wbOrders) {
+  if (task.src === "orderSum") return rnpOrderSum(product, dkey);
+  if (task.src === "drr") { const n = rnpOrderSum(product, dkey), ad = rnpInternalDay(RNP_TASKS.find((t) => t.id === "internal"), product, dkey); return n > 0 && ad > 0 ? ad / n * 100 : 0; }
   if (task.src === "sales") { const v = rnpSalesVal(product, dkey); return v ? v[0] : 0; }
   const code = product.code || product.wb || "";
   return wbOrders[`${code}:${dkey}`] || wbOrders[`${product.wb}:${dkey}`] || 0;
@@ -264,7 +283,7 @@ function rnpSingleTotal(task, product) {
   for (const [k, v] of Object.entries(product.rnp?.cells || {})) if (k.startsWith(pre) && !seen.has(k.slice(pre.length))) { const n = toNum(v); if (!isNaN(n)) sum += n; }
   return sum;
 }
-const RNP_COLORS = { orders: "#16a34a", sales: "#0d9488", internal: "#2563eb", vykupy: "#16a34a", bloggers: "#db2777", razdachi: "#d97706", stars: "#7c3aed", wibes: "#0891b2", promo: "#ea580c", ab: "#64748b" };
+const RNP_COLORS = { orders: "#16a34a", orderSum: "#16a34a", drr: "#b45309", sales: "#0d9488", internal: "#2563eb", vykupy: "#16a34a", bloggers: "#db2777", razdachi: "#d97706", stars: "#7c3aed", wibes: "#0891b2", promo: "#ea580c", ab: "#64748b" };
 // дашборд «Контент» — чек-лист готовности карточки
 const CONTENT_ITEMS = [
   { id: "main", label: "Главный слайд" },
@@ -1129,12 +1148,14 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [wbOrdersMeta, setWbOrdersMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbSales, setWbSales] = useState({}); // { "артикул|nmId:YYYY-MM-DD": [выкупов, возвратов] }
   const [wbSalesMeta, setWbSalesMeta] = useState({});
+  const [wbOrdSum, setWbOrdSum] = useState({}); // сумма заказов по дням { "артикул|nmId:YYYY-MM-DD": ₽ }
+  const [wbOrdSumMeta, setWbOrdSumMeta] = useState({});
   const [wbAdKey, setWbAdKey] = useState(""); // ключ WB, категория «Продвижение»
   const [wbAdSpend, setWbAdSpend] = useState({}); // { "nmId:YYYY-MM-DD": ₽ } факт внутренней рекламы
   const [wbAdMeta, setWbAdMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbAdLoading, setWbAdLoading] = useState(false);
   const [wbAdMsg, setWbAdMsg] = useState("");
-  RNP_AD = wbAdSpend; RNP_ADMETA = wbAdMeta; RNP_BATCHES = purchaseBatches; RNP_SALES = wbSales;
+  RNP_AD = wbAdSpend; RNP_ADMETA = wbAdMeta; RNP_BATCHES = purchaseBatches; RNP_SALES = wbSales; RNP_ORDSUM = wbOrdSum;
   const [wbLoading, setWbLoading] = useState(false);
   const [wbProgress, setWbProgress] = useState(null);
   const [settingsTab, setSettingsTab] = useState("statuses"); // стартовая вкладка окна настроек
@@ -1238,6 +1259,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = JSON.stringify(settings.wbApiKey); }
         if (settings.wbOrders && typeof settings.wbOrders === "object") { setWbOrders(settings.wbOrders); syncedRef.current.settings.wbOrders = JSON.stringify(settings.wbOrders); }
         if (settings.wbSales && typeof settings.wbSales === "object") { setWbSales(settings.wbSales); syncedRef.current.settings.wbSales = JSON.stringify(settings.wbSales); }
+        if (settings.wbOrdSum && typeof settings.wbOrdSum === "object") { setWbOrdSum(settings.wbOrdSum); syncedRef.current.settings.wbOrdSum = JSON.stringify(settings.wbOrdSum); }
+        if (settings.wbOrdSumMeta && typeof settings.wbOrdSumMeta === "object") { setWbOrdSumMeta(settings.wbOrdSumMeta); syncedRef.current.settings.wbOrdSumMeta = JSON.stringify(settings.wbOrdSumMeta); }
         if (settings.wbSalesMeta && typeof settings.wbSalesMeta === "object") { setWbSalesMeta(settings.wbSalesMeta); syncedRef.current.settings.wbSalesMeta = JSON.stringify(settings.wbSalesMeta); }
         if (settings.wbAdKey) { setWbAdKey(settings.wbAdKey); syncedRef.current.settings.wbAdKey = JSON.stringify(settings.wbAdKey); }
         if (settings.wbAdSpend && typeof settings.wbAdSpend === "object") { setWbAdSpend(settings.wbAdSpend); syncedRef.current.settings.wbAdSpend = JSON.stringify(settings.wbAdSpend); }
@@ -1350,7 +1373,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1393,7 +1416,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
 
   // Построчное сохранение задач (таблица jobs). Пишем только изменённые строки,
   // удаляем только исчезнувшие — чужая старая копия массива больше не затирает соседние задачи.
@@ -1528,6 +1551,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         else if (key === "wbOrdersMeta") setWbOrdersMeta(value || {});
         else if (key === "wbSales") setWbSales(value || {});
         else if (key === "wbSalesMeta") setWbSalesMeta(value || {});
+        else if (key === "wbOrdSum") setWbOrdSum(value || {});
+        else if (key === "wbOrdSumMeta") setWbOrdSumMeta(value || {});
         else if (key === "wbAdKey") setWbAdKey(value);
         else if (key === "wbAdSpend") setWbAdSpend(value || {});
         else if (key === "wbAdMeta") setWbAdMeta(value || {});
@@ -1802,6 +1827,34 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     } catch (e) { console.warn("[WB] выкупы не загрузились:", e); }
   };
 
+  // Сумма заказов по дням из WB (заказы, priceWithDisc): один запрос на весь период, лимит WB — 1 в минуту
+  const fetchWbOrdSum = async () => {
+    const key = wbApiKey || wbAdKey;
+    if (!key) return;
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const addD = (ds, n) => { const d = new Date(ds + "T00:00:00"); d.setDate(d.getDate() + n); return iso(d); };
+    const today = new Date(); today.setHours(0, 0, 0, 0); const todayStr = iso(today);
+    const allDays = []; { const cur = new Date(rnpStartDate + "T00:00:00"); for (let i = 0; i < rnpDays && cur <= today; i++) { allDays.push(iso(cur)); cur.setDate(cur.getDate() + 1); } }
+    const todo = allDays.filter((day) => !(wbOrdSumMeta[day] && wbOrdSumMeta[day] >= addD(day, 3)));
+    if (!todo.length) return;
+    const dateFrom = todo[0];
+    try {
+      let data = null;
+      for (let a = 0; a < 3 && !data; a++) {
+        const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-orders-sum", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key, dateFrom }) });
+        if (resp.status === 429) { await new Promise((r) => setTimeout(r, 62000)); continue; }
+        if (!resp.ok) throw new Error("wb-orders-sum " + resp.status);
+        data = await resp.json();
+      }
+      if (!data) return;
+      const next = {}; for (const [k, v] of Object.entries(wbOrdSum)) { if ((k.split(":")[1] || "") < dateFrom) next[k] = v; }
+      Object.assign(next, data);
+      const meta = { ...wbOrdSumMeta }; for (const d of allDays) if (d >= dateFrom) meta[d] = todayStr;
+      setWbOrdSum(next); setWbOrdSumMeta(meta);
+      try { await Promise.all([upsertSetting("wbOrdSum", next), upsertSetting("wbOrdSumMeta", meta)]); syncedRef.current.settings.wbOrdSum = JSON.stringify(next); syncedRef.current.settings.wbOrdSumMeta = JSON.stringify(meta); } catch (_) {}
+    } catch (e) { console.warn("[WB] сумма заказов не загрузилась:", e); }
+  };
+
   // Загрузка заказов из WB API
   const fetchWbOrders = async () => {
     if (!wbApiKey) { setSettingsTab("wbapi"); setSettingsOpen(true); return; }
@@ -1850,7 +1903,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     };
 
     const daysToFetch = allDays.filter((day) => !isFinal(day));
-    if (daysToFetch.length === 0) { fetchWbSales(); return; }
+    if (daysToFetch.length === 0) { fetchWbSales(); fetchWbOrdSum(); return; }
 
     setWbLoading(true);
 
@@ -1912,7 +1965,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       console.error("[WB] кеш заказов не сохранился:", e);
     }
 
-    fetchWbSales(); // заодно обновляем выкупы
+    fetchWbSales(); fetchWbOrdSum(); // заодно обновляем выкупы и сумму заказов
     if (failed.length) {
       console.warn(`[WB] не добрали ${failed.length} дней после 4 проходов: ${failed.join(", ")}`);
     }
@@ -4605,11 +4658,10 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
 
     if (task.kind === "wbOrders") {
       const count = rnpWbCount(task, product, d.key, wbOrders);
-      const sv = task.src === "sales" ? rnpSalesVal(product, d.key) : null;
       return (
-        <td key={d.key} title={sv ? `Выкупов: ${sv[0]}, возвратов: ${sv[1]}` : undefined} style={{ ...base, background: count > 0 ? "#f0fdf4" : baseBg }}>
+        <td key={d.key} title={rnpWbTip(task, product, d.key)} style={{ ...base, background: count > 0 ? "#f0fdf4" : baseBg }}>
           <div className="px-1 py-0.5 text-center text-xs font-semibold text-neutral-700" style={{ minHeight: 26, fontVariantNumeric: "tabular-nums" }}>
-            {count > 0 ? count : <span className="text-neutral-300">—</span>}
+            {count > 0 ? rnpWbFmt(task, count) : <span className="text-neutral-300">—</span>}
           </div>
         </td>
       );
@@ -6089,7 +6141,7 @@ function PromoCalendar({ product, wbOrders = {}, onOpenDay }) {
                 {acts.slice(0, 3).map(({ t, a }) => (
                   <div key={t.id} className="flex items-center gap-1 px-0.5 text-[11px]" title={t.label}>
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: RNP_COLORS[t.id] || "#cbd5e1" }} />
-                    <span className="min-w-0 flex-1 truncate text-neutral-600">{t.label}{a.count ? " ·" + a.count : ""}</span>
+                    <span className="min-w-0 flex-1 truncate text-neutral-600">{t.label}{a.count ? " ·" + (t.src ? rnpWbFmt(t, a.count) : a.count) : ""}</span>
                   </div>
                 ))}
                 {acts.length > 3 && <div className="px-1 text-[10px] text-neutral-400">+{acts.length - 3} ещё</div>}
@@ -6121,7 +6173,7 @@ function PromoDayEditor({ product, dkey, wbOrders = {}, onSetCell, onSetFlag, on
             const dot = <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RNP_COLORS[t.id] || "#cbd5e1" }} />;
             if (t.kind === "wbOrders") {
               const c = rnpWbCount(t, product, dkey, wbOrders);
-              return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><span className="ml-auto text-sm font-semibold tabular-nums text-neutral-700">{c || "—"}</span></div>);
+              return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><span className="ml-auto text-sm font-semibold tabular-nums text-neutral-700">{c ? rnpWbFmt(t, c) : "—"}</span></div>);
             }
             if (t.kind === "singleCost") {
               return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><div className="ml-auto flex items-center gap-1">{t.id === "internal" && rnpAdDay(product, dkey) !== undefined ? <span title="Факт из WB" className="w-24 px-2 py-1 text-right text-sm font-semibold tabular-nums text-blue-600">{Math.round(rnpAdDay(product, dkey)).toLocaleString("ru-RU")}</span> : <input value={cells[`${t.id}:cost:${dkey}`] ?? ""} onChange={(e) => onSetCell(`${t.id}:cost:${dkey}`, e.target.value)} inputMode="decimal" placeholder="0" className="w-24 rounded-lg border border-neutral-200 px-2 py-1 text-right text-sm tabular-nums focus:border-neutral-400 focus:outline-none" />}<span className="text-xs text-neutral-400">₽</span></div></div>);
@@ -9447,7 +9499,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
     .filter((p) => !q.trim() || ((p.name || "") + " " + (p.code || "") + " " + (p.wb || "")).toLowerCase().includes(q.trim().toLowerCase()))
     .filter((p) => !onlyData || hasData(p));
   const rub = (n) => Math.round(n).toLocaleString("ru-RU");
-  const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return String(v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
+  const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return rnpWbFmt(t, v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
   // итого по дням (по показанным товарам)
   const W_P = 240, W_F = 96, W_L = 130;
   const stk = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
@@ -9575,8 +9627,8 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                       const arr = t.kind === "twoRow" ? ((p.rnp.entries || {})[`${t.id}:${d.key}`] || []) : [];
                       const allDone = arr.length > 0 && arr.every((e) => e.done);
                       const bg = fill || (v ? (t.kind === "wbOrders" ? "#f0fdf4" : t.kind === "twoRow" ? (allDone ? col + "22" : "#e5e5e5") : col + "22") : (isTd ? "#fff7ed" : "transparent"));
-                      const base = { background: bg, color: t.kind === "wbOrders" ? "#15803d" : col, textAlign: "center", fontWeight: 700, height: 27, padding: 0, borderLeft: "1px solid #f7f7f7", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" };
-                      if (t.kind === "wbOrders") { const sv = t.src === "sales" ? rnpSalesVal(p, d.key) : null; return <td key={d.key} title={sv ? `Выкупов: ${sv[0]}, возвратов: ${sv[1]}` : t.label} style={base}>{cellTxt(t, v)}</td>; }
+                      const base = { background: bg, color: t.kind === "wbOrders" ? (t.src === "drr" ? (v && v.count > 20 ? "#b91c1c" : v && v.count > 10 ? "#b45309" : "#15803d") : "#15803d") : col, textAlign: "center", fontWeight: 700, height: 27, padding: 0, borderLeft: "1px solid #f7f7f7", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" };
+                      if (t.kind === "wbOrders") return <td key={d.key} title={rnpWbTip(t, p, d.key) || t.label} style={base}>{cellTxt(t, v)}</td>;
                       if (t.kind === "singleCost") {
                         const ad = rnpAdDay(p, d.key);
                         if (t.id === "internal" && ad !== undefined) return <td key={d.key} title="Факт из WB (внутренняя реклама)" style={{ ...base, background: fill || (ad > 0 ? col + "22" : (isTd ? "#fff7ed" : "transparent")), color: col }}>{ad > 0 ? Math.round(ad).toLocaleString("ru-RU") : ""}</td>;
