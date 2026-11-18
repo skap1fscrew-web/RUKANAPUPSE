@@ -2640,7 +2640,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           />
         )}
 
-        {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} onOpen={(id) => setCardModal(id)} onOpenPopup={(pid, task, dateKey) => setGanttModal({ productId: pid, mode: "popup", task, dateKey })} onOpenDB={(pid, task) => setGanttModal({ productId: pid, mode: "db", task })} onSetCell={(pid, k, v) => setRnpCell(pid, k, v)} onSetFlag={(pid, f, v) => setRnpFlag(pid, f, v)} onSetBudget={(pid, v) => setRnpBudget(pid, v)} />}
+        {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} purchaseBatches={purchaseBatches} onOpen={(id) => setCardModal(id)} onOpenPopup={(pid, task, dateKey) => setGanttModal({ productId: pid, mode: "popup", task, dateKey })} onOpenDB={(pid, task) => setGanttModal({ productId: pid, mode: "db", task })} onSetCell={(pid, k, v) => setRnpCell(pid, k, v)} onSetFlag={(pid, f, v) => setRnpFlag(pid, f, v)} onSetBudget={(pid, v) => setRnpBudget(pid, v)} />}
 
         {activeTab === "strategy" && (
           <StrategySection
@@ -9202,7 +9202,7 @@ function nodeIsDone(n) { return (n.checklist && n.checklist.length) ? n.checklis
 
 // Обёртка: список карт-стратегий + переключатель. Новая карта создаётся по выбранному шаблону.
 // ---- Вкладка «РНП»: данные РНП из карточек по всем товарам (дни × строки) ----
-function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOpenPopup, onOpenDB, onSetCell, onSetFlag, onSetBudget }) {
+function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatches = [], onOpen, onOpenPopup, onOpenDB, onSetCell, onSetFlag, onSetBudget }) {
   const iso = (d) => { const x = new Date(d); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); };
   const todayISO = iso(new Date());
   const SPAN = 14;
@@ -9210,6 +9210,8 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOp
   const [rows, setRows] = useState(() => lsGet("rnp.ovRows", ["orders", "bloggers", "razdachi"]));
   const [onlyData, setOnlyData] = useState(() => lsGet("rnp.ovOnly", true));
   const [st, setSt] = useState("");
+  const [pur, setPur] = useState(""); // фильтр по закупке (партии)
+  const [rowsOpen, setRowsOpen] = useState(false);
   const [q, setQ] = useState("");
   useEffect(() => lsSet("rnp.ovRows", rows), [rows]);
   useEffect(() => lsSet("rnp.ovOnly", onlyData), [onlyData]);
@@ -9227,6 +9229,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOp
   };
   const list = (products || []).filter((p) => p && !p.deletedAt && p.rnp)
     .filter((p) => !st || p.status === st)
+    .filter((p) => { if (!pur) return true; const bt = (purchaseBatches || []).find((x) => x.id === pur); return !!bt && (bt.items || []).some((it) => it.productId === p.id); })
     .filter((p) => !q.trim() || ((p.name || "") + " " + (p.code || "") + " " + (p.wb || "")).toLowerCase().includes(q.trim().toLowerCase()))
     .filter((p) => !onlyData || hasData(p));
   const rub = (n) => Math.round(n).toLocaleString("ru-RU");
@@ -9243,11 +9246,29 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOp
         <span className={chip + "border-neutral-200 bg-white text-neutral-700"}>{fmtRange(start, end)}</span>
         <button onClick={() => setEndOff((o) => o + 7)} className={chip + "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}>›</button>
         <button onClick={() => setEndOff(0)} className={chip + "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}>Сегодня</button>
-        <span className="mx-1 h-5 w-px bg-neutral-200" />
-        <span className="text-[11.5px] font-semibold text-neutral-400">Строки:</span>
-        {RNP_TASKS.map((t) => { const on = rows.includes(t.id); return <button key={t.id} onClick={() => setRows((r) => on ? r.filter((x) => x !== t.id) : [...r, t.id])} className={chip + (on ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>{t.label}</button>; })}
+        <div className="relative">
+          <button onClick={() => setRowsOpen((o) => !o)} title="Настройка строк РНП" className={"flex h-[30px] w-[30px] items-center justify-center rounded-full border transition " + (rowsOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>
+            <Settings2 size={15} />
+          </button>
+          {rowsOpen && (<><div className="fixed inset-0 z-40" onClick={() => setRowsOpen(false)} />
+            <div className="absolute left-0 z-50 mt-1.5 w-[250px] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
+              <div className="flex items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5"><span className="text-[13px] font-bold text-neutral-800">Строки РНП</span><span className="rounded-full bg-neutral-100 px-1.5 text-[10px] font-bold text-neutral-500">{rows.length}</span><button onClick={() => setRowsOpen(false)} className="ml-auto rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100"><X size={14} /></button></div>
+              <div className="max-h-[340px] overflow-auto p-1.5">
+                {RNP_TASKS.map((t) => { const on = rows.includes(t.id); return (
+                  <button key={t.id} onClick={() => setRows((r) => on ? r.filter((x) => x !== t.id) : [...r, t.id])} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50">
+                    <span className={"flex-1 text-[12.5px] font-semibold " + (on ? "text-neutral-800" : "text-neutral-400")}>{t.label}</span>
+                    <span className="relative h-[18px] w-[32px] shrink-0 rounded-full transition" style={{ background: on ? "#16a34a" : "#d4d4d8" }}><span className="absolute top-0.5 h-[14px] w-[14px] rounded-full bg-white shadow transition-all" style={{ left: on ? 16 : 2 }} /></span>
+                  </button>
+                ); })}
+              </div>
+            </div></>)}
+        </div>
         <span className="ml-auto" />
         <button onClick={() => setOnlyData((v) => !v)} className={chip + (onlyData ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-500")} title="Показывать только товары, у которых есть данные РНП">Только с данными</button>
+        <select value={pur} onChange={(e) => setPur(e.target.value)} title="Показать только товары выбранной закупки" className={"max-w-[200px] rounded-full border px-2.5 py-1 text-[11.5px] font-bold focus:outline-none " + (pur ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-600")}>
+          <option value="">Закупка: все</option>
+          {(purchaseBatches || []).filter((x) => x && !x.deletedAt).map((x) => <option key={x.id} value={x.id}>{x.name || "Без названия"}</option>)}
+        </select>
         <select value={st} onChange={(e) => setSt(e.target.value)} className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[11.5px] font-bold text-neutral-600 focus:outline-none">
           <option value="">Статус: все</option>
           {statuses.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
