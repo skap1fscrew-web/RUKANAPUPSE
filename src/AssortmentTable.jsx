@@ -9517,23 +9517,6 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
           <button onClick={() => setEndOff((o) => o + 7)} title="Неделей позже" className="flex h-7 w-8 items-center justify-center rounded-md text-neutral-400 transition hover:bg-white hover:text-neutral-700"><ChevronRight size={16} /></button>
         </div>
         <button onClick={() => setEndOff(0)} className="inline-flex h-8 items-center rounded-lg border border-neutral-200 px-2.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">Сегодня</button>
-        <div className="relative">
-          <button onClick={() => setRowsOpen((o) => !o)} title="Настройка строк РНП" className={"flex h-8 w-8 items-center justify-center rounded-lg border transition " + (rowsOpen ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>
-            <Settings2 size={15} />
-          </button>
-          {rowsOpen && (<><div className="fixed inset-0 z-40" onClick={() => setRowsOpen(false)} />
-            <div className="absolute left-0 z-50 mt-1.5 w-[250px] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
-              <div className="flex items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5"><span className="text-[13px] font-bold text-neutral-800">Строки РНП</span><span className="rounded-full bg-neutral-100 px-1.5 text-[10px] font-bold text-neutral-500">{rows.length}</span><button onClick={() => setRowsOpen(false)} className="ml-auto rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100"><X size={14} /></button></div>
-              <div className="max-h-[340px] overflow-auto p-1.5">
-                {RNP_TASKS.map((t) => { const on = rows.includes(t.id); return (
-                  <button key={t.id} onClick={() => setRows((r) => on ? r.filter((x) => x !== t.id) : [...r, t.id])} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50">
-                    <span className={"flex-1 text-[12.5px] font-semibold " + (on ? "text-neutral-800" : "text-neutral-400")}>{t.label}</span>
-                    <span className="relative h-[18px] w-[32px] shrink-0 rounded-full transition" style={{ background: on ? "#16a34a" : "#d4d4d8" }}><span className="absolute top-0.5 h-[14px] w-[14px] rounded-full bg-white shadow transition-all" style={{ left: on ? 16 : 2 }} /></span>
-                  </button>
-                ); })}
-              </div>
-            </div></>)}
-        </div>
         {fundPop && (() => {
           const p = products.find((x) => x.id === fundPop.pid); if (!p) return null;
           const funds = p.rnp.funds || [];
@@ -9593,6 +9576,23 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
         ) : (
           <button onClick={() => setSearchOpen(true)} title="Поиск по товару" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
         )}
+        <div className="relative">
+          <button onClick={() => setRowsOpen((o) => !o)} title="Настройка строк РНП" className={"flex h-8 w-8 items-center justify-center rounded-lg border transition " + (rowsOpen ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>
+            <Settings2 size={15} />
+          </button>
+          {rowsOpen && (<><div className="fixed inset-0 z-40" onClick={() => setRowsOpen(false)} />
+            <div className="absolute right-0 z-50 mt-1.5 w-[250px] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
+              <div className="flex items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5"><span className="text-[13px] font-bold text-neutral-800">Строки РНП</span><span className="rounded-full bg-neutral-100 px-1.5 text-[10px] font-bold text-neutral-500">{rows.length}</span><button onClick={() => setRowsOpen(false)} className="ml-auto rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100"><X size={14} /></button></div>
+              <div className="max-h-[340px] overflow-auto p-1.5">
+                {RNP_TASKS.map((t) => { const on = rows.includes(t.id); return (
+                  <button key={t.id} onClick={() => setRows((r) => on ? r.filter((x) => x !== t.id) : [...r, t.id])} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50">
+                    <span className={"flex-1 text-[12.5px] font-semibold " + (on ? "text-neutral-800" : "text-neutral-400")}>{t.label}</span>
+                    <span className="relative h-[18px] w-[32px] shrink-0 rounded-full transition" style={{ background: on ? "#16a34a" : "#d4d4d8" }}><span className="absolute top-0.5 h-[14px] w-[14px] rounded-full bg-white shadow transition-all" style={{ left: on ? 16 : 2 }} /></span>
+                  </button>
+                ); })}
+              </div>
+            </div></>)}
+        </div>
       </div>
       {list.length === 0 ? <div className="py-12 text-center text-sm text-neutral-400">Нет товаров с данными РНП. Выключите «Только с данными», чтобы вносить записи по любым товарам</div> : (
         <div className="overflow-auto rounded-xl border border-neutral-100" style={{ maxHeight: "calc(100vh / " + 0.8 + " - 190px)" }}>
