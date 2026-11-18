@@ -9622,7 +9622,6 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                           <div className="relative flex flex-col leading-[1.15]">
                             {b.fund ? (
                               <>
-                                <button onClick={(e) => openFund(e, p.id)} title="Выбрать фонд и дату старта" className="absolute -right-1 -top-1 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] text-neutral-400 hover:text-neutral-800"><Settings2 size={14} /></button>
                                 <b className="text-[14px] font-extrabold" style={{ color: b.fund.upcoming ? "#a3a3a3" : (b.allocated > 0 ? bar : "#a3a3a3") }} title={"Фонд партии " + b.fund.batchName + ". Затрачено " + rub(b.spent) + " ₽ из " + rub(b.allocated) + " ₽"}>{b.allocated > 0 ? rub(b.ostatok) : "—"}</b>
                                 <span className="text-[9.5px] font-semibold text-neutral-400">из {rub(b.allocated)}</span>
                               </>
@@ -9634,7 +9633,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                             )}
                           </div>
                           <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-neutral-100"><i className="block h-full" style={{ width: Math.max(pct, b.spent > 0 ? 3 : 0) + "%", background: bar }} /></div>
-                          {b.fund ? <div className="mt-0.5 text-[9.5px] font-extrabold text-neutral-400">{b.fund.upcoming ? "старт " : "с "}{dm(b.fund.start)}</div> : <button onClick={(e) => openFund(e, p.id)} title="Выбрать фонд из закупки и дату старта" className="mt-1 rounded-lg border border-dashed border-neutral-300 px-1.5 text-[9.5px] font-bold leading-[15px] text-neutral-400 hover:border-orange-300 hover:text-orange-600">+ фонд</button>}
+                          {b.fund ? <div className="mt-0.5 flex items-center justify-between text-[9.5px] font-extrabold text-neutral-400"><span>{b.fund.upcoming ? "старт " : "с "}{dm(b.fund.start)}</span><button onClick={(e) => openFund(e, p.id)} title="Выбрать фонд и дату старта" className="flex h-[18px] w-[18px] items-center justify-center rounded-[5px] text-neutral-400 hover:text-neutral-800"><Settings2 size={14} /></button></div> : <button onClick={(e) => openFund(e, p.id)} title="Выбрать фонд из закупки и дату старта" className="mt-1 rounded-lg border border-dashed border-neutral-300 px-1.5 text-[9.5px] font-bold leading-[15px] text-neutral-400 hover:border-orange-300 hover:text-orange-600">+ фонд</button>}
                         </td>
                       </>
                     )}
