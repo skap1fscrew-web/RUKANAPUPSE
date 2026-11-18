@@ -5518,7 +5518,6 @@ function RefDB({ embedded, title, typeId, fields, rows, setRows, types = [], act
               <span>Выбрано {sel.length}</span>
               {statusField && <div className="relative"><button onClick={() => setMenu(menu === "bulkstatus" ? null : "bulkstatus")} className="text-amber-300 hover:underline">Сменить статус</button>
                 {menu === "bulkstatus" && (<><div className="fixed inset-0 z-10" onClick={() => setMenu(null)} /><div className="absolute left-0 top-full z-20 mt-2 w-44 rounded-xl border border-neutral-200 bg-white p-1.5 text-neutral-700 shadow-xl">{statusField.options.map((o) => <button key={o.value} onClick={() => { setRows((prev) => prev.map((r) => (sel.includes(r.id) ? { ...r, [statusField.id]: o.value } : r))); setMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-semibold hover:bg-neutral-50"><span className="h-2 w-2 rounded-full" style={{ background: o.color }} />{o.value}</button>)}</div></>)}</div>}
-              {onCreateTask && <button onClick={() => { const names = live.filter((r) => sel.includes(r.id)).map((r) => r.name || "без названия").join(", "); onCreateTask("Связаться: " + names); flash("Задача создана"); }} className="text-amber-300 hover:underline">Создать задачу</button>}
               <button onClick={() => toTrash(sel)} className="text-red-300 hover:underline">В корзину</button>
               <button onClick={() => setSel([])} className="ml-auto text-neutral-400 hover:text-white">Снять выбор</button>
             </div>
