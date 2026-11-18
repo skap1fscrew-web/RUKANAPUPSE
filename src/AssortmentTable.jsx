@@ -3681,7 +3681,7 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
             <span className="flex items-center gap-2 text-[12.5px] font-extrabold" style={{ color: !cycStarted ? "#737373" : "#262626" }}>
               {!cycStarted ? "Запустить цикл" : curStage ? curStage.name : "Готово"}
               <span className="ml-auto text-[10.5px] font-bold" style={{ color: late ? "#dc2626" : "#a3a3a3" }}>
-                {!cycStarted ? "" : curStage ? (late ? "просрочен на " + Math.max(1, Math.round((new Date(todayISO()) - new Date(curEnd)) / 86400000)) + " д" : "этап " + (curIdx + 1) + " из " + cycSt.length + (curEnd ? " · до " + curEnd.slice(8, 10) + "." + curEnd.slice(5, 7) : "")) : "все этапы пройдены"}
+                {!cycStarted ? "" : curStage ? (late ? "просрочен на " + Math.max(1, Math.round((new Date(todayISO()) - new Date(curEnd)) / 86400000)) + " д" : "") : "все этапы пройдены"}
               </span>
               <ChevronDown size={11} className={"opacity-50 transition " + (cycOpen ? "rotate-180" : "")} />
             </span>
