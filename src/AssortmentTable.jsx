@@ -43,8 +43,10 @@ const DCOL = {
   subject: { label: "Предмет", w: 130, filter: "text", field: "subject" },
   name: { label: "Наименование", w: 220, filter: "text", field: "name" },
   status: { label: "Статус", w: 130, filter: "status", field: "status" },
+  del: { label: "Удалить", w: 70, filter: null, field: null },
 };
-const DCOL_ORDER = ["image", "code", "wb", "subject", "name", "status"];
+const DCOL_ORDER = ["image", "code", "name", "subject", "wb", "status", "del"];
+const DCOL_ORDER_OLD = ["image", "code", "wb", "subject", "name", "status"]; // прежний порядок по умолчанию
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
@@ -1111,7 +1113,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [statusFilter, setStatusFilter] = useState([]); // выбранные статусы (мультивыбор); пусто = все
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   // настраиваемые колонки списка «Товары»: порядок, ширина, фильтры (per-device, localStorage)
-  const [colOrder, setColOrder] = useState(() => { const s = lsGet("rnp.listOrder", null); const base = DCOL_ORDER.slice(); if (Array.isArray(s)) { const r = s.filter((x) => DCOL[x]); base.forEach((x) => { if (!r.includes(x)) r.push(x); }); return r; } return base; });
+  const [colOrder, setColOrder] = useState(() => { const s = lsGet("rnp.listOrder", null); const base = DCOL_ORDER.slice(); if (Array.isArray(s) && JSON.stringify(s) !== JSON.stringify(DCOL_ORDER_OLD)) { const r = s.filter((x) => DCOL[x]); base.forEach((x) => { if (!r.includes(x)) r.push(x); }); return r; } return base; });
   const [colW, setColW] = useState(() => lsGet("rnp.listWidths", {}));
   const [colFilters, setColFilters] = useState(() => lsGet("rnp.listFilters", {}));
   const [colMenu, setColMenu] = useState(null); // id колонки с открытым фильтром
@@ -2071,7 +2073,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const dataFrozen = colOrder.map((id) => ({ id, label: DCOL[id].label, width: colW[id] || DCOL[id].w }));
   const frozenCols = [
     ...(hasExpandable ? [{ id: "expander", label: "", width: 40 }] : []),
-    { id: "actions", label: "", width: 32 },
     ...dataFrozen,
   ];
 
@@ -2299,67 +2300,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
               )}
             </div>
             <span className="text-sm text-neutral-400">{activeTab === "duties" ? `${(duties.functions || []).filter((f) => !f.deletedAt).length} функций` : ""}</span>
-            {activeTab === "assortment" && (
-              (prodSearchOpen || codeFilter) ? (
-                <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5 py-1.5" style={{ width: 230 }}>
-                  <Search size={14} className="shrink-0 text-neutral-400" />
-                  <input
-                    autoFocus
-                    value={codeFilter}
-                    onChange={(e) => setCodeFilter(e.target.value)}
-                    onBlur={() => { if (!codeFilter.trim()) setProdSearchOpen(false); }}
-                    onKeyDown={(e) => { if (e.key === "Escape") { setCodeFilter(""); setProdSearchOpen(false); } }}
-                    placeholder="Код или название…"
-                    className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs text-neutral-800 outline-none placeholder:text-neutral-400"
-                  />
-                  <button onClick={() => { setCodeFilter(""); setProdSearchOpen(false); }} className="shrink-0 text-neutral-300 hover:text-neutral-600" title="Очистить"><X size={14} /></button>
-                </div>
-              ) : (
-                <button onClick={() => setProdSearchOpen(true)} title="Поиск по коду и названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
-              )
-            )}
-            {activeTab === "assortment" && (
-              <div className="relative inline-block">
-                <button
-                  onClick={() => setStatusFilterOpen((v) => !v)}
-                  className="rounded-lg inline-flex items-center gap-1.5 border bg-white px-2.5 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
-                  style={statusFilter.length ? { borderColor: "#fdba74", color: "#c2410c", background: "#fff7ed" } : { borderColor: "#e5e5e5" }}
-                >
-                  {statusFilter.length ? `Статусы: ${statusFilter.length}` : "Все статусы"}
-                  <ChevronDown size={14} className="text-neutral-400" />
-                </button>
-                {statusFilterOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setStatusFilterOpen(false)} />
-                    <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
-                      {statuses.map((s) => {
-                        const on = statusFilter.includes(s.name);
-                        return (
-                          <label key={s.name} className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-neutral-50">
-                            <input
-                              type="checkbox"
-                              checked={on}
-                              onChange={() => setStatusFilter((cur) => (on ? cur.filter((x) => x !== s.name) : [...cur, s.name]))}
-                              className="h-3.5 w-3.5 accent-orange-600"
-                            />
-                            <span className="inline-flex items-center gap-1.5">
-                              <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: s.color }} />
-                              <span className="text-neutral-700">{s.name}</span>
-                            </span>
-                          </label>
-                        );
-                      })}
-                      {statusFilter.length > 0 && (
-                        <>
-                          <div className="mx-3 my-1 border-t border-neutral-100" />
-                          <button onClick={() => setStatusFilter([])} className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-500 hover:bg-neutral-50">Сбросить</button>
-                        </>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
           </div>
         {mq.on && mq.text.split("\n").map((x) => x.trim()).filter(Boolean).length > 0 && (() => {
             const ph = mq.text.split("\n").map((x) => x.trim()).filter(Boolean);
@@ -2465,30 +2405,87 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           </div>
         )}
 
-        {/* Товары: переключатель вида список / плитки */}
+        {/* Товары: подшапка — вид (список / плитки), поиск, статусы, «+ Товар» */}
         {activeTab === "assortment" && (
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-              <button onClick={() => setProductsView("list")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (productsView === "list" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Список</button>
-              <button onClick={() => setProductsView("tiles")} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (productsView === "tiles" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Плитки</button>
+              <button onClick={() => setProductsView("list")} className={"h-7 rounded-md px-3.5 text-xs font-bold transition " + (productsView === "list" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Список</button>
+              <button onClick={() => setProductsView("tiles")} className={"h-7 rounded-md px-3.5 text-xs font-bold transition " + (productsView === "tiles" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>Плитки</button>
             </div>
             {productsView === "tiles" && (
-              <div className="inline-flex items-center gap-2">
-                <span className="text-[11px] text-neutral-400">Размер</span>
-                <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">
-                  {["xs", "s", "m"].map((k) => (
-                    <button key={k} onClick={() => setTileSize(k)} className={"min-w-[34px] rounded-md px-2.5 py-1 text-xs font-semibold uppercase transition " + (tileSize === k ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{k}</button>
-                  ))}
-                </div>
+              <div className="inline-flex rounded-lg bg-neutral-100 p-0.5" title="Размер плиток">
+                {["xs", "s", "m"].map((k) => (
+                  <button key={k} onClick={() => setTileSize(k)} className={"h-7 min-w-[34px] rounded-md px-2.5 text-xs font-bold uppercase transition " + (tileSize === k ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{k}</button>
+                ))}
               </div>
             )}
-            {productsView === "list" && (
-              <>
-                {(JSON.stringify(colOrder) !== JSON.stringify(DCOL_ORDER) || Object.keys(colW).length > 0 || Object.values(colFilters).some((v) => (v || "").trim())) && (
-                  <button onClick={resetCols} className="ml-auto rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-500 hover:bg-neutral-50">Сбросить колонки</button>
-                )}
-              </>
+            {activeTab === "assortment" && (
+              (prodSearchOpen || codeFilter) ? (
+                <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5" style={{ width: 230 }}>
+                  <Search size={14} className="shrink-0 text-neutral-400" />
+                  <input
+                    autoFocus
+                    value={codeFilter}
+                    onChange={(e) => setCodeFilter(e.target.value)}
+                    onBlur={() => { if (!codeFilter.trim()) setProdSearchOpen(false); }}
+                    onKeyDown={(e) => { if (e.key === "Escape") { setCodeFilter(""); setProdSearchOpen(false); } }}
+                    placeholder="Код или название…"
+                    className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs text-neutral-800 outline-none placeholder:text-neutral-400"
+                  />
+                  <button onClick={() => { setCodeFilter(""); setProdSearchOpen(false); }} className="shrink-0 text-neutral-300 hover:text-neutral-600" title="Очистить"><X size={14} /></button>
+                </div>
+              ) : (
+                <button onClick={() => setProdSearchOpen(true)} title="Поиск по коду и названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
+              )
             )}
+            {activeTab === "assortment" && (
+              <div className="relative inline-block">
+                <button
+                  onClick={() => setStatusFilterOpen((v) => !v)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+                  style={statusFilter.length ? { borderColor: "#fdba74", color: "#c2410c", background: "#fff7ed" } : { borderColor: "#e5e5e5" }}
+                >
+                  {statusFilter.length ? `Статусы: ${statusFilter.length}` : "Все статусы"}
+                  <ChevronDown size={14} className="text-neutral-400" />
+                </button>
+                {statusFilterOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setStatusFilterOpen(false)} />
+                    <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+                      {statuses.map((s) => {
+                        const on = statusFilter.includes(s.name);
+                        return (
+                          <label key={s.name} className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-neutral-50">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => setStatusFilter((cur) => (on ? cur.filter((x) => x !== s.name) : [...cur, s.name]))}
+                              className="h-3.5 w-3.5 accent-orange-600"
+                            />
+                            <span className="inline-flex items-center gap-1.5">
+                              <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: s.color }} />
+                              <span className="text-neutral-700">{s.name}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                      {statusFilter.length > 0 && (
+                        <>
+                          <div className="mx-3 my-1 border-t border-neutral-100" />
+                          <button onClick={() => setStatusFilter([])} className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-500 hover:bg-neutral-50">Сбросить</button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              {productsView === "list" && (JSON.stringify(colOrder) !== JSON.stringify(DCOL_ORDER) || Object.keys(colW).length > 0 || Object.values(colFilters).some((v) => (v || "").trim())) && (
+                <button onClick={resetCols} className="inline-flex h-8 items-center rounded-lg border border-neutral-200 bg-white px-2.5 text-xs font-semibold text-neutral-500 hover:bg-neutral-50">Сбросить колонки</button>
+              )}
+              <button onClick={addProduct} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-bold text-white hover:bg-neutral-800"><Plus size={14} strokeWidth={2.5} /> Товар</button>
+            </div>
           </div>
         )}
 
@@ -2602,6 +2599,12 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
                               <button onClick={() => removeProduct(p.id)} title="Удалить товар" className="p-1.5 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100">
                                 <Trash2 size={15} />
                               </button>
+                            </td>
+                          );
+                        if (f.id === "del")
+                          return (
+                            <td key="del" className="text-center" style={base}>
+                              <button onClick={() => removeProduct(p.id)} title="Удалить товар" className="rounded-md p-1.5 text-neutral-300 transition hover:bg-red-50 hover:text-red-500"><Trash2 size={15} /></button>
                             </td>
                           );
                         if (f.id === "image")
