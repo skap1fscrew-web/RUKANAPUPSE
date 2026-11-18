@@ -279,7 +279,51 @@ function rnpTaskTotal(task, product) {
     ? Object.entries(entries).reduce((a, [k, arr]) => a + (k.startsWith(task.id + ":") && !k.endsWith(":_ranges") ? (arr || []).reduce((s, e) => s + rec(e), 0) : 0), 0)
     : Object.entries(cells).reduce((a, [k, v]) => { if (k.startsWith(task.id + ":cost:")) { const n = toNum(v); if (!isNaN(n)) return a + n; } return a; }, 0);
 }
+// Фонд маркетинга по партиям: на РНП выбираем партию (фонд считается в карточке: кол-во × цена × ДРР)
+// и дату начала реализации. Затраты с этой даты (до старта следующего фонда) списываются из фонда.
+let RNP_BATCHES = [];
+function rnpFundAmount(product, batchId) {
+  const b = RNP_BATCHES.find((x) => x.id === batchId);
+  const it = b && (b.items || []).find((i) => i.productId === product.id);
+  if (!it) return 0;
+  const q = toNum(it.qty), d = toNum(it.mktDrr), pr = toNum(it.mktPlanPrice);
+  return (!isNaN(q) && !isNaN(d) && !isNaN(pr)) ? q * pr * d / 100 : 0;
+}
+function rnpFunds(product) {
+  return (product.rnp?.funds || []).filter((f) => f && f.batchId && f.start).slice().sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+}
+// Все затраты по строкам-расходам за период [from, to) — to = null: без верхней границы
+function rnpCostBetween(product, from, to) {
+  const inR = (d) => d >= from && (!to || d < to);
+  const entries = product.rnp?.entries || {}, cells = product.rnp?.cells || {};
+  let sum = 0;
+  for (const t of RNP_COST_TASKS) {
+    if (t.kind === "singleCost") {
+      const days = new Set(); const pre = t.id + ":cost:";
+      for (const k of Object.keys(cells)) if (k.startsWith(pre)) days.add(k.slice(pre.length));
+      if (t.id === "internal") for (const d of Object.keys(RNP_ADMETA)) days.add(d);
+      for (const d of days) if (inR(d)) sum += rnpInternalDay(t, product, d);
+    } else if (t.kind === "rangeTask") {
+      for (const e of entries[`${t.id}:_ranges`] || []) if (e.start && inR(e.start)) sum += calcRecordCost(t.fields, e);
+    } else if (t.top === "entries") {
+      const pre = t.id + ":";
+      for (const [k, arr] of Object.entries(entries)) if (k.startsWith(pre) && !k.endsWith(":_ranges") && inR(k.slice(pre.length))) sum += (arr || []).reduce((a, e) => a + calcRecordCost(t.fields, e), 0);
+    }
+  }
+  return sum;
+}
 function rnpBudget(product) {
+  const funds = rnpFunds(product);
+  if (funds.length) {
+    const n = new Date(); const t = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+    let i = -1; funds.forEach((f, k) => { if (f.start <= t) i = k; });
+    const upcoming = i < 0; if (upcoming) i = 0;
+    const f = funds[i], next = funds[i + 1];
+    const allocated = rnpFundAmount(product, f.batchId);
+    const spent = rnpCostBetween(product, f.start, next ? next.start : null);
+    const b = RNP_BATCHES.find((x) => x.id === f.batchId);
+    return { allocated, spent, ostatok: allocated - spent, fund: { start: f.start, batchName: (b && b.name) || "", upcoming } };
+  }
   const alc = toNum(product.rnp?.budget?.allocated);
   const allocated = isNaN(alc) ? 0 : alc;
   const spent = RNP_COST_TASKS.reduce((a, t) => a + rnpTaskTotal(t, product), 0);
@@ -1078,7 +1122,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [wbAdMeta, setWbAdMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbAdLoading, setWbAdLoading] = useState(false);
   const [wbAdMsg, setWbAdMsg] = useState("");
-  RNP_AD = wbAdSpend; RNP_ADMETA = wbAdMeta;
+  RNP_AD = wbAdSpend; RNP_ADMETA = wbAdMeta; RNP_BATCHES = purchaseBatches;
   const [wbLoading, setWbLoading] = useState(false);
   const [wbProgress, setWbProgress] = useState(null);
   const [settingsTab, setSettingsTab] = useState("statuses"); // стартовая вкладка окна настроек
@@ -1671,6 +1715,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     });
   const setRnpFlag = (pid, flag, val) =>
     editRnp(pid, (r) => ({ ...r, flags: { ...r.flags, [flag]: val } }));
+  const setRnpFunds = (pid, funds) => editRnp(pid, (r) => ({ ...r, funds }));
   const setRnpBudget = (pid, val) =>
     editRnp(pid, (r) => ({ ...r, budget: { ...r.budget, allocated: val } }));
 
@@ -2728,7 +2773,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           />
         )}
 
-        {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} purchaseBatches={purchaseBatches} onOpen={(id) => setCardModal(id)} onOpenPopup={(pid, task, dateKey) => setGanttModal({ productId: pid, mode: "popup", task, dateKey })} onOpenDB={(pid, task) => setGanttModal({ productId: pid, mode: "db", task })} onSetCell={(pid, k, v) => setRnpCell(pid, k, v)} onSetFlag={(pid, f, v) => setRnpFlag(pid, f, v)} onSetBudget={(pid, v) => setRnpBudget(pid, v)} />}
+        {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} purchaseBatches={purchaseBatches} onOpen={(id) => setCardModal(id)} onOpenPopup={(pid, task, dateKey) => setGanttModal({ productId: pid, mode: "popup", task, dateKey })} onOpenDB={(pid, task) => setGanttModal({ productId: pid, mode: "db", task })} onSetCell={(pid, k, v) => setRnpCell(pid, k, v)} onSetFlag={(pid, f, v) => setRnpFlag(pid, f, v)} onSetBudget={(pid, v) => setRnpBudget(pid, v)} onSetFunds={(pid, f) => setRnpFunds(pid, f)} />}
 
         {activeTab === "strategy" && (
           <StrategySection
@@ -9298,7 +9343,7 @@ function nodeIsDone(n) { return (n.checklist && n.checklist.length) ? n.checklis
 
 // Обёртка: список карт-стратегий + переключатель. Новая карта создаётся по выбранному шаблону.
 // ---- Вкладка «РНП»: данные РНП из карточек по всем товарам (дни × строки) ----
-function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatches = [], onOpen, onOpenPopup, onOpenDB, onSetCell, onSetFlag, onSetBudget }) {
+function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatches = [], onOpen, onOpenPopup, onOpenDB, onSetCell, onSetFlag, onSetBudget, onSetFunds }) {
   const iso = (d) => { const x = new Date(d); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); };
   const todayISO = iso(new Date());
   const SPAN = 14;
@@ -9309,6 +9354,10 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const [pur, setPur] = useState(""); // фильтр по закупке (партии)
   const [rowsOpen, setRowsOpen] = useState(false);
   const [focusId, setFocusId] = useState(null); // фокус на одном товаре: остальные размыты
+  const [fundPop, setFundPop] = useState(null); // { pid, top, left } — окно выбора фонда
+  const openFund = (e, pid) => { const r = e.currentTarget.getBoundingClientRect(); setFundPop({ pid, top: Math.max(8, Math.min(r.top, window.innerHeight - 380)), left: r.right + 8 }); };
+  const batchTag = (nm) => { const m = String(nm || "").match(/#\s*\d+/); return m ? m[0].replace(/\s+/g, "") : String(nm || "Партия").slice(0, 8); };
+  const dm = (iso) => (iso ? iso.slice(8, 10) + "." + iso.slice(5, 7) : "");
   const [q, setQ] = useState("");
   useEffect(() => lsSet("rnp.ovRows", rows), [rows]);
   useEffect(() => lsSet("rnp.ovOnly", onlyData), [onlyData]);
@@ -9360,6 +9409,39 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
               </div>
             </div></>)}
         </div>
+        {fundPop && (() => {
+          const p = products.find((x) => x.id === fundPop.pid); if (!p) return null;
+          const funds = p.rnp.funds || [];
+          const bs = (purchaseBatches || []).filter((x) => x && !x.deletedAt && (x.items || []).some((i) => i.productId === p.id));
+          const setF = (nf) => onSetFunds && onSetFunds(p.id, nf);
+          const upd = (id, patch) => setF(funds.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+          const bd = rnpBudget(p);
+          return (<><div className="fixed inset-0 z-40" onClick={() => setFundPop(null)} />
+            <div className="fixed z-50 w-[360px] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl" style={{ top: fundPop.top, left: Math.min(fundPop.left, window.innerWidth - 376) }}>
+              <div className="flex items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5"><span className="text-[13px] font-bold text-neutral-800">Фонд маркетинга · {p.code}</span><button onClick={() => setFundPop(null)} className="ml-auto rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100"><X size={14} /></button></div>
+              <div className="space-y-2 p-3">
+                {bs.length === 0 && <div className="rounded-lg bg-neutral-50 px-3 py-2 text-[12px] text-neutral-500">Товара нет ни в одной партии — добавьте его в блоке «Закупки».</div>}
+                {funds.map((f) => (
+                  <div key={f.id} className="rounded-xl border border-neutral-200 p-2">
+                    <div className="flex items-center gap-1.5">
+                      <select value={f.batchId || ""} onChange={(e) => upd(f.id, { batchId: e.target.value })} className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-[12px] font-semibold focus:outline-none">
+                        <option value="">Партия…</option>
+                        {bs.map((x) => <option key={x.id} value={x.id}>{x.name || "Партия"}</option>)}
+                      </select>
+                      <button onClick={() => setF(funds.filter((x) => x.id !== f.id))} title="Убрать фонд" className="rounded-md p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"><X size={13} /></button>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2 text-[11.5px] text-neutral-500">
+                      <span>Начало реализации</span>
+                      <input type="date" value={f.start || ""} onChange={(e) => upd(f.id, { start: e.target.value })} className="rounded-lg border border-neutral-200 px-1.5 py-0.5 text-[12px] font-semibold text-neutral-800 focus:outline-none" />
+                      <span className="ml-auto font-bold tabular-nums text-neutral-700">{f.batchId ? rub(rnpFundAmount(p, f.batchId)) + " ₽" : ""}</span>
+                    </div>
+                  </div>
+                ))}
+                {bs.length > 0 && <button onClick={() => setF([...funds, { id: uid(), batchId: (bs.find((x) => !funds.some((f) => f.batchId === x.id)) || bs[0]).id, start: "" }])} className="w-full rounded-lg border border-dashed border-neutral-300 py-1.5 text-[12px] font-bold text-neutral-500 hover:bg-neutral-50">+ Добавить фонд</button>}
+                <div className="text-[10.5px] leading-snug text-neutral-400">Фонд партии считается в карточке товара (кол-во × цена × ДРР). Затраты — внутренняя реклама, блогеры, раздачи, выкупы и др. — с даты начала реализации списываются из фонда до старта следующего фонда.{bd.fund ? " Сейчас: затрачено " + rub(bd.spent) + " ₽ из " + rub(bd.allocated) + " ₽." : ""}</div>
+              </div>
+            </div></>);
+        })()}
         <span className="ml-auto" />
         <button onClick={() => setOnlyData((v) => !v)} className={chip + (onlyData ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-500")} title="Показывать только товары, у которых есть данные РНП">Только с данными</button>
         <select value={pur} onChange={(e) => setPur(e.target.value)} title="Показать только товары выбранной закупки" className={"max-w-[200px] rounded-full border px-2.5 py-1 text-[11.5px] font-bold focus:outline-none " + (pur ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-600")}>
@@ -9399,10 +9481,18 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                           </div>
                         </td>
                         <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: "0 10px" }}>
+                          {b.fund ? (
+                            <div onClick={(e) => openFund(e, p.id)} className="flex cursor-pointer flex-col leading-[1.15] hover:opacity-80" title={"Фонд партии " + b.fund.batchName + (b.fund.upcoming ? ", старт " : ", списание с ") + dm(b.fund.start) + ". Затрачено " + rub(b.spent) + " ₽ из " + rub(b.allocated) + " ₽ — клик: изменить"}>
+                              <b className="text-[14px] font-extrabold" style={{ color: b.allocated > 0 ? bar : "#a3a3a3" }}>{b.allocated > 0 ? rub(b.ostatok) : "—"}</b>
+                              <span className="text-[9.5px] font-semibold text-neutral-400">из {rub(b.allocated)}</span>
+                              <span className="mt-0.5 inline-flex items-center gap-1 self-start rounded-full bg-neutral-100 px-1.5 text-[9px] font-extrabold leading-[14px] text-neutral-500">{batchTag(b.fund.batchName)} · {b.fund.upcoming ? "старт " : "с "}{dm(b.fund.start)}</span>
+                            </div>
+                          ) : (
                           <div className="flex flex-col leading-[1.15]">
                             <b className="text-[14px] font-extrabold" style={{ color: b.allocated > 0 ? bar : "#a3a3a3" }} title={"Остаток фонда. Затрачено " + rub(b.spent) + " ₽" + (b.allocated > 0 ? " из " + rub(b.allocated) + " ₽ (" + pct + "%)" : "")}>{b.allocated > 0 ? rub(b.ostatok) : "—"}</b>
-                            <span className="flex items-baseline gap-0.5 text-[9.5px] font-semibold text-neutral-400">из <input value={(p.rnp.budget && p.rnp.budget.allocated) ?? ""} onChange={(e) => onSetBudget && onSetBudget(p.id, e.target.value)} inputMode="decimal" placeholder="фонд" title="Фонд маркетинга, ₽ — клик, чтобы изменить" className="w-[56px] rounded border border-transparent bg-transparent px-0.5 text-[9.5px] font-semibold text-neutral-500 placeholder:text-neutral-300 hover:border-neutral-200 focus:border-neutral-300 focus:text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" /></span>
+                            <span className="flex items-baseline gap-0.5 text-[9.5px] font-semibold text-neutral-400">из <input value={(p.rnp.budget && p.rnp.budget.allocated) ?? ""} onChange={(e) => onSetBudget && onSetBudget(p.id, e.target.value)} inputMode="decimal" placeholder="фонд" title="Фонд маркетинга, ₽ — вручную" className="w-[44px] rounded border border-transparent bg-transparent px-0.5 text-[9.5px] font-semibold text-neutral-500 placeholder:text-neutral-300 hover:border-neutral-200 focus:border-neutral-300 focus:text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" /><button onClick={(e) => openFund(e, p.id)} title="Выбрать фонд из закупки и дату старта" className="ml-0.5 rounded bg-orange-50 px-1 text-[9px] font-extrabold text-orange-600 hover:bg-orange-100">фонд</button></span>
                           </div>
+                          )}
                           <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-neutral-100"><i className="block h-full" style={{ width: Math.max(pct, b.spent > 0 ? 3 : 0) + "%", background: bar }} /></div>
                         </td>
                       </>
