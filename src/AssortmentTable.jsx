@@ -224,9 +224,9 @@ const AB_FIELDS = [
 
 const RNP_TASKS = [
   { id: "orders",   label: "Заказы", kind: "wbOrders" },
-  { id: "sales",    label: "Выкупы WB", kind: "wbOrders", src: "sales" },
+  { id: "sales",    label: "Выкупы", kind: "wbOrders", src: "sales" },
   { id: "internal", label: "Внутренняя реклама", kind: "singleCost", cost: true },
-  { id: "vykupy",   label: "Выкупы", kind: "twoRow", top: "entries", cost: true, fields: VYKUP_FIELDS },
+  { id: "vykupy",   label: "Самовыкупы", kind: "twoRow", top: "entries", cost: true, fields: VYKUP_FIELDS },
   { id: "bloggers", label: "Блогеры", kind: "twoRow", top: "entries", cost: true, fields: BLOGGER_FIELDS },
   { id: "razdachi", label: "Раздачи", kind: "twoRow", top: "entries", cost: true, fields: RAZDACHI_FIELDS },
   { id: "stars",    label: "Баллы за отзывы", kind: "rangeTask", cost: true, fields: STARS_FIELDS },
