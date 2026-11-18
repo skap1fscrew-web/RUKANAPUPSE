@@ -3498,15 +3498,22 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-3 border-b border-neutral-100 px-4 py-3">
           {(() => { const curEnd = curStage && cycDates[curStage.id] ? cycDates[curStage.id].endISO : null; const late = !!(curEnd && curEnd < todayISO()); return (
-          <button onClick={() => setCycOpen((o) => !o)} title={!cycStarted ? "Запустить производственный цикл" : curStage ? "Текущий этап цикла" + (curEnd ? " · до " + curEnd.slice(8, 10) + "." + curEnd.slice(5, 7) + (late ? " (просрочено)" : "") : "") : "Все этапы цикла пройдены"} className={"inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[13px] font-bold transition hover:bg-neutral-50 " + (!cycStarted ? "text-neutral-500" : "text-neutral-800")}>
-            <span className="h-2 w-2 rounded-full" style={{ background: !cycStarted ? "#a3a3a3" : curStage ? (late ? "#ef4444" : "#f59e0b") : "#16a34a" }} />
-            {!cycStarted ? "Запустить цикл" : curStage ? curStage.name : "Готово"}
-            <ChevronDown size={11} className={"opacity-50 transition " + (cycOpen ? "rotate-180" : "")} />
+          <button onClick={() => setCycOpen((o) => !o)} title={!cycStarted ? "Запустить производственный цикл" : curStage ? "Текущий этап цикла" + (curEnd ? " · до " + curEnd.slice(8, 10) + "." + curEnd.slice(5, 7) + (late ? " (просрочено)" : "") : "") : "Все этапы цикла пройдены"} className="inline-flex min-w-[230px] flex-col gap-[5px] rounded-xl border border-neutral-200 bg-white px-3.5 pb-2 pt-[7px] text-left transition hover:bg-neutral-50">
+            <span className="flex items-center gap-2 text-[12.5px] font-extrabold" style={{ color: !cycStarted ? "#737373" : "#262626" }}>
+              {!cycStarted ? "Запустить цикл" : curStage ? curStage.name : "Готово"}
+              <span className="ml-auto text-[10.5px] font-bold" style={{ color: late ? "#dc2626" : "#a3a3a3" }}>
+                {!cycStarted ? "" : curStage ? (late ? "просрочен на " + Math.max(1, Math.round((new Date(todayISO()) - new Date(curEnd)) / 86400000)) + " д" : "этап " + (curIdx + 1) + " из " + cycSt.length + (curEnd ? " · до " + curEnd.slice(8, 10) + "." + curEnd.slice(5, 7) : "")) : "все этапы пройдены"}
+              </span>
+              <ChevronDown size={11} className={"opacity-50 transition " + (cycOpen ? "rotate-180" : "")} />
+            </span>
+            <span className="flex gap-[3px]">
+              {(cycStarted && cycSt.length ? cycSt : [null, null, null, null, null]).map((x, xi) => <i key={xi} className="block h-1 flex-1 rounded-full" style={{ background: !cycStarted ? "#e5e5e5" : !curStage ? "#16a34a" : xi < curIdx ? "#16a34a" : xi === curIdx ? (late ? "#ef4444" : "#f59e0b") : "#e5e5e5" }} />)}
+            </span>
           </button>
           ); })()}
           <div className="relative">
-            <button onClick={() => setRatesOpen((o) => !o)} title="Ставки партии" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (ratesOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
-              <Settings2 size={14} className={ratesOpen ? "text-white" : "text-neutral-400"} /> Ставки
+            <button onClick={() => setRatesOpen((o) => !o)} title="Ставки партии" className={"inline-flex h-[42px] items-center gap-1.5 rounded-xl border px-3.5 text-[12.5px] font-bold transition " + (ratesOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50")}>
+              Ставки
               <ChevronDown size={12} className={"transition " + (ratesOpen ? "rotate-180" : "")} />
             </button>
             {ratesOpen && (<><div className="fixed inset-0 z-10" onClick={() => setRatesOpen(false)} />
@@ -3521,9 +3528,9 @@ function PurchasesBoard({ focusId = null, batches, onChange, products, defaultRa
             const fmtD = (d) => d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : "";
             return (
               <div className="relative">
-                <button onClick={() => setTasksOpen((o) => !o)} title="Задачи по партии" className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition " + (tasksOpen ? "border-cyan-400 bg-cyan-50 text-cyan-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}>
-                  <ListChecks size={15} className={tasksOpen ? "text-cyan-600" : "text-neutral-400"} />
-                  <span className={"inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold " + (batchJobs.length ? "bg-cyan-600 text-white" : "bg-neutral-200 text-neutral-500")}>{batchJobs.length}</span>
+                <button onClick={() => setTasksOpen((o) => !o)} title="Задачи по партии" className={"inline-flex h-[42px] items-center gap-1.5 rounded-xl border px-3.5 text-[12.5px] font-bold transition " + (tasksOpen ? "border-cyan-400 bg-cyan-50 text-cyan-700" : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50")}>
+                  Задачи
+                  <span className={"inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-extrabold " + (batchJobs.length ? "bg-cyan-600 text-white" : "bg-neutral-100 text-neutral-500")}>{batchJobs.length}</span>
                   <ChevronDown size={12} className={"transition " + (tasksOpen ? "rotate-180" : "")} />
                 </button>
                 {tasksOpen && (<><div className="fixed inset-0 z-10" onClick={() => setTasksOpen(false)} />
