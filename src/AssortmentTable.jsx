@@ -9356,7 +9356,6 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const [focusId, setFocusId] = useState(null); // фокус на одном товаре: остальные размыты
   const [fundPop, setFundPop] = useState(null); // { pid, top, left } — окно выбора фонда
   const openFund = (e, pid) => { const r = e.currentTarget.getBoundingClientRect(); setFundPop({ pid, top: Math.max(8, Math.min(r.top, window.innerHeight - 380)), left: r.right + 8 }); };
-  const batchTag = (nm) => { const m = String(nm || "").match(/#\s*\d+/); return m ? m[0].replace(/\s+/g, "") : String(nm || "Партия").slice(0, 8); };
   const dm = (iso) => (iso ? iso.slice(8, 10) + "." + iso.slice(5, 7) : "");
   const [q, setQ] = useState("");
   useEffect(() => lsSet("rnp.ovRows", rows), [rows]);
@@ -9481,19 +9480,22 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                           </div>
                         </td>
                         <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: "0 10px" }}>
-                          {b.fund ? (
-                            <div onClick={(e) => openFund(e, p.id)} className="flex cursor-pointer flex-col leading-[1.15] hover:opacity-80" title={"Фонд партии " + b.fund.batchName + (b.fund.upcoming ? ", старт " : ", списание с ") + dm(b.fund.start) + ". Затрачено " + rub(b.spent) + " ₽ из " + rub(b.allocated) + " ₽ — клик: изменить"}>
-                              <b className="text-[14px] font-extrabold" style={{ color: b.allocated > 0 ? bar : "#a3a3a3" }}>{b.allocated > 0 ? rub(b.ostatok) : "—"}</b>
-                              <span className="text-[9.5px] font-semibold text-neutral-400">из {rub(b.allocated)}</span>
-                              <span className="mt-0.5 inline-flex items-center gap-1 self-start rounded-full bg-neutral-100 px-1.5 text-[9px] font-extrabold leading-[14px] text-neutral-500">{batchTag(b.fund.batchName)} · {b.fund.upcoming ? "старт " : "с "}{dm(b.fund.start)}</span>
-                            </div>
-                          ) : (
-                          <div className="flex flex-col leading-[1.15]">
-                            <b className="text-[14px] font-extrabold" style={{ color: b.allocated > 0 ? bar : "#a3a3a3" }} title={"Остаток фонда. Затрачено " + rub(b.spent) + " ₽" + (b.allocated > 0 ? " из " + rub(b.allocated) + " ₽ (" + pct + "%)" : "")}>{b.allocated > 0 ? rub(b.ostatok) : "—"}</b>
-                            <span className="flex items-baseline gap-0.5 text-[9.5px] font-semibold text-neutral-400">из <input value={(p.rnp.budget && p.rnp.budget.allocated) ?? ""} onChange={(e) => onSetBudget && onSetBudget(p.id, e.target.value)} inputMode="decimal" placeholder="фонд" title="Фонд маркетинга, ₽ — вручную" className="w-[44px] rounded border border-transparent bg-transparent px-0.5 text-[9.5px] font-semibold text-neutral-500 placeholder:text-neutral-300 hover:border-neutral-200 focus:border-neutral-300 focus:text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" /><button onClick={(e) => openFund(e, p.id)} title="Выбрать фонд из закупки и дату старта" className="ml-0.5 rounded bg-orange-50 px-1 text-[9px] font-extrabold text-orange-600 hover:bg-orange-100">фонд</button></span>
+                          <div className="relative flex flex-col leading-[1.15]">
+                            {b.fund ? (
+                              <>
+                                <button onClick={(e) => openFund(e, p.id)} title="Выбрать фонд и дату старта" className="absolute -right-1 -top-1 flex h-[18px] w-[18px] items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-400 hover:text-neutral-800"><Settings2 size={11} /></button>
+                                <b className="text-[14px] font-extrabold" style={{ color: b.fund.upcoming ? "#a3a3a3" : (b.allocated > 0 ? bar : "#a3a3a3") }} title={"Фонд партии " + b.fund.batchName + ". Затрачено " + rub(b.spent) + " ₽ из " + rub(b.allocated) + " ₽"}>{b.allocated > 0 ? rub(b.ostatok) : "—"}</b>
+                                <span className="text-[9.5px] font-semibold text-neutral-400">из {rub(b.allocated)}</span>
+                              </>
+                            ) : (
+                              <>
+                                <b className="text-[14px] font-extrabold" style={{ color: b.allocated > 0 ? bar : "#a3a3a3" }} title={"Остаток фонда. Затрачено " + rub(b.spent) + " ₽" + (b.allocated > 0 ? " из " + rub(b.allocated) + " ₽ (" + pct + "%)" : "")}>{b.allocated > 0 ? rub(b.ostatok) : "—"}</b>
+                                <span className="flex items-baseline gap-0.5 text-[9.5px] font-semibold text-neutral-400">из <input value={(p.rnp.budget && p.rnp.budget.allocated) ?? ""} onChange={(e) => onSetBudget && onSetBudget(p.id, e.target.value)} inputMode="decimal" placeholder="0" title="Фонд маркетинга, ₽ — вручную" className="w-[52px] rounded border border-transparent bg-transparent px-0.5 text-[9.5px] font-semibold text-neutral-500 placeholder:text-neutral-300 hover:border-neutral-200 focus:border-neutral-300 focus:text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" /></span>
+                              </>
+                            )}
                           </div>
-                          )}
                           <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-neutral-100"><i className="block h-full" style={{ width: Math.max(pct, b.spent > 0 ? 3 : 0) + "%", background: bar }} /></div>
+                          {b.fund ? <div className="mt-0.5 text-[9.5px] font-extrabold text-neutral-400">{b.fund.upcoming ? "старт " : "с "}{dm(b.fund.start)}</div> : <button onClick={(e) => openFund(e, p.id)} title="Выбрать фонд из закупки и дату старта" className="mt-1 rounded-lg border border-dashed border-neutral-300 px-1.5 text-[9.5px] font-bold leading-[15px] text-neutral-400 hover:border-orange-300 hover:text-orange-600">+ фонд</button>}
                         </td>
                       </>
                     )}
