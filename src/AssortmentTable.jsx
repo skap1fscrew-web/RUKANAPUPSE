@@ -9479,6 +9479,8 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const [fundPop, setFundPop] = useState(null); // { pid, top, left } — окно выбора фонда
   const openFund = (e, pid) => { const r = e.currentTarget.getBoundingClientRect(); setFundPop({ pid, top: Math.max(8, Math.min(r.top, window.innerHeight - 380)), left: r.right + 8 }); };
   const dm = (iso) => (iso ? iso.slice(8, 10) + "." + iso.slice(5, 7) : "");
+  // длинный статус из нескольких слов: первое слово целиком, остальные — первыми буквами («Образцы п. р.»)
+  const shortStatus = (name) => { const w = String(name || "").trim().split(/\s+/); return w.length > 1 && String(name).length > 12 ? w[0] + " " + w.slice(1).map((x) => x[0] + ".").join(" ") : name; };
   const [q, setQ] = useState("");
   useEffect(() => lsSet("rnp.ovRows", rows), [rows]);
   useEffect(() => lsSet("rnp.ovOnly", onlyData), [onlyData]);
@@ -9613,7 +9615,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                           <div className="group/foc relative">
                           <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-center gap-2.5 px-2 py-2 text-left hover:bg-neutral-50" title="Открыть карточку">
                             {p.image ? <img src={p.image} alt="" className="h-[72px] w-[54px] shrink-0 rounded-lg object-cover" /> : <span className="h-[72px] w-[54px] shrink-0 rounded-lg bg-neutral-100" />}
-                            <span className="flex h-[72px] min-w-0 flex-col justify-center gap-[2px]"><span className="text-[10px] font-extrabold leading-none text-neutral-400">{p.code || "—"}</span><span className="line-clamp-2 text-[12px] font-bold leading-tight text-neutral-800">{p.name || "Без названия"}</span>{p.status ? <span className="mt-[3px] self-start rounded-full px-1.5 text-[10px] font-extrabold leading-[14px]" style={{ background: statusColor(p.status) + "22", color: statusColor(p.status) }}>{p.status}</span> : <span />}</span>
+                            <span className="flex h-[72px] min-w-0 flex-col justify-center gap-[2px]"><span className="text-[10px] font-extrabold leading-none text-neutral-400">{p.code || "—"}</span><span className="line-clamp-2 text-[12px] font-bold leading-tight text-neutral-800">{p.name || "Без названия"}</span>{p.status ? <span title={p.status} className="mt-[3px] max-w-full self-start truncate whitespace-nowrap rounded-full px-1.5 text-[10px] font-extrabold leading-[14px]" style={{ background: statusColor(p.status) + "22", color: statusColor(p.status) }}>{shortStatus(p.status)}</span> : <span />}</span>
                           </button>
                           <button onClick={() => setFocusId((f) => (f === p.id ? null : p.id))} title={focusId === p.id ? "Выйти из фокуса" : "Фокус на этом товаре"} className={"absolute right-1.5 top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] transition " + (focusId === p.id ? "bg-neutral-900 text-white opacity-100" : "text-neutral-400 opacity-0 hover:text-neutral-800 group-hover/foc:opacity-100")}><Focus size={14} /></button>
                           </div>
