@@ -9232,8 +9232,6 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOp
   const rub = (n) => Math.round(n).toLocaleString("ru-RU");
   const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return String(v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
   // итого по дням (по показанным товарам)
-  const totOrders = dayList.map((d) => list.reduce((a, p) => a + (wbOrders[`${p.code || p.wb || ""}:${d.key}`] || wbOrders[`${p.wb}:${d.key}`] || 0), 0));
-  const totCost = dayList.map((d) => list.reduce((a, p) => a + RNP_COST_TASKS.reduce((s, t) => s + rnpDayCost(t, p, d.key), 0), 0));
   const W_P = 240, W_F = 150, W_L = 140;
   const stk = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
   const chip = "rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition ";
@@ -9261,15 +9259,11 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOp
           <table className="border-separate text-[11.5px]" style={{ borderSpacing: 0, minWidth: "100%" }}>
             <thead>
               <tr>
-                <th style={{ ...stk(0, W_P + W_F + W_L, "#fff", 5), position: "sticky", top: 0, textAlign: "left", padding: "6px 10px", color: "#a3a3a3", fontWeight: 600, borderBottom: "1px solid #e5e5e5" }} colSpan={3}>Товар · Фонд маркетинга · Строка</th>
+                <th style={{ ...stk(0, W_P + W_F + W_L, "#fff", 5), position: "sticky", top: 0, textAlign: "left", padding: "6px 10px", color: "#a3a3a3", fontWeight: 600, borderBottom: "1px solid #e5e5e5" }} colSpan={3}></th>
                 {dayList.map((d) => { const dt = new Date(d.key + "T00:00:00"); const tdy = d.key === todayISO; return <th key={d.key} style={{ position: "sticky", top: 0, zIndex: 4, background: tdy ? "#fff7ed" : "#fff", minWidth: 50, padding: "4px 0", textAlign: "center", borderBottom: "1px solid #e5e5e5", color: tdy ? "#c2410c" : "#a3a3a3", fontWeight: 600 }}><div style={{ fontSize: 12, fontWeight: 800, color: tdy ? "#c2410c" : "#525252" }}>{dt.getDate()}</div><div style={{ fontSize: 10 }}>{dow[dt.getDay()]}</div></th>; })}
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td colSpan={3} style={{ ...stk(0, W_P + W_F + W_L, "#fafafa", 2), padding: "8px 12px", fontWeight: 800, borderBottom: "2px solid #d4d4d4" }}>Итого по товарам<div style={{ fontSize: 10, color: "#a3a3a3", fontWeight: 600 }}>заказы · затраты за день</div></td>
-                {dayList.map((d, i) => <td key={d.key} style={{ background: d.key === todayISO ? "#fff7ed" : "#fafafa", textAlign: "center", fontWeight: 800, borderBottom: "2px solid #d4d4d4", borderLeft: "1px solid #f1f1f1" }}>{totOrders[i] || ""}<div style={{ fontSize: 9.5, color: "#a3a3a3", fontWeight: 700 }}>{totCost[i] ? (totCost[i] >= 10000 ? (Math.round(totCost[i] / 100) / 10).toLocaleString("ru-RU") + " т" : rub(totCost[i])) : ""}</div></td>)}
-              </tr>
               {list.map((p) => {
                 const b = rnpBudget(p); const pct = b.allocated > 0 ? Math.min(100, Math.round(b.spent / b.allocated * 100)) : 0; const bar = pct < 70 ? "#16a34a" : pct < 95 ? "#f59e0b" : "#dc2626";
                 const trs = shownTasks.length ? shownTasks : [null];
@@ -9278,19 +9272,18 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOp
                     {ti === 0 && (
                       <>
                         <td rowSpan={trs.length} style={{ ...stk(0, W_P, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: 0 }}>
-                          <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-neutral-50" title="Открыть карточку">
-                            {p.image ? <img src={p.image} alt="" className="h-[46px] w-[38px] shrink-0 rounded-md object-cover" /> : <span className="h-[46px] w-[38px] shrink-0 rounded-md bg-neutral-100" />}
-                            <span className="flex min-w-0 flex-col gap-px"><span className="text-[10px] font-extrabold text-neutral-400">{p.code || "—"}</span><span className="line-clamp-2 text-[12px] font-bold leading-tight text-neutral-800">{p.name || "Без названия"}</span>{p.status && <span className="mt-0.5 self-start rounded-full px-1.5 py-px text-[10px] font-extrabold" style={{ background: statusColor(p.status) + "22", color: statusColor(p.status) }}>{p.status}</span>}</span>
+                          <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-stretch gap-2.5 px-2 py-2 text-left hover:bg-neutral-50" title="Открыть карточку">
+                            {p.image ? <img src={p.image} alt="" className="w-[54px] shrink-0 self-stretch rounded-lg object-cover" /> : <span className="w-[54px] shrink-0 self-stretch rounded-lg bg-neutral-100" />}
+                            <span className="flex min-w-0 flex-col justify-between gap-0.5"><span className="text-[10px] font-extrabold leading-none text-neutral-400">{p.code || "—"}</span><span className="line-clamp-2 text-[12px] font-bold leading-tight text-neutral-800">{p.name || "Без названия"}</span>{p.status ? <span className="self-start rounded-full px-1.5 text-[10px] font-extrabold leading-[14px]" style={{ background: statusColor(p.status) + "22", color: statusColor(p.status) }}>{p.status}</span> : <span />}</span>
                           </button>
                         </td>
                         <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: "0 10px" }}>
-                          <div className="flex justify-between text-[11px] text-neutral-500"><span>Фонд</span><input value={(p.rnp.budget && p.rnp.budget.allocated) ?? ""} onChange={(e) => onSetBudget && onSetBudget(p.id, e.target.value)} inputMode="decimal" placeholder="0" title="Фонд маркетинга, ₽" className="w-20 rounded-md border border-neutral-200 px-1.5 py-0.5 text-right text-[11px] font-bold text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" /></div>
-                          <div className="my-1 h-[5px] overflow-hidden rounded-full bg-neutral-100"><i className="block h-full" style={{ width: pct + "%", background: bar }} /></div>
-                          <div className="flex justify-between text-[10px] text-neutral-400"><span>Затрач. {rub(b.spent)}</span><span>ост. {rub(b.ostatok)}</span></div>
+                          <div className="flex items-baseline justify-between text-[10.5px] text-neutral-400"><span>Фонд</span><input value={(p.rnp.budget && p.rnp.budget.allocated) ?? ""} onChange={(e) => onSetBudget && onSetBudget(p.id, e.target.value)} inputMode="decimal" placeholder="0" title="Фонд маркетинга, ₽" className="w-[72px] rounded-md border border-transparent bg-transparent px-1 py-0 text-right text-[11.5px] font-bold text-neutral-800 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200" /></div>
+                          <div className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-[9.5px] text-neutral-400" title={"Затрачено " + rub(b.spent) + " ₽ из " + rub(b.allocated) + " ₽"}><div className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"><i className="block h-full" style={{ width: Math.max(pct, b.spent > 0 ? 3 : 0) + "%", background: bar }} /></div><span>ост. {rub(b.ostatok)}</span></div>
                         </td>
                       </>
                     )}
-                    <td style={{ ...stk(W_P + W_F, W_L, "#fff", 2), padding: "0 10px", fontWeight: 700, color: "#525252", whiteSpace: "nowrap", borderRight: "1px solid #f1f1f1", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" }}>{t ? <><span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: RNP_COLORS[t.id] || "#64748b", marginRight: 6 }} />{t.label}</> : ""}</td>
+                    <td style={{ ...stk(W_P + W_F, W_L, "#fff", 2), padding: 0, fontWeight: 700, color: "#525252", whiteSpace: "nowrap", borderRight: "1px solid #f1f1f1", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" }}>{t ? ((t.kind === "twoRow" || t.kind === "rangeTask") ? <button onClick={() => onOpenDB && onOpenDB(p.id, t)} title="Все записи по строке" className="h-full w-full px-2.5 text-left font-bold hover:bg-neutral-50 hover:text-neutral-900">{t.label}</button> : <span className="px-2.5">{t.label}</span>) : ""}</td>
                     {t ? dayList.map((d) => {
                       const v = rnpDayActivity(t, p, d.key, wbOrders); const fill = (p.rnp.fills || {})[`${t.id}:${d.key}`]; const col = RNP_COLORS[t.id] || "#64748b";
                       const isTd = d.key === todayISO;
