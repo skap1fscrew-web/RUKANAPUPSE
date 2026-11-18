@@ -6663,6 +6663,28 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
             <SubjectCombo auto value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
           </div>
         </div>
+        {(() => {
+          // заказы за последние 7 дней (сегодня — последний столбик) и сравнение с предыдущими 7
+          const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+          const dayN = (off) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - off); return d; };
+          const ot = RNP_TASKS[0];
+          const cur = Array.from({ length: 7 }, (_, i) => { const d = dayN(6 - i); return { key: iso(d), n: rnpWbCount(ot, product, iso(d), wbOrders || {}), dd: String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") }; });
+          const total = cur.reduce((a, x) => a + x.n, 0);
+          const prev = Array.from({ length: 7 }, (_, i) => rnpWbCount(ot, product, iso(dayN(13 - i)), wbOrders || {})).reduce((a, x) => a + x, 0);
+          const delta = prev > 0 ? Math.round((total - prev) / prev * 100) : null;
+          const mx = Math.max(1, ...cur.map((x) => x.n));
+          return (
+            <div className="hidden shrink-0 items-end gap-3 self-end pr-1 md:flex" title="Заказы за последние 7 дней">
+              <div className="text-right leading-tight">
+                <div className="text-[10.5px] font-semibold text-neutral-400">Заказы · 7 дней</div>
+                <div className="text-[22px] font-extrabold tabular-nums text-neutral-900">{total}{delta !== null && <span className="ml-1.5 align-middle text-[11px] font-extrabold" style={{ color: delta >= 0 ? "#16a34a" : "#dc2626" }}>{delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}%</span>}</div>
+              </div>
+              <div className="flex h-[44px] items-end gap-1">
+                {cur.map((x, i) => (<div key={x.key} title={x.dd + ": " + x.n} className="w-[9px] rounded-t-[3px]" style={{ height: Math.max(3, Math.round(x.n / mx * 44)), background: i === 6 ? "#0d9488" : "#86efac" }} />))}
+              </div>
+            </div>
+          );
+        })()}
         <button onClick={onClose} className="rounded-lg shrink-0 self-start p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Закрыть"><X size={20} /></button>
       </div>
 
