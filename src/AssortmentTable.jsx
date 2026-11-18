@@ -3142,9 +3142,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         ];
         const RAZDACH_FIELDS_DB = [
           { id: "image", label: "Фото", type: "image" },
-          { id: "name", label: "Исполнитель", type: "text" },
-          { id: "inst", label: "Инстаграм", type: "link" },
-          { id: "tg", label: "Телеграм", type: "link" },
+          { id: "name", label: "Инстаграм", type: "text" },
           { id: "rating", label: "Рейтинг", type: "stars" },
           { id: "comment", label: "Комментарий", type: "text" },
         ];
