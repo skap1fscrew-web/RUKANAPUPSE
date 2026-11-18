@@ -4,7 +4,7 @@ import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow,
 import {
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
-  Target, Focus, Flag, AlertTriangle, GitBranch, ArrowUpRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
+  Target, Focus, ChevronLeft, Flag, AlertTriangle, GitBranch, ArrowUpRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
 } from "lucide-react";
 
 /* ----------------------------------------------------------------------------
@@ -9474,6 +9474,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const [st, setSt] = useState("");
   const [pur, setPur] = useState(""); // фильтр по закупке (партии)
   const [rowsOpen, setRowsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [focusId, setFocusId] = useState(null); // фокус на одном товаре: остальные размыты
   const [fundPop, setFundPop] = useState(null); // { pid, top, left } — окно выбора фонда
   const openFund = (e, pid) => { const r = e.currentTarget.getBoundingClientRect(); setFundPop({ pid, top: Math.max(8, Math.min(r.top, window.innerHeight - 380)), left: r.right + 8 }); };
@@ -9507,13 +9508,15 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white p-3.5">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="mr-2 text-lg font-extrabold text-neutral-900">РНП</h2>
-        <button onClick={() => setEndOff((o) => o - 7)} className={chip + "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}>‹</button>
-        <span className={chip + "border-neutral-200 bg-white text-neutral-700"}>{fmtRange(start, end)}</span>
-        <button onClick={() => setEndOff((o) => o + 7)} className={chip + "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}>›</button>
-        <button onClick={() => setEndOff(0)} className={chip + "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}>Сегодня</button>
+        <h2 className="mr-1.5 text-base font-semibold text-neutral-900">РНП</h2>
+        <div className="inline-flex items-center rounded-lg bg-neutral-100 p-0.5">
+          <button onClick={() => setEndOff((o) => o - 7)} title="Неделей раньше" className="flex h-7 w-8 items-center justify-center rounded-md text-neutral-400 transition hover:bg-white hover:text-neutral-700"><ChevronLeft size={16} /></button>
+          <span className="flex h-7 items-center rounded-md bg-white px-3 text-xs font-bold text-neutral-800 shadow-sm">{fmtRange(start, end)}</span>
+          <button onClick={() => setEndOff((o) => o + 7)} title="Неделей позже" className="flex h-7 w-8 items-center justify-center rounded-md text-neutral-400 transition hover:bg-white hover:text-neutral-700"><ChevronRight size={16} /></button>
+        </div>
+        <button onClick={() => setEndOff(0)} className="inline-flex h-8 items-center rounded-lg border border-neutral-200 px-2.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">Сегодня</button>
         <div className="relative">
-          <button onClick={() => setRowsOpen((o) => !o)} title="Настройка строк РНП" className={"flex h-[30px] w-[30px] items-center justify-center rounded-full border transition " + (rowsOpen ? "border-neutral-800 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>
+          <button onClick={() => setRowsOpen((o) => !o)} title="Настройка строк РНП" className={"flex h-8 w-8 items-center justify-center rounded-lg border transition " + (rowsOpen ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50")}>
             <Settings2 size={15} />
           </button>
           {rowsOpen && (<><div className="fixed inset-0 z-40" onClick={() => setRowsOpen(false)} />
@@ -9563,16 +9566,31 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
             </div></>);
         })()}
         <span className="ml-auto" />
-        <button onClick={() => setOnlyData((v) => !v)} className={chip + (onlyData ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-500")} title="Показывать только товары, у которых есть данные РНП">Только с данными</button>
-        <select value={pur} onChange={(e) => setPur(e.target.value)} title="Показать только товары выбранной закупки" className={"max-w-[200px] rounded-full border px-2.5 py-1 text-[11.5px] font-bold focus:outline-none " + (pur ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-600")}>
-          <option value="">Закупка: все</option>
-          {(purchaseBatches || []).filter((x) => x && !x.deletedAt).map((x) => <option key={x.id} value={x.id}>{x.name || "Без названия"}</option>)}
-        </select>
-        <select value={st} onChange={(e) => setSt(e.target.value)} className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[11.5px] font-bold text-neutral-600 focus:outline-none">
-          <option value="">Статус: все</option>
-          {statuses.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
-        </select>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск…" className="w-40 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11.5px] font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200" />
+        <div className="relative">
+          <Box size={14} className={"pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 " + (pur ? "text-orange-600" : "text-neutral-400")} />
+          <select value={pur} onChange={(e) => setPur(e.target.value)} title="Показать только товары выбранной закупки" className={"h-8 max-w-[210px] cursor-pointer appearance-none rounded-lg border pl-8 pr-7 text-xs font-semibold focus:outline-none " + (pur ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50")}>
+            <option value="">Закупка: все</option>
+            {(purchaseBatches || []).filter((x) => x && !x.deletedAt).map((x) => <option key={x.id} value={x.id}>{x.name || "Без названия"}</option>)}
+          </select>
+          <ChevronDown size={13} className={"pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 " + (pur ? "text-orange-600" : "text-neutral-400")} />
+        </div>
+        <div className="relative">
+          <select value={st} onChange={(e) => setSt(e.target.value)} className={"h-8 cursor-pointer appearance-none rounded-lg border pl-2.5 pr-7 text-xs font-semibold focus:outline-none " + (st ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50")}>
+            <option value="">Статус: все</option>
+            {statuses.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+          </select>
+          <ChevronDown size={13} className={"pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 " + (st ? "text-orange-600" : "text-neutral-400")} />
+        </div>
+        <button onClick={() => setOnlyData((v) => !v)} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border transition " + (onlyData ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")} title={onlyData ? "Показаны только товары с данными РНП — нажмите, чтобы показать все" : "Показывать только товары, у которых есть данные РНП"}>{onlyData ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+        {searchOpen || q ? (
+          <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5" style={{ width: 190 }}>
+            <Search size={14} className="shrink-0 text-neutral-400" />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onBlur={() => { if (!q.trim()) setSearchOpen(false); }} onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); } }} placeholder="Поиск по товару…" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs text-neutral-800 outline-none placeholder:text-neutral-400" />
+            <button onClick={() => { setQ(""); setSearchOpen(false); }} className="shrink-0 text-neutral-300 hover:text-neutral-600" title="Очистить"><X size={14} /></button>
+          </div>
+        ) : (
+          <button onClick={() => setSearchOpen(true)} title="Поиск по товару" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
+        )}
       </div>
       {list.length === 0 ? <div className="py-12 text-center text-sm text-neutral-400">Нет товаров с данными РНП. Выключите «Только с данными», чтобы вносить записи по любым товарам</div> : (
         <div className="overflow-auto rounded-xl border border-neutral-100" style={{ maxHeight: "calc(100vh / " + 0.8 + " - 190px)" }}>
