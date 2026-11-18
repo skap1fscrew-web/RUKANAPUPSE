@@ -9232,7 +9232,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOp
   const rub = (n) => Math.round(n).toLocaleString("ru-RU");
   const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return String(v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
   // итого по дням (по показанным товарам)
-  const W_P = 240, W_F = 150, W_L = 140;
+  const W_P = 240, W_F = 96, W_L = 130;
   const stk = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
   const chip = "rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition ";
   return (
@@ -9278,8 +9278,11 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, onOpen, onOp
                           </button>
                         </td>
                         <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: "0 10px" }}>
-                          <div className="flex items-baseline justify-between text-[10.5px] text-neutral-400"><span>Фонд</span><input value={(p.rnp.budget && p.rnp.budget.allocated) ?? ""} onChange={(e) => onSetBudget && onSetBudget(p.id, e.target.value)} inputMode="decimal" placeholder="0" title="Фонд маркетинга, ₽" className="w-[72px] rounded-md border border-transparent bg-transparent px-1 py-0 text-right text-[11.5px] font-bold text-neutral-800 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200" /></div>
-                          <div className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-[9.5px] text-neutral-400" title={"Затрачено " + rub(b.spent) + " ₽ из " + rub(b.allocated) + " ₽"}><div className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100"><i className="block h-full" style={{ width: Math.max(pct, b.spent > 0 ? 3 : 0) + "%", background: bar }} /></div><span>ост. {rub(b.ostatok)}</span></div>
+                          <div className="flex flex-col leading-[1.15]">
+                            <b className="text-[14px] font-extrabold" style={{ color: b.allocated > 0 ? bar : "#a3a3a3" }} title={"Остаток фонда. Затрачено " + rub(b.spent) + " ₽" + (b.allocated > 0 ? " из " + rub(b.allocated) + " ₽ (" + pct + "%)" : "")}>{b.allocated > 0 ? rub(b.ostatok) : "—"}</b>
+                            <span className="flex items-baseline gap-0.5 text-[9.5px] font-semibold text-neutral-400">из <input value={(p.rnp.budget && p.rnp.budget.allocated) ?? ""} onChange={(e) => onSetBudget && onSetBudget(p.id, e.target.value)} inputMode="decimal" placeholder="фонд" title="Фонд маркетинга, ₽ — клик, чтобы изменить" className="w-[56px] rounded border border-transparent bg-transparent px-0.5 text-[9.5px] font-semibold text-neutral-500 placeholder:text-neutral-300 hover:border-neutral-200 focus:border-neutral-300 focus:text-neutral-800 focus:outline-none focus:ring-2 focus:ring-orange-200" /></span>
+                          </div>
+                          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-neutral-100"><i className="block h-full" style={{ width: Math.max(pct, b.spent > 0 ? 3 : 0) + "%", background: bar }} /></div>
                         </td>
                       </>
                     )}
