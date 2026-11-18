@@ -6617,8 +6617,8 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
           </div>
           {product.image && <button onClick={(e) => { e.stopPropagation(); onSetField && onSetField("image", null); }} title="Удалить фото" className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/55 p-0.5 text-white hover:bg-red-600 group-hover:block"><X size={11} /></button>}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 min-h-[92px]">
-          <div className="flex flex-wrap items-center gap-2 text-[14px]">
+        <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5 min-h-[92px]">
+          <div className="-ml-2 flex h-[22px] flex-wrap items-center gap-2 text-[14px]">
             <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код" style={{ width: Math.max(String(product.code || "").length, 3) + 2.4 + "ch" }} className={"h-[22px] rounded-md border border-transparent bg-transparent px-2 text-[14px] outline-none transition placeholder:font-semibold placeholder:text-neutral-400 hover:bg-neutral-100 focus:border-neutral-300 focus:bg-neutral-100 " + (product.code ? "font-extrabold text-neutral-700 hover:border-neutral-200" : "text-neutral-700 hover:border-dashed hover:border-neutral-200")} />
             {product.wb && !wbEdit ? (
               <span className="group inline-flex items-center gap-1.5"><span className="text-neutral-300">·</span>
@@ -6634,7 +6634,7 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
             placeholder="Название товара"
             className="-ml-1.5 h-7 w-full max-w-2xl rounded-lg border border-transparent px-1.5 py-0 text-xl font-extrabold leading-7 tracking-tight text-neutral-900 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-bold transition hover:brightness-95" style={curStatus ? { background: curStatus.color + "1f", color: curStatus.color } : { background: "#f1f1f3", color: "#9a9a9a" }}>
                 {curStatus ? curStatus.name : "Без статуса"}
@@ -6660,7 +6660,7 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                 </>
               )}
             </div>
-            <SubjectCombo auto value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} />
+            <div className="flex h-[26px] items-center rounded-lg bg-neutral-100 px-1.5"><SubjectCombo auto value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} /></div>
           </div>
         </div>
         {(() => {
@@ -6679,8 +6679,11 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                 <div className="text-[10.5px] font-semibold text-neutral-400">Заказы · 7 дней</div>
                 <div className="text-[22px] font-extrabold tabular-nums text-neutral-900">{total}{delta !== null && <span className="ml-1.5 align-middle text-[11px] font-extrabold" style={{ color: delta >= 0 ? "#16a34a" : "#dc2626" }}>{delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}%</span>}</div>
               </div>
-              <div className="flex h-[44px] items-end gap-1">
-                {cur.map((x, i) => (<div key={x.key} title={x.dd + ": " + x.n} className="w-[9px] rounded-t-[3px]" style={{ height: Math.max(3, Math.round(x.n / mx * 44)), background: i === 6 ? "#0d9488" : "#86efac" }} />))}
+              <div className="flex h-[58px] items-end gap-1">
+                {cur.map((x, i) => (<div key={x.key} title={x.dd + ": " + x.n} className="flex flex-col items-center justify-end">
+                  <span className="mb-0.5 text-[10px] font-bold leading-none tabular-nums" style={{ color: i === 6 ? "#0f766e" : (x.n > 0 ? "#737373" : "#d4d4d4") }}>{x.n}</span>
+                  <div className="w-[12px] rounded-t-[3px]" style={{ height: Math.max(3, Math.round(x.n / mx * 40)), background: i === 6 ? "#0d9488" : "#86efac" }} />
+                </div>))}
               </div>
             </div>
           );
