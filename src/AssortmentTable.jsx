@@ -234,6 +234,26 @@ const RNP_TASKS = [
   { id: "ab",       label: "А/Б тесты", kind: "rangeTask", cost: false, fields: AB_FIELDS },
 ];
 const RNP_COST_TASKS = RNP_TASKS.filter((t) => t.cost);
+// Фактический расход внутренней рекламы из WB API: { "nmId:YYYY-MM-DD": ₽ } и дни, по которым данные получены.
+// Обновляются из компонента-приложения при каждом рендере (см. App), чтобы расчёты фонда видели факт.
+let RNP_AD = {}, RNP_ADMETA = {};
+function rnpAdDay(product, dkey) {
+  const nm = String(product?.wb || "").trim();
+  if (!nm || !RNP_ADMETA[dkey]) return undefined; // по дню данных от WB ещё нет — работает ручной ввод
+  return RNP_AD[`${nm}:${dkey}`] || 0;
+}
+function rnpInternalDay(task, product, dkey) {
+  const ad = task.id === "internal" ? rnpAdDay(product, dkey) : undefined;
+  if (ad !== undefined) return ad;
+  const n = toNum((product.rnp?.cells || {})[`${task.id}:cost:${dkey}`]);
+  return isNaN(n) ? 0 : n;
+}
+function rnpSingleTotal(task, product) {
+  const pre = task.id + ":cost:"; let sum = 0; const seen = new Set();
+  if (task.id === "internal") for (const d of Object.keys(RNP_ADMETA)) { const ad = rnpAdDay(product, d); if (ad !== undefined) { sum += ad; seen.add(d); } }
+  for (const [k, v] of Object.entries(product.rnp?.cells || {})) if (k.startsWith(pre) && !seen.has(k.slice(pre.length))) { const n = toNum(v); if (!isNaN(n)) sum += n; }
+  return sum;
+}
 const RNP_COLORS = { orders: "#16a34a", internal: "#2563eb", vykupy: "#16a34a", bloggers: "#db2777", razdachi: "#d97706", stars: "#7c3aed", wibes: "#0891b2", promo: "#ea580c", ab: "#64748b" };
 // дашборд «Контент» — чек-лист готовности карточки
 const CONTENT_ITEMS = [
@@ -254,6 +274,7 @@ function rnpTaskTotal(task, product) {
   const cells = product.rnp?.cells || {};
   const rec = (e) => calcRecordCost(task.fields, e);
   if (task.kind === "rangeTask") return (entries[`${task.id}:_ranges`] || []).reduce((a, e) => a + rec(e), 0);
+  if (task.kind === "singleCost") return rnpSingleTotal(task, product);
   return task.top === "entries"
     ? Object.entries(entries).reduce((a, [k, arr]) => a + (k.startsWith(task.id + ":") && !k.endsWith(":_ranges") ? (arr || []).reduce((s, e) => s + rec(e), 0) : 0), 0)
     : Object.entries(cells).reduce((a, [k, v]) => { if (k.startsWith(task.id + ":cost:")) { const n = toNum(v); if (!isNaN(n)) return a + n; } return a; }, 0);
@@ -268,7 +289,7 @@ function rnpBudget(product) {
 function rnpDayCost(task, product, dkey) {
   const entries = product.rnp?.entries || {};
   const cells = product.rnp?.cells || {};
-  if (task.kind === "singleCost") { const n = toNum(cells[`${task.id}:cost:${dkey}`]); return isNaN(n) ? 0 : n; }
+  if (task.kind === "singleCost") return rnpInternalDay(task, product, dkey);
   if (task.kind === "twoRow" && task.top === "entries") return (entries[`${task.id}:${dkey}`] || []).reduce((s, e) => s + calcRecordCost(task.fields, e), 0);
   return 0;
 }
@@ -278,7 +299,7 @@ function rnpDayActivity(task, product, dkey, wbOrders = {}) {
   const cells = product.rnp?.cells || {};
   const flags = product.rnp?.flags || {};
   if (task.kind === "wbOrders") { const code = product.code || product.wb || ""; const c = wbOrders[`${code}:${dkey}`] || wbOrders[`${product.wb}:${dkey}`] || 0; return c > 0 ? { count: c, cost: 0 } : null; }
-  if (task.kind === "singleCost") { const n = toNum(cells[`${task.id}:cost:${dkey}`]); return (!isNaN(n) && n > 0) ? { count: 0, cost: n } : null; }
+  if (task.kind === "singleCost") { const n = rnpInternalDay(task, product, dkey); return n > 0 ? { count: 0, cost: n } : null; }
   if (task.kind === "twoRow" && task.top === "entries") { const arr = entries[`${task.id}:${dkey}`] || []; return arr.length ? { count: arr.length, cost: arr.reduce((s, e) => s + calcRecordCost(task.fields, e), 0) } : null; }
   if (task.kind === "checkbox") return flags[`${task.id}:${dkey}`] ? { count: 0, cost: 0 } : null;
   if (task.kind === "rangeTask") { const act = (entries[`${task.id}:_ranges`] || []).some((r) => r.start <= dkey && r.end >= dkey); return act ? { count: 0, cost: 0 } : null; }
@@ -1052,6 +1073,12 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [focusLine, setFocusLine] = useState(""); // «Главный фокус» — общая строка для команды
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
   const [wbOrdersMeta, setWbOrdersMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
+  const [wbAdKey, setWbAdKey] = useState(""); // ключ WB, категория «Продвижение»
+  const [wbAdSpend, setWbAdSpend] = useState({}); // { "nmId:YYYY-MM-DD": ₽ } факт внутренней рекламы
+  const [wbAdMeta, setWbAdMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
+  const [wbAdLoading, setWbAdLoading] = useState(false);
+  const [wbAdMsg, setWbAdMsg] = useState("");
+  RNP_AD = wbAdSpend; RNP_ADMETA = wbAdMeta;
   const [wbLoading, setWbLoading] = useState(false);
   const [wbProgress, setWbProgress] = useState(null);
   const [settingsTab, setSettingsTab] = useState("statuses"); // стартовая вкладка окна настроек
@@ -1154,6 +1181,9 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (typeof settings.focusLine === "string") { setFocusLine(settings.focusLine); syncedRef.current.settings.focusLine = JSON.stringify(settings.focusLine); }
         if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = JSON.stringify(settings.wbApiKey); }
         if (settings.wbOrders && typeof settings.wbOrders === "object") { setWbOrders(settings.wbOrders); syncedRef.current.settings.wbOrders = JSON.stringify(settings.wbOrders); }
+        if (settings.wbAdKey) { setWbAdKey(settings.wbAdKey); syncedRef.current.settings.wbAdKey = JSON.stringify(settings.wbAdKey); }
+        if (settings.wbAdSpend && typeof settings.wbAdSpend === "object") { setWbAdSpend(settings.wbAdSpend); syncedRef.current.settings.wbAdSpend = JSON.stringify(settings.wbAdSpend); }
+        if (settings.wbAdMeta && typeof settings.wbAdMeta === "object") { setWbAdMeta(settings.wbAdMeta); syncedRef.current.settings.wbAdMeta = JSON.stringify(settings.wbAdMeta); }
         if (settings.wbOrdersMeta && typeof settings.wbOrdersMeta === "object") { setWbOrdersMeta(settings.wbOrdersMeta); syncedRef.current.settings.wbOrdersMeta = JSON.stringify(settings.wbOrdersMeta); }
         setLoaded(true); // включаем сохранение ТОЛЬКО после успешной загрузки
       } catch (e) {
@@ -1262,7 +1292,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1305,7 +1335,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, rnpStartDate, rnpDays, loaded]);
 
   // Построчное сохранение задач (таблица jobs). Пишем только изменённые строки,
   // удаляем только исчезнувшие — чужая старая копия массива больше не затирает соседние задачи.
@@ -1438,6 +1468,9 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         else if (key === "focusLine") setFocusLine(typeof value === "string" ? value : "");
         else if (key === "wbOrders") setWbOrders(value || {});
         else if (key === "wbOrdersMeta") setWbOrdersMeta(value || {});
+        else if (key === "wbAdKey") setWbAdKey(value);
+        else if (key === "wbAdSpend") setWbAdSpend(value || {});
+        else if (key === "wbAdMeta") setWbAdMeta(value || {});
         else if (key === "rnp") { if (value.startDate) setRnpStartDate(value.startDate); if (value.days) setRnpDays(value.days); }
       },
     });
@@ -1797,6 +1830,61 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const expandAll = () => setExpanded(Object.fromEntries(products.map((p) => [p.id, true])));
   const collapseAll = () => setExpanded({});
   const statusColor = (name) => statuses.find((s) => s.name === name)?.color || "#a3a3a3";
+
+  // Загрузка фактического расхода внутренней рекламы из WB (ключ «Продвижение»)
+  const fetchWbAd = async () => {
+    if (!wbAdKey) { setSettingsTab("wbapi"); setSettingsOpen(true); return; }
+    if (wbAdLoading) return;
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const addD = (ds, n) => { const d = new Date(ds + "T00:00:00"); d.setDate(d.getDate() + n); return iso(d); };
+    const today = new Date(); today.setHours(0, 0, 0, 0); const todayStr = iso(today);
+    const allDays = []; { const cur = new Date(rnpStartDate + "T00:00:00"); for (let i = 0; i < rnpDays && cur <= today; i++) { allDays.push(iso(cur)); cur.setDate(cur.getDate() + 1); } }
+    // день «созрел», если забрали его не раньше чем через 3 дня после даты
+    const todo = allDays.filter((day) => !(wbAdMeta[day] && wbAdMeta[day] >= addD(day, 3)));
+    if (!todo.length) { setWbAdMsg("Всё актуально"); return; }
+    setWbAdLoading(true); setWbAdMsg("Загружаю…");
+    const FN = "https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-adv";
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const call = async (body) => {
+      for (let a = 0; a < 4; a++) {
+        const resp = await fetch(FN, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: wbAdKey, ...body }) });
+        if (resp.status === 429) { await sleep(25000); continue; }
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || ("Ошибка " + resp.status));
+        return data;
+      }
+      throw new Error("WB ограничил частоту запросов, попробуйте через минуту");
+    };
+    try {
+      const { ids = [] } = await call({ action: "ids" });
+      const spend = { ...wbAdSpend }; const meta = { ...wbAdMeta };
+      const first = todo[0], last = todo[todo.length - 1];
+      const windows = []; for (let s0 = first; s0 <= last; s0 = addD(s0, 31)) { const e0 = addD(s0, 30); windows.push([s0, e0 > last ? last : e0]); }
+      let calls = 0; const totalCalls = windows.length * Math.max(1, Math.ceil(ids.length / 50));
+      for (const [from, to] of windows) {
+        const acc = {};
+        for (let i = 0; i < Math.max(1, Math.ceil(ids.length / 50)); i++) {
+          const batch = ids.slice(i * 50, i * 50 + 50);
+          if (batch.length) { if (calls > 0) await sleep(21000); const r = await call({ ids: batch, from, to }); for (const [k, v] of Object.entries(r)) acc[k] = Math.round(((acc[k] || 0) + v) * 100) / 100; }
+          calls++; setWbAdMsg(`Загружаю… ${calls} из ${totalCalls}`);
+        }
+        const dset = new Set(); for (let d = from; d <= to; d = addD(d, 1)) dset.add(d);
+        for (const k of Object.keys(spend)) if (dset.has(k.split(":")[1])) delete spend[k];
+        Object.assign(spend, acc); for (const d of dset) meta[d] = todayStr;
+        setWbAdSpend({ ...spend }); setWbAdMeta({ ...meta });
+      }
+      try { await Promise.all([upsertSetting("wbAdSpend", spend), upsertSetting("wbAdMeta", meta)]); syncedRef.current.settings.wbAdSpend = JSON.stringify(spend); syncedRef.current.settings.wbAdMeta = JSON.stringify(meta); } catch (_) {}
+      setWbAdMsg("✓ Реклама загружена");
+    } catch (e) { setWbAdMsg("Ошибка: " + (e.message || e)); }
+    setWbAdLoading(false);
+  };
+  const fetchWbAdRef = useRef(fetchWbAd); fetchWbAdRef.current = fetchWbAd;
+  const adAutoRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || adAutoRef.current || !wbAdKey) return;
+    if (!products.some((p) => parseInt(p.wb) > 0)) return;
+    adAutoRef.current = true; fetchWbAdRef.current();
+  }, [loaded, wbAdKey, products]);
 
   // Автообновление заказов при открытии: один раз после загрузки данных,
   // если задан ключ и есть товары. Свежие дни перезапросятся, старые — из кеша.
@@ -2754,6 +2842,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           setMq={setMq}
           wbApiKey={wbApiKey}
           setWbApiKey={setWbApiKey}
+          wbAdKey={wbAdKey} setWbAdKey={setWbAdKey} onFetchAd={fetchWbAd} adLoading={wbAdLoading} adMsg={wbAdMsg}
           onFetchWb={() => { setSettingsOpen(false); fetchWbOrders(); }}
           onClose={() => setSettingsOpen(false)}
         />
@@ -4387,13 +4476,13 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
     }
     return task.top === "entries"
       ? entrySum(task, entries[`${task.id}:${dkey}`])
-      : (() => { const n = toNum(cells[`${task.id}:cost:${dkey}`]); return isNaN(n) ? 0 : n; })();
+      : rnpInternalDay(task, product, dkey);
   };
   const taskTotal = (task) => {
     if (task.kind === "rangeTask") return rangeEntries(task).reduce((a, e) => a + recordCost(task, e), 0);
     return task.top === "entries"
       ? Object.entries(entries).reduce((a, [k, arr]) => a + (k.startsWith(task.id + ":") && !k.endsWith(":_ranges") ? entrySum(task, arr) : 0), 0)
-      : Object.entries(cells).reduce((a, [k, v]) => { if (k.startsWith(task.id + ":cost:")) { const n = toNum(v); if (!isNaN(n)) return a + n; } return a; }, 0);
+      : rnpSingleTotal(task, product);
   };
   const allocated = toNum(budget.allocated);
   const spent = RNP_COST_TASKS.reduce((a, t) => a + taskTotal(t), 0);
@@ -4436,6 +4525,13 @@ function GanttBlock({ product, hiddenTasks = {}, startDate, days, onSetStartDate
       );
     }
     if (task.kind === "singleCost") {
+      const ad = rnpAdDay(product, d.key);
+      if (task.id === "internal" && ad !== undefined) return (
+        <td key={d.key} title="Факт из WB (внутренняя реклама)" style={{ ...base, background: ad > 0 ? "#eff6ff" : (d.weekend ? "#fafafa" : "#fff") }}>
+          <div className="w-full px-1 py-0.5 text-center text-xs font-semibold" style={{ color: "#2563eb", fontVariantNumeric: "tabular-nums" }}>{ad > 0 ? Math.round(ad).toLocaleString("ru-RU") : ""}</div>
+          {paintOverlay(task.id, d.key)}
+        </td>
+      );
       const val = cells[`${task.id}:cost:${d.key}`] ?? "";
       const has = val !== "" && toNum(val) > 0;
       const bg = has ? "#f0fdf4" : (d.weekend ? "#fafafa" : "#fff");
@@ -5939,7 +6035,7 @@ function PromoDayEditor({ product, dkey, wbOrders = {}, onSetCell, onSetFlag, on
               return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><span className="ml-auto text-sm font-semibold tabular-nums text-neutral-700">{c || "—"}</span></div>);
             }
             if (t.kind === "singleCost") {
-              return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><div className="ml-auto flex items-center gap-1"><input value={cells[`${t.id}:cost:${dkey}`] ?? ""} onChange={(e) => onSetCell(`${t.id}:cost:${dkey}`, e.target.value)} inputMode="decimal" placeholder="0" className="w-24 rounded-lg border border-neutral-200 px-2 py-1 text-right text-sm tabular-nums focus:border-neutral-400 focus:outline-none" /><span className="text-xs text-neutral-400">₽</span></div></div>);
+              return (<div key={t.id} className="flex items-center gap-2 rounded-lg border border-neutral-100 px-3 py-2"><span className="inline-flex items-center gap-2 text-sm text-neutral-700">{dot}{t.label}</span><div className="ml-auto flex items-center gap-1">{t.id === "internal" && rnpAdDay(product, dkey) !== undefined ? <span title="Факт из WB" className="w-24 px-2 py-1 text-right text-sm font-semibold tabular-nums text-blue-600">{Math.round(rnpAdDay(product, dkey)).toLocaleString("ru-RU")}</span> : <input value={cells[`${t.id}:cost:${dkey}`] ?? ""} onChange={(e) => onSetCell(`${t.id}:cost:${dkey}`, e.target.value)} inputMode="decimal" placeholder="0" className="w-24 rounded-lg border border-neutral-200 px-2 py-1 text-right text-sm tabular-nums focus:border-neutral-400 focus:outline-none" />}<span className="text-xs text-neutral-400">₽</span></div></div>);
             }
             if (t.kind === "twoRow" && t.top === "entries") {
               const arr = entries[`${t.id}:${dkey}`] || [];
@@ -9321,6 +9417,8 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                       const base = { background: bg, color: t.kind === "wbOrders" ? "#15803d" : col, textAlign: "center", fontWeight: 700, height: 27, padding: 0, borderLeft: "1px solid #f7f7f7", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" };
                       if (t.kind === "wbOrders") return <td key={d.key} title={t.label} style={base}>{cellTxt(t, v)}</td>;
                       if (t.kind === "singleCost") {
+                        const ad = rnpAdDay(p, d.key);
+                        if (t.id === "internal" && ad !== undefined) return <td key={d.key} title="Факт из WB (внутренняя реклама)" style={{ ...base, background: fill || (ad > 0 ? col + "22" : (isTd ? "#fff7ed" : "transparent")), color: col }}>{ad > 0 ? Math.round(ad).toLocaleString("ru-RU") : ""}</td>;
                         const key = `${t.id}:cost:${d.key}`; const val = (p.rnp.cells || {})[key] ?? ""; const has = val !== "" && parseFloat(String(val).replace(",", ".")) > 0;
                         return <td key={d.key} title={t.label} style={{ ...base, background: fill || (has ? col + "22" : (isTd ? "#fff7ed" : "transparent")) }}><input value={val} onChange={(e) => onSetCell && onSetCell(p.id, key, e.target.value)} inputMode="decimal" className="h-full w-full bg-transparent px-1 text-center text-[11.5px] font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ color: col }} /></td>;
                       }
@@ -10002,7 +10100,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, onClose }) {
+function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
   const toggleTrgOpen = (id) => setTrgOpen((o) => ({ ...o, [id]: !o[id] }));
@@ -10588,6 +10686,15 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
                   Сохранить и загрузить
                 </button>
                 <span className="text-xs text-neutral-400">{wbApiKey ? "✓ ключ задан" : "ключ не задан"}</span>
+              </div>
+              <div className="mt-6 border-t border-neutral-100 pt-4">
+                <p className="mb-3 text-xs text-neutral-400">Для внутренней рекламы нужен отдельный ключ: кабинет ВБ → Настройки → Доступ к API → категория «Продвижение». Расход по дням подтягивается в строку «Внутренняя реклама» (по артикулу ВБ) и попадает в фонд маркетинга.</p>
+                <label className="mb-1 block text-xs font-medium text-neutral-500">API-ключ (Продвижение)</label>
+                <input value={wbAdKey || ""} onChange={(e) => setWbAdKey(e.target.value)} type="password" placeholder="eyJhbGci..." className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ fontFamily: "monospace" }} />
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <button onClick={() => onFetchAd && onFetchAd()} disabled={!wbAdKey || adLoading} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">{adLoading ? "Загрузка…" : "Сохранить и загрузить рекламу"}</button>
+                  <span className="text-xs text-neutral-400">{adMsg || (wbAdKey ? "✓ ключ задан" : "ключ не задан")}</span>
+                </div>
               </div>
             </>
           )}
