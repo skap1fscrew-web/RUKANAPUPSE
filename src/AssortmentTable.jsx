@@ -9322,9 +9322,10 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
 
 function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onOpenProduct, onClose }) {
   const [j, setJ] = useState(job);
-  const [expanded, setExpanded] = useState(() => lsGet("rnp.taskExpanded", false)); // раскрытое окно задачи
+  const [size, setSize] = useState(() => { const v = lsGet("rnp.taskSize", null); if (v === 0 || v === 1 || v === 2) return v; return lsGet("rnp.taskExpanded", false) ? 1 : 0; }); // размер окна задачи: 0 обычный · 1 широкий · 2 на весь экран
+  const expanded = size >= 1, big = size === 2;
   const [showLog, setShowLog] = useState(false); // показывать «Историю» вместо деталей
-  useEffect(() => lsSet("rnp.taskExpanded", expanded), [expanded]);
+  useEffect(() => lsSet("rnp.taskSize", size), [size]);
   const checkRefs = useRef({});          // ref на поля подзадач — для фокуса новой
   const [focusCheckId, setFocusCheckId] = useState(null);
   const [subDoneOpen, setSubDoneOpen] = useState(false); // раскрыт ли список выполненных подзадач
@@ -9359,6 +9360,51 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
   const checklist = Array.isArray(j.checklist) ? j.checklist : [];
   const tables = Array.isArray(j.tables) ? j.tables : [];
   const openTable = tables.find((x) => x.id === tblOpen) || null;
+  const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
+  const addTable = () => { const nt = ttNewTable(); set("tables", [...tables, nt]); setTblOpen(nt.id); };
+  const matBlock = big ? (
+    <div>
+              <div className="mb-3 flex items-center gap-2">
+                <div className={fieldL + " flex-1"}>Материалы</div>
+                <button onClick={addTable} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Таблица</button>
+              </div>
+              {tables.length === 0 && <button onClick={addTable} className="w-full rounded-[14px] border-[1.5px] border-dashed border-neutral-200 py-8 text-[13px] font-semibold text-neutral-400 hover:border-violet-300 hover:text-violet-600">＋ Добавить таблицу</button>}
+              <div className="flex flex-col gap-4">
+                {tables.map((tb) => (
+                  <div key={tb.id} className="overflow-hidden rounded-[14px] border border-neutral-200 bg-white">
+                    <button onClick={() => setTblOpen(tb.id)} className="flex w-full items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5 text-left hover:bg-neutral-50"><span className="min-w-0 flex-1 truncate text-[14px] font-extrabold text-neutral-800">▦ {tb.title || "Таблица"}</span><span className="text-[12px] font-bold text-violet-600">развернуть ⤢</span></button>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-[13px]">
+                        <thead><tr>{tb.cols.map((c) => <th key={c.id} className="border border-neutral-100 bg-neutral-50 px-3 py-2 text-left text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">{c.name}</th>)}</tr></thead>
+                        <tbody>{tb.rows.map((r) => <tr key={r.id}>{tb.cols.map((c) => { const cl = r.cells[c.id]; const st = cl && cl.k === "status" ? TT_STATUSES.find((x) => x.id === cl.v) : null; return <td key={c.id} onClick={() => setTblOpen(tb.id)} className="h-[34px] cursor-pointer border border-neutral-100 px-3 text-neutral-700">{st ? <span className="rounded-md px-2 py-[2px] text-[12px] font-bold" style={{ background: st.bg, color: st.fg }}>{st.label}</span> : cl && cl.k === "check" ? <span className={"inline-flex h-4 w-4 items-center justify-center rounded-[5px] border-[1.5px] align-middle " + (cl.v ? "border-green-500 bg-green-500 text-white" : "border-neutral-300")}>{cl.v && <Check size={11} strokeWidth={3} />}</span> : ttCellText(cl, people)}</td>; })}</tr>)}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+  ) : (
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <div className={fieldL + " flex-1"}>Материалы</div>
+                <button onClick={addTable} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Таблица</button>
+              </div>
+              {tables.length > 0 && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {tables.map((tb) => (
+                    <button key={tb.id} onClick={() => setTblOpen(tb.id)} className="flex min-w-0 flex-col rounded-[14px] border border-neutral-200 bg-white p-3 text-left transition hover:border-violet-300 hover:shadow-sm">
+                      <div className="mb-2 flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[14px] font-extrabold text-neutral-800">▦ {tb.title || "Таблица"}</span><span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-[11px] font-bold text-neutral-500">таблица</span></div>
+                      <table className="w-full table-fixed border-collapse text-[11.5px]">
+                        <thead><tr>{tb.cols.slice(0, 3).map((c) => <th key={c.id} className="truncate border border-neutral-100 bg-neutral-50 px-1.5 py-1 text-left font-bold text-neutral-500">{c.name}</th>)}</tr></thead>
+                        <tbody>{tb.rows.slice(0, 3).map((r) => <tr key={r.id}>{tb.cols.slice(0, 3).map((c) => <td key={c.id} className="h-[24px] truncate border border-neutral-100 px-1.5 text-neutral-700">{ttCellText(r.cells[c.id], people)}</td>)}</tr>)}</tbody>
+                      </table>
+                      <div className="mt-2 flex items-center justify-between text-[11.5px] text-neutral-400"><span>{tb.rows.length} стр. × {tb.cols.length} стлб.</span><span className="font-bold text-violet-600">Открыть →</span></div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+  );
   const setCl = (cl) => set("checklist", cl);
   const addCheck = () => { const id = uid(); setCl([...checklist, { id, text: "", done: false }]); setFocusCheckId(id); };
   const toggleCheck = (id) => setCl(checklist.map((c) => (c.id === id ? { ...c, done: !c.done } : c)));
@@ -9407,7 +9453,6 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
     } catch {}
   };
   const datesOn = !!(j.start || j.date);
-  const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
 
   // ---- История задачи (логи) ----
   const STAGE_LBL = { wait: "Ожидает", progress: "В процессе", done: "Готово" };
@@ -9464,7 +9509,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
       {openTable && <TaskTableEditor table={openTable} people={people} onChange={(nt) => set("tables", tables.map((x) => (x.id === nt.id ? nt : x)))} onClose={() => setTblOpen(null)} onDelete={() => { set("tables", tables.filter((x) => x.id !== openTable.id)); setTblOpen(null); }} />}
-      <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
+      <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (big ? "h-full max-h-full max-w-none" : expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
         {/* Шапка: компактный переключатель типа + создано + действия */}
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
           {/* тип выбирается только при создании; у созданной задачи — справочный бейдж без смены */}
@@ -9486,7 +9531,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
               <button onClick={() => setShowLog((v) => !v)} title={showLog ? "К деталям" : "История"} className={"rounded-md p-1 transition " + (showLog ? "bg-sky-50 text-sky-600" : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700")}><History size={17} /></button>
               <span className="mx-0.5 h-4 w-px self-center bg-neutral-200" />
             </>}
-            <button onClick={() => setExpanded((v) => !v)} title={expanded ? "Свернуть" : "Раскрыть"} className="rounded-md p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700">{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
+            <button onClick={() => setSize((v) => (v + 1) % 3)} title={big ? "Обычный размер" : size === 1 ? "На весь экран" : "Шире"} className="rounded-md p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700">{big ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
             {!job._new && <button onClick={() => onDelete(j.id)} title="Удалить задачу" className="rounded-md p-1 text-neutral-400 transition hover:bg-red-50 hover:text-red-600"><Trash2 size={18} /></button>}
             <button onClick={onClose} title="Закрыть" className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
           </span>
@@ -9505,7 +9550,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
             </div>
           </div>
         ) : (
-        <div className="grid flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-[1fr_300px]">
+        <div className={"grid flex-1 grid-cols-1 overflow-y-auto " + (big ? "sm:grid-cols-[340px_1fr_300px]" : "sm:grid-cols-[1fr_300px]")}>
           {/* ЛЕВО: название · заметка · подзадачи */}
           <div className="flex flex-col gap-5 border-b border-neutral-100 p-5 sm:border-b-0 sm:border-r">
             <textarea value={j.title} rows={1} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="Название задачи…" autoFocus
@@ -9540,27 +9585,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
               ); })()}
             </div>
 
-            {/* Материалы: таблицы */}
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                <div className={fieldL + " flex-1"}>Материалы</div>
-                <button onClick={() => { const nt = ttNewTable(); set("tables", [...tables, nt]); setTblOpen(nt.id); }} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Таблица</button>
-              </div>
-              {tables.length > 0 && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {tables.map((tb) => (
-                    <button key={tb.id} onClick={() => setTblOpen(tb.id)} className="flex min-w-0 flex-col rounded-[14px] border border-neutral-200 bg-white p-3 text-left transition hover:border-violet-300 hover:shadow-sm">
-                      <div className="mb-2 flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[14px] font-extrabold text-neutral-800">▦ {tb.title || "Таблица"}</span><span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-[11px] font-bold text-neutral-500">таблица</span></div>
-                      <table className="w-full table-fixed border-collapse text-[11.5px]">
-                        <thead><tr>{tb.cols.slice(0, 3).map((c) => <th key={c.id} className="truncate border border-neutral-100 bg-neutral-50 px-1.5 py-1 text-left font-bold text-neutral-500">{c.name}</th>)}</tr></thead>
-                        <tbody>{tb.rows.slice(0, 3).map((r) => <tr key={r.id}>{tb.cols.slice(0, 3).map((c) => <td key={c.id} className="h-[24px] truncate border border-neutral-100 px-1.5 text-neutral-700">{ttCellText(r.cells[c.id], people)}</td>)}</tr>)}</tbody>
-                      </table>
-                      <div className="mt-2 flex items-center justify-between text-[11.5px] text-neutral-400"><span>{tb.rows.length} стр. × {tb.cols.length} стлб.</span><span className="font-bold text-violet-600">Открыть →</span></div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {!big && matBlock}
 
             {/* Вложения */}
             <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}>
@@ -9598,6 +9623,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
             </div>
           </div>
 
+          {big && <div className="flex flex-col gap-5 border-b border-neutral-100 bg-neutral-50/50 p-5 sm:border-b-0 sm:border-r">{matBlock}</div>}
           {/* ПРАВО: настройки */}
           <div className="flex flex-col gap-4 bg-neutral-50/50 p-5">
             <div className="flex flex-col gap-2">
