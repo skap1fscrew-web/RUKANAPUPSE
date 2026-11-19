@@ -10140,24 +10140,24 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
         <div className="rounded-2xl border border-neutral-200 bg-white p-5">
           <div className="mb-1 flex flex-wrap items-start gap-4">
             <div className="flex gap-8">
-              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#16a34a" }}>{totO.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">заказов</span><span className="block text-sm font-bold tabular-nums text-neutral-700">{fmtMoney(sumA0(data.os))}</span></div>
-              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#0d9488" }}>{totS.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">выкупов</span><span className="block text-sm font-bold tabular-nums text-neutral-700">≈ {fmtMoney(sumA0(data.ss))}</span></div>
+              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#a10d88" }}>{totO.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">заказов</span><span className="block text-sm font-bold tabular-nums text-neutral-700">{fmtMoney(sumA0(data.os))}</span></div>
+              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#481173" }}>{totS.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">выкупов</span><span className="block text-sm font-bold tabular-nums text-neutral-700">≈ {fmtMoney(sumA0(data.ss))}</span></div>
               <div><b className="block text-3xl font-extrabold tabular-nums text-neutral-800">{totO > 0 ? (Math.round(totS / totO * 1000) / 10).toLocaleString("ru-RU") + "%" : "—"}</b><span className="text-xs text-neutral-500">выкуп к заказам</span></div>
             </div>
             <div className="ml-auto flex flex-wrap items-center gap-2"><Seg items={[["pcs", "Только шт"], ["both", "Шт + ₽"], ["rub", "Только ₽"]]} value={lab} onChange={setLab} /><Seg items={[["both", "Оба"], ["orders", "Заказы"], ["sales", "Выкупы"]]} value={ser} onChange={setSer} /></div>
           </div>
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 420 }}>
             <defs>
-              <linearGradient id="sumGa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#22c55e" stopOpacity=".22" /><stop offset="1" stopColor="#22c55e" stopOpacity="0" /></linearGradient>
-              <linearGradient id="sumGb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#14b8a6" stopOpacity=".2" /><stop offset="1" stopColor="#14b8a6" stopOpacity="0" /></linearGradient>
+              <linearGradient id="sumGa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#cb11ab" stopOpacity=".22" /><stop offset="1" stopColor="#cb11ab" stopOpacity="0" /></linearGradient>
+              <linearGradient id="sumGb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#481173" stopOpacity=".2" /><stop offset="1" stopColor="#481173" stopOpacity="0" /></linearGradient>
             </defs>
             {grid.map((v) => <g key={v}><line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="#eee" /><text x={0} y={y(v) + 4} fontSize="11" fill="#a3a3a3">{v}</text></g>)}
             {showO && <path d={`${sumPath(data.od, x, y)} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)}Z`} fill="url(#sumGa)" />}
             {showS && <path d={`${sumPath(data.sd, x, y)} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)}Z`} fill="url(#sumGb)" />}
-            {showO && <path d={sumPath(data.od, x, y)} fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" />}
-            {showS && <path d={sumPath(data.sd, x, y)} fill="none" stroke="#14b8a6" strokeWidth="3" strokeLinecap="round" />}
-            {showO && data.od.map((v, i) => <g key={"o" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#22c55e" strokeWidth="2" />{i % labelEvery === 0 && <PtLabel x={x(i)} y={y(v)} v={v} sum={data.os[i]} mode={lab} up color="#15803d" />}</g>)}
-            {showS && data.sd.map((v, i) => <g key={"s" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#14b8a6" strokeWidth="2" />{i % labelEvery === 0 && <PtLabel x={x(i)} y={y(v)} v={v} sum={data.ss[i]} mode={lab} color="#0f766e" />}</g>)}
+            {showO && <path d={sumPath(data.od, x, y)} fill="none" stroke="#cb11ab" strokeWidth="3" strokeLinecap="round" />}
+            {showS && <path d={sumPath(data.sd, x, y)} fill="none" stroke="#481173" strokeWidth="3" strokeLinecap="round" />}
+            {showO && data.od.map((v, i) => <g key={"o" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#cb11ab" strokeWidth="2" />{i % labelEvery === 0 && <PtLabel x={x(i)} y={y(v)} v={v} sum={data.os[i]} mode={lab} up color="#a10d88" />}</g>)}
+            {showS && data.sd.map((v, i) => <g key={"s" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#481173" strokeWidth="2" />{i % labelEvery === 0 && <PtLabel x={x(i)} y={y(v)} v={v} sum={data.ss[i]} mode={lab} color="#481173" />}</g>)}
             {days.map((d, i) => i % labelEvery === 0 && <text key={d.key} x={x(i)} y={H - 8} fontSize="11" textAnchor="middle" fill="#a3a3a3">{d.n}</text>)}
           </svg>
           <div className="mt-1 text-[11px] text-neutral-400">Суммы на графике — в рублях (167.300 = 167 300 ₽): заказы по цене до СПП, выкупы — оценка (выкупы × средняя цена до СПП). Данные из РНП: если период длиннее загруженного в РНП, дни вне него будут пустыми. Обновить заказы можно в РНП (↻ у строки «Заказы»).</div>
