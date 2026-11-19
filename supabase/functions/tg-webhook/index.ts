@@ -16,11 +16,15 @@ type Any = any;
 function parseTask(raw: string, profiles: Any[], selfId: string) {
   let text = raw.trim();
   let assignee = selfId;
+  let unknown: string | null = null;
+  let priority = "high";
+  const pm = text.match(/(^|\s)!(низк\S*|средн\S*|высок\S*)/i);
+  if (pm) { const w = pm[2].toLowerCase(); priority = w.startsWith("низк") ? "low" : w.startsWith("средн") ? "med" : "high"; text = text.replace(pm[0], " "); }
   const m = text.match(/(^|\s)@([\p{L}\p{N}_.-]+)/u);
   if (m) {
     const q = m[2].toLowerCase();
     const p = profiles.find((x) => profLabel(x).toLowerCase() === q) || profiles.find((x) => profLabel(x).toLowerCase().startsWith(q));
-    if (p) { assignee = p.id; text = text.replace(m[0], " "); }
+    if (p) { assignee = p.id; text = text.replace(m[0], " "); } else unknown = m[2];
   }
   const today = mskNow().date;
   let date: string | null = null;
@@ -36,7 +40,7 @@ function parseTask(raw: string, profiles: Any[], selfId: string) {
     }
   }
   const title = text.replace(/\s+/g, " ").trim().replace(/^[-–—:,.\s]+|[,\s]+$/g, "");
-  return { title, assignee, date };
+  return { title, assignee, date, priority, unknown };
 }
 
 serve(async (req) => {
@@ -109,16 +113,17 @@ serve(async (req) => {
     if (text.startsWith("/")) { await say("Напишите текст — создам задачу, или /tasks."); return json({ ok: true }); }
 
     const t = parseTask(text, profiles, pid);
+    if (t.unknown) { await say(`Не нашёл «@${esc(t.unknown)}». Исполнители: ${profiles.map((x) => esc(profLabel(x))).join(", ")}. Напишите задачу ещё раз.`); return json({ ok: true }); }
     if (!t.title) { await say("Не понял, о чём задача. Напишите текст задачи."); return json({ ok: true }); }
     const now = new Date().toISOString();
     const job = {
-      id: crypto.randomUUID(), title: t.title, date: t.date, start: null, done: false, labelId: null, productId: null, priority: "low",
+      id: crypto.randomUUID(), title: t.title, date: t.date, start: null, done: false, labelId: null, productId: null, priority: t.priority,
       assignee: t.assignee, assignees: [t.assignee], tags: [], stage: "wait", note: "Из Telegram", checklist: [], createdAt: now.slice(0, 10), createdBy: pid,
       log: [{ id: crypto.randomUUID().slice(0, 8), ts: now, kind: "created", by: pid }],
     };
     await rest("jobs?on_conflict=id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ id: job.id, data: job, updated_at: now }) });
     const who = t.assignee === pid ? "на вас" : `на ${esc(profLabel(profiles.find((x) => x.id === t.assignee)))}`;
-    await say(`✅ Задача создана ${who}\n<b>${esc(t.title)}</b>${t.date ? `\nСрок: ${fmtDM(t.date)}` : "\nСрок не указан"}`);
+    await say(`✅ Задача создана ${who}\n<b>${esc(t.title)}</b>${t.date ? `\nСрок: ${fmtDM(t.date)}` : "\nСрок не указан"}\nПриоритет: ${t.priority === "high" ? "высокий" : t.priority === "med" ? "средний" : "низкий"}`);
     return json({ ok: true });
   } catch (e) {
     console.error(e);

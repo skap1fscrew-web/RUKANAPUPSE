@@ -9364,13 +9364,15 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
   );
 }
 
-let TASK_SIZE_MEM = null; // последний выбранный размер окна задачи (общий для всех задач)
+const TASK_SIZES_MEM = {}; // размер окна запоминается отдельно для каждой задачи (в большом виде открывается только та, что была в нём)
+const taskSizeGet = (id) => { if (!id) return 0; const m = TASK_SIZES_MEM[id]; if (m === 1 || m === 2) return m; const o = lsGet("rnp.taskSizes", {}); const v = o && o[id]; return v === 1 || v === 2 ? v : 0; };
+const taskSizeSet = (id, v) => { if (!id) return; TASK_SIZES_MEM[id] = v; const o = { ...(lsGet("rnp.taskSizes", {}) || {}) }; if (v) o[id] = v; else delete o[id]; const k = Object.keys(o); if (k.length > 300) k.slice(0, k.length - 300).forEach((x) => delete o[x]); lsSet("rnp.taskSizes", o); };
 function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onOpenProduct, onClose }) {
   const [j, setJ] = useState(job);
-  const [size, setSize] = useState(() => { if (TASK_SIZE_MEM === 0 || TASK_SIZE_MEM === 1 || TASK_SIZE_MEM === 2) return TASK_SIZE_MEM; const v = lsGet("rnp.taskSize", null); if (v === 0 || v === 1 || v === 2) return v; return lsGet("rnp.taskExpanded", false) ? 1 : 0; }); // размер окна задачи: 0 обычный · 1 широкий · 2 на весь экран
+  const [size, setSize] = useState(() => taskSizeGet(job && job.id)); // размер окна задачи: 0 обычный · 1 широкий · 2 на весь экран
   const expanded = size >= 1, big = size === 2;
   const [showLog, setShowLog] = useState(false); // показывать «Историю» вместо деталей
-  useEffect(() => { TASK_SIZE_MEM = size; lsSet("rnp.taskSize", size); }, [size]);
+  useEffect(() => { taskSizeSet(j.id, size); }, [size]); // eslint-disable-line react-hooks/exhaustive-deps
   const checkRefs = useRef({});          // ref на поля подзадач — для фокуса новой
   const [focusCheckId, setFocusCheckId] = useState(null);
   const [subDoneOpen, setSubDoneOpen] = useState(false); // раскрыт ли список выполненных подзадач
