@@ -9565,7 +9565,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
                 className="w-full resize-none rounded-xl border border-neutral-200 px-3 py-2 text-sm leading-relaxed text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
             </div>
             <div>
-              <div className={fieldL + " mb-2"}>Подзадачи</div>
+              <div className="mb-2 flex items-center gap-2"><div className={fieldL + " flex-1"}>Подзадачи</div><button onClick={addCheck} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Подзадача</button></div>
               {checklist.length > 0 && (
                 <div className="mb-2 flex items-center gap-2">
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full bg-green-600" style={{ width: `${Math.round((cdone / checklist.length) * 100)}%` }} /></div>
@@ -9575,7 +9575,6 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
               <div className="flex flex-col">
                 {checklist.filter((c) => !c.done).map((c) => renderSubRow(c))}
               </div>
-              <button onClick={addCheck} className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> подзадача</button>
               {checklist.some((c) => c.done) && (() => { const doneSubs = checklist.filter((c) => c.done); return (
                 <div className="mt-3 border-t border-neutral-100 pt-2">
                   <button onClick={() => setSubDoneOpen((v) => !v)} className="flex w-full items-center gap-1.5 rounded-lg px-1 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 transition hover:text-neutral-600">
@@ -9590,7 +9589,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
 
             {/* Вложения */}
             <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}>
-              <div className={fieldL + " mb-2"}>Вложения</div>
+              <div className="mb-2 flex items-center gap-2"><div className={fieldL + " flex-1"}>Вложения</div><button onClick={() => fileInputRef.current?.click()} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Файл</button></div>
               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
               <div className="flex flex-wrap items-center gap-2.5">
                 {files.map((f) => (f.isImage ? (
@@ -9607,14 +9606,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
                     <button onClick={() => removeFile(f.id)} className="shrink-0 text-neutral-300 hover:text-red-500" title="Удалить"><X size={14} /></button>
                   </div>
                 )))}
-                {files.length > 0 ? (
-                  <button onClick={() => fileInputRef.current?.click()} className="flex h-[84px] w-[84px] flex-col items-center justify-center gap-1 rounded-xl border-[1.5px] border-dashed border-neutral-300 text-[11px] font-semibold text-neutral-400 transition hover:border-cyan-400 hover:text-cyan-700"><Plus size={18} /> Файл</button>
-                ) : (
-                  <>
-                    <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-lg border-[1.5px] border-dashed border-neutral-300 px-3 py-1.5 text-[13px] font-semibold text-neutral-400 transition hover:border-cyan-400 hover:text-cyan-700"><Plus size={15} /> Файл</button>
-                    <span className="text-[12px] text-neutral-300">или перетащите сюда · до 10 МБ</span>
-                  </>
-                )}
+                {files.length === 0 && <span className="text-[12px] text-neutral-300">Перетащите файлы сюда · до 10 МБ</span>}
               </div>
               {(dragOver || fileMsg) && (
                 <div className={"mt-2 rounded-xl border-[1.5px] border-dashed px-3 py-2 text-center text-[12px] transition " + (fileMsg ? "border-amber-200 text-amber-600" : "border-cyan-400 bg-cyan-50/50 text-cyan-700")}>
