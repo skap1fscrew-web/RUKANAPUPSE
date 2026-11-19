@@ -1178,6 +1178,31 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [wbOrdSum, setWbOrdSum] = useState({}); // сумма заказов по дням { "артикул|nmId:YYYY-MM-DD": ₽ }
   const [wbOrdSumMeta, setWbOrdSumMeta] = useState({});
   const [wbAdKey, setWbAdKey] = useState(""); // ключ WB, категория «Продвижение»
+  const [wbWay, setWbWay] = useState(null); // товары «в пути»: { updatedAt, items: { "артикул|nmId": {to, from, toSum, fromSum} } }
+  const [wayLoading, setWayLoading] = useState(false);
+  const [wayMsg, setWayMsg] = useState("");
+  const wayTriedRef = useRef(0);
+  const fetchWbWay = async () => {
+    const key = wbApiKey || wbAdKey;
+    if (!key) { setWayMsg("Нет API-ключа WB (Настройки → API ВБ)"); return; }
+    setWayLoading(true); setWayMsg("");
+    try {
+      const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-stocks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key }) });
+      if (resp.status === 429) { setWayMsg("WB ограничил частоту запросов — повторите через минуту"); return; }
+      if (!resp.ok) throw new Error("wb-stocks " + resp.status);
+      const data = await resp.json();
+      if (!data || !data.items) throw new Error("пустой ответ");
+      setWbWay(data);
+      try { await upsertSetting("wbWay", data); } catch (_) {}
+    } catch (e) { setWayMsg("Не удалось загрузить: " + (e.message || e)); }
+    finally { setWayLoading(false); }
+  };
+  useEffect(() => {
+    if (activeTab !== "summary" || !loaded || wayLoading) return;
+    const stale = !wbWay || !wbWay.updatedAt || Date.now() - new Date(wbWay.updatedAt).getTime() > 30 * 60 * 1000;
+    if (stale && Date.now() - wayTriedRef.current > 5 * 60 * 1000 && (wbApiKey || wbAdKey)) { wayTriedRef.current = Date.now(); fetchWbWay(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, loaded, wbWay, wbApiKey, wbAdKey]);
   const [wbAdSpend, setWbAdSpend] = useState({}); // { "nmId:YYYY-MM-DD": ₽ } факт внутренней рекламы
   const [wbAdMeta, setWbAdMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbAdLoading, setWbAdLoading] = useState(false);
@@ -1254,6 +1279,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
         if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
+        if (settings.wbWay && typeof settings.wbWay === "object") setWbWay(settings.wbWay);
         if (settings.tgLinks && typeof settings.tgLinks === "object") setTgLinks(settings.tgLinks);
         if (typeof settings.tgBot === "string") setTgBot(settings.tgBot);
         if (Array.isArray(settings.profiles)) { const np = normProfiles(settings.profiles); setProfiles(np); syncedRef.current.settings.profiles = JSON.stringify(np); }
@@ -1552,6 +1578,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         // начинается шторм эха между вкладками — правки лагают и затираются.
         if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = JSON.stringify(ns); setStrategy(ns); } return; }
         if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = JSON.stringify(nd); setDuties(nd); } return; }
+        if (key === "wbWay") { if (value && typeof value === "object") setWbWay(value); return; }
         if (key === "tgLinks") { if (value && typeof value === "object") setTgLinks(value); return; }
         if (key === "tgBot") { if (typeof value === "string") setTgBot(value); return; }
         if (key === "profiles") { if (Array.isArray(value)) { const np = normProfiles(value); syncedRef.current.settings.profiles = JSON.stringify(np); setProfiles(np); } return; }
@@ -2904,7 +2931,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           />
         )}
 
-        {activeTab === "summary" && <SummaryTab products={products} wbOrders={wbOrders} />}
+        {activeTab === "summary" && <SummaryTab products={products} wbOrders={wbOrders} way={wbWay} wayLoading={wayLoading} wayMsg={wayMsg} onRefreshWay={fetchWbWay} />}
         {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} purchaseBatches={purchaseBatches} onOpen={(id) => setCardModal(id)} onOpenPopup={(pid, task, dateKey) => setGanttModal({ productId: pid, mode: "popup", task, dateKey })} onOpenDB={(pid, task) => setGanttModal({ productId: pid, mode: "db", task })} onSetCell={(pid, k, v) => setRnpCell(pid, k, v)} onSetFlag={(pid, f, v) => setRnpFlag(pid, f, v)} onSetBudget={(pid, v) => setRnpBudget(pid, v)} onSetFunds={(pid, f) => setRnpFunds(pid, f)} />}
 
         {activeTab === "strategy" && (
@@ -9519,7 +9546,7 @@ function SummaryDonut({ parts, total, label }) {
     </div>
   );
 }
-function SummaryTab({ products = [], wbOrders = {} }) {
+function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = false, wayMsg = "", onRefreshWay }) {
   const [span, setSpan] = useState(() => lsGet("sum.span", 14));
   const [cut, setCut] = useState(() => lsGet("sum.cut", "product"));
   const [ser, setSer] = useState("both");
@@ -9535,6 +9562,34 @@ function SummaryTab({ products = [], wbOrders = {} }) {
     });
     return { per, od: days.map((_, i) => per.reduce((x, r) => x + r.od[i], 0)), sd: days.map((_, i) => per.reduce((x, r) => x + r.sd[i], 0)) };
   }, [products, wbOrders, days]);
+  const wayTot = useMemo(() => {
+    const t = { to: 0, from: 0, toSum: 0, fromSum: 0, byTo: [], byFrom: [] };
+    if (!way || !way.items) return t;
+    for (const p of products) {
+      const w = way.items[p.code || ""] || way.items[String(p.wb || "")];
+      if (!w) continue;
+      t.to += w.to; t.from += w.from; t.toSum += w.toSum; t.fromSum += w.fromSum;
+      const nm = p.name || p.code || p.wb || "Товар";
+      if (w.to) t.byTo.push([nm, w.to, w.toSum]);
+      if (w.from) t.byFrom.push([nm, w.from, w.fromSum]);
+    }
+    t.byTo.sort((a, b) => b[2] - a[2]); t.byFrom.sort((a, b) => b[2] - a[2]);
+    return t;
+  }, [products, way]);
+  const fmtMoney = (n) => n >= 1e6 ? (Math.round(n / 1e4) / 100).toLocaleString("ru-RU") + " млн ₽" : Math.round(n).toLocaleString("ru-RU") + " ₽";
+  const wayTime = way && way.updatedAt ? new Date(way.updatedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+  const WayTile = ({ icon, title, qty, sum, color, bg, by }) => (
+    <div className="flex flex-1 items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-4 py-3" title={by.length ? by.slice(0, 8).map(([n, q, sm]) => `${n}: ${q} шт · ${Math.round(sm).toLocaleString("ru-RU")} ₽`).join("\n") : undefined}>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg" style={{ background: bg }}>{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-bold text-neutral-500">{title}</div>
+        <div className="flex flex-wrap items-baseline gap-x-3">
+          <span className="text-2xl font-extrabold tabular-nums" style={{ color }}>{qty.toLocaleString("ru-RU")} <span className="text-xs font-semibold text-neutral-400">шт</span></span>
+          <span className="text-lg font-extrabold tabular-nums text-neutral-800">{fmtMoney(sum)}</span>
+        </div>
+      </div>
+    </div>
+  );
   const totO = data.od.reduce((a, b) => a + b, 0), totS = data.sd.reduce((a, b) => a + b, 0);
   // структура: топ-4 + «Остальные»
   const group = (key, colors) => {
@@ -9585,6 +9640,14 @@ function SummaryTab({ products = [], wbOrders = {} }) {
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-lg font-extrabold text-neutral-900">Сводка по кабинету WB</h2>
         <Seg items={[[7, "7 дней"], [14, "14 дней"], [30, "30 дней"]]} value={span} onChange={setSpan} />
+      </div>
+      <div className="flex flex-wrap items-stretch gap-3">
+        <WayTile icon="🚚" title="В пути к клиенту" qty={wayTot.to} sum={wayTot.toSum} color="#16a34a" bg="#dcfce7" by={wayTot.byTo} />
+        <WayTile icon="↩️" title="В пути от клиента" qty={wayTot.from} sum={wayTot.fromSum} color="#ea580c" bg="#ffedd5" by={wayTot.byFrom} />
+        <div className="flex shrink-0 flex-col items-end justify-center gap-1 text-[11px] text-neutral-400">
+          <button onClick={() => onRefreshWay && onRefreshWay()} disabled={wayLoading} className="h-8 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">{wayLoading ? "Загрузка…" : "↻ Обновить"}</button>
+          <span>{wayMsg || (wayTime ? `обновлено в ${wayTime} · цена до СПП` : "данных пока нет")}</span>
+        </div>
       </div>
       <div className="grid gap-3 lg:grid-cols-[1.9fr_1fr]">
         <div className="rounded-2xl border border-neutral-200 bg-white p-5">
