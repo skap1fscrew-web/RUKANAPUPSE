@@ -9210,7 +9210,7 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
       }
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setPop(null); return; }
     }
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       const next = t.rows[ri + 1];
       if (next) focusCell(next.id + ":" + cid); else { const id = addRow(); focusCell(id + ":" + cid); }
@@ -9289,7 +9289,7 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
         </div>
       );
     } else {
-      body = <input data-cell={key} value={cell.v || ""} onChange={(e) => onTextChange(e, r.id, c.id)} onKeyDown={(e) => onTextKey(e, ri, r.id, c.id, ci)} onPaste={(e) => onPaste(e, ri, ci)} onBlur={() => setPop((p) => (p && p.kind === "slash" ? null : p))} className={inCls} />;
+      body = <textarea data-cell={key} rows={1} value={cell.v || ""} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onChange={(e) => onTextChange(e, r.id, c.id)} onKeyDown={(e) => onTextKey(e, ri, r.id, c.id, ci)} onPaste={(e) => onPaste(e, ri, ci)} onBlur={() => setPop((p) => (p && p.kind === "slash" ? null : p))} className={inCls.replace("h-[38px]", "block min-h-[38px] resize-none overflow-hidden py-[9px] leading-[20px]")} />;
     }
     return (
       <td key={c.id} className="group relative min-w-[170px] border border-neutral-200 p-0 align-top">
@@ -9334,7 +9334,7 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
           </tbody>
         </table>
         <button onClick={() => { const id = addRow(); focusCell(id + ":" + t.cols[0].id); }} className="ml-7 mt-1 inline-flex items-center gap-1 px-1 py-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> строка</button>
-        <p className="ml-7 mt-3 text-[12px] text-neutral-400">«/» в ячейке — выбрать тип (чекбокс, статус, дата…). Enter — вниз, Tab — вправо. Cmd+V — вставка таблицы из Excel или Google Таблиц. Сохраняется автоматически.</p>
+        <p className="ml-7 mt-3 text-[12px] text-neutral-400">«/» в ячейке — выбрать тип (чекбокс, статус, дата…). Enter — вниз, Shift+Enter — перенос строки, Tab — вправо. Cmd+V — вставка таблицы из Excel или Google Таблиц. Сохраняется автоматически.</p>
       </div>
       {pop && (
         <>
