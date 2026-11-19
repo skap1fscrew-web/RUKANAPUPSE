@@ -9935,12 +9935,14 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
     });
     return { per, od: days.map((_, i) => per.reduce((x, r) => x + r.od[i], 0)), sd: days.map((_, i) => per.reduce((x, r) => x + r.sd[i], 0)) };
   }, [products, wbOrders, days]);
+  const costBy = useMemo(() => { const m = {}; for (const p of products) { const c = Number(String(p.cost || "").replace(/\s/g, "").replace(",", ".")); const k = String(p.code || "").trim(); if (c > 0 && k) m[k] = c; } return m; }, [products]);
   const wayTot = useMemo(() => {
-    const t = { to: 0, from: 0, toSum: 0, fromSum: 0, st: 0, stSum: 0, byTo: [], byFrom: [], bySt: [] };
+    const t = { to: 0, from: 0, toSum: 0, fromSum: 0, st: 0, stSum: 0, toC: 0, fromC: 0, stC: 0, byTo: [], byFrom: [], bySt: [] };
     if (!way || !way.items) return t;
     for (const p of products) {
       const w = way.items[p.code || ""] || way.items[String(p.wb || "")];
       if (!w) continue;
+      const cst = costBy[String(p.code || "").trim()] || 0; t.toC += w.to * cst; t.fromC += w.from * cst; t.stC += (w.st || 0) * cst;
       t.to += w.to; t.from += w.from; t.toSum += w.toSum; t.fromSum += w.fromSum; t.st += w.st || 0; t.stSum += w.stSum || 0;
       const nm = p.name || p.code || p.wb || "Товар";
       if (w.to) t.byTo.push([nm, w.to, w.toSum]);
@@ -9949,10 +9951,10 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
     }
     t.byTo.sort((a, b) => b[2] - a[2]); t.byFrom.sort((a, b) => b[2] - a[2]); t.bySt.sort((a, b) => b[2] - a[2]);
     return t;
-  }, [products, way]);
+  }, [products, way, costBy]);
   const fmtMoney = (n) => n >= 1e6 ? (Math.round(n / 1e4) / 100).toLocaleString("ru-RU") + " млн ₽" : Math.round(n).toLocaleString("ru-RU") + " ₽";
   const wayTime = way && way.updatedAt ? new Date(way.updatedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
-  const WayTile = ({ icon, title, qty, sum, color, bg, by }) => (
+  const WayTile = ({ icon, title, qty, sum, color, bg, by, cost = null }) => (
     <div className="flex flex-1 items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-4 py-3" title={by.length ? by.slice(0, 8).map(([n, q, sm]) => `${n}: ${q} шт · ${Math.round(sm).toLocaleString("ru-RU")} ₽`).join("\n") : undefined}>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg" style={{ background: bg }}>{icon}</span>
       <div className="min-w-0 flex-1">
@@ -9961,6 +9963,7 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
           <span className="text-2xl font-extrabold tabular-nums" style={{ color }}>{qty.toLocaleString("ru-RU")} <span className="text-xs font-semibold text-neutral-400">шт</span></span>
           <span className="text-lg font-extrabold tabular-nums text-neutral-800">{fmtMoney(sum)}</span>
         </div>
+        {cost != null && <div className="text-[11.5px] text-neutral-500">по себестоимости <b className="tabular-nums text-neutral-700">{fmtMoney(cost)}</b></div>}
       </div>
     </div>
   );
@@ -10023,6 +10026,7 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
   const ozTotO = sumA(ozOd), ozTotR = sumA(ozRd), ozTotA = sumA(ozAdd);
   const ozDrr = ozTotR > 0 && ozTotA > 0 ? Math.round(ozTotA / ozTotR * 1000) / 10 : null;
   const ozTime = oz && oz.updatedAt ? new Date(oz.updatedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+  const ozCost = (w) => w && w.codes ? Object.entries(w.codes).reduce((a, [k, n]) => a + n * (costBy[k] || 0), 0) : null;
   const ozBy = (w) => w && w.items ? Object.entries(w.items).map(([n, v]) => [n, v.n, v.sum]).sort((a, b) => b[2] - a[2] || b[1] - a[1]) : [];
   const ozWayTo = (oz && oz.way && oz.way.to) || { n: 0, sum: 0 }, ozWayFrom = (oz && oz.way && oz.way.from) || { n: 0, sum: 0 }, ozStock = (oz && oz.stock) || { n: 0, sum: 0 };
   const ozParts = (() => {
@@ -10053,9 +10057,9 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
     return (
       <div className="space-y-3">{hdr}
         <div className="flex flex-wrap items-stretch gap-3">
-          <WayTile icon="🚚" title="В пути до покупателя" qty={ozWayTo.n} sum={ozWayTo.sum} color="#005bff" bg="#e0ebff" by={ozBy(ozWayTo)} />
-          <WayTile icon="↩️" title="В пути от покупателя" qty={ozWayFrom.n} sum={ozWayFrom.sum} color="#ea580c" bg="#ffedd5" by={ozBy(ozWayFrom)} />
-          <WayTile icon="📦" title="Остатки на складах Озон" qty={ozStock.n} sum={ozStock.sum} color="#4f46e5" bg="#e0e7ff" by={ozBy(ozStock)} />
+          <WayTile icon="🚚" title="В пути до покупателя" qty={ozWayTo.n} sum={ozWayTo.sum} cost={ozCost(ozWayTo)} color="#005bff" bg="#e0ebff" by={ozBy(ozWayTo)} />
+          <WayTile icon="↩️" title="В пути от покупателя" qty={ozWayFrom.n} sum={ozWayFrom.sum} cost={ozCost(ozWayFrom)} color="#ea580c" bg="#ffedd5" by={ozBy(ozWayFrom)} />
+          <WayTile icon="📦" title="Остатки на складах Озон" qty={ozStock.n} sum={ozStock.sum} cost={ozCost(ozStock)} color="#4f46e5" bg="#e0e7ff" by={ozBy(ozStock)} />
           {refreshBtn}
         </div>
         <div className="grid gap-3 lg:grid-cols-[1.9fr_1fr]">
@@ -10114,9 +10118,9 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
     <div className="space-y-3">
       {hdr}
       <div className="flex flex-wrap items-stretch gap-3">
-        <WayTile icon="🚚" title="В пути к клиенту" qty={wayTot.to} sum={wayTot.toSum} color="#16a34a" bg="#dcfce7" by={wayTot.byTo} />
-        <WayTile icon="↩️" title="В пути от клиента" qty={wayTot.from} sum={wayTot.fromSum} color="#ea580c" bg="#ffedd5" by={wayTot.byFrom} />
-        <WayTile icon="📦" title="Остатки на складах WB" qty={wayTot.st} sum={wayTot.stSum} color="#2563eb" bg="#dbeafe" by={wayTot.bySt} />
+        <WayTile icon="🚚" title="В пути к клиенту" qty={wayTot.to} sum={wayTot.toSum} cost={wayTot.toC} color="#16a34a" bg="#dcfce7" by={wayTot.byTo} />
+        <WayTile icon="↩️" title="В пути от клиента" qty={wayTot.from} sum={wayTot.fromSum} cost={wayTot.fromC} color="#ea580c" bg="#ffedd5" by={wayTot.byFrom} />
+        <WayTile icon="📦" title="Остатки на складах WB" qty={wayTot.st} sum={wayTot.stSum} cost={wayTot.stC} color="#2563eb" bg="#dbeafe" by={wayTot.bySt} />
         <div className="flex shrink-0 flex-col items-end justify-center gap-1 text-[11px] text-neutral-400">
           <button onClick={() => onRefreshWay && onRefreshWay()} disabled={wayLoading} className="h-8 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">{wayLoading ? "Загрузка…" : "↻ Обновить"}</button>
           <span>{wayMsg || (wayTime ? `обновлено в ${wayTime} · цена до СПП` : "данных пока нет")}</span>

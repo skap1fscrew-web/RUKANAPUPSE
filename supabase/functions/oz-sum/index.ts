@@ -15,6 +15,10 @@ const json = (obj: unknown, status = 200) =>
 type Any = any;
 const num = (x: unknown) => { const n = Number(String(x ?? "").replace(/\s/g, "").replace(",", ".")); return isFinite(n) ? n : 0; };
 const dayMsk = (iso: string) => new Date(Date.parse(iso) + 3 * 3600e3).toISOString().slice(0, 10);
+// цена бывает числом, строкой или объектом { amount, currency }
+const pr = (x: Any) => num(x && typeof x === "object" ? (x.amount ?? x.price ?? x.value) : x);
+// артикул товара из offer_id: «06186_L» → «06186»
+const codeOf = (offer: unknown) => String(offer ?? "").trim().split("_")[0];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -24,6 +28,8 @@ serve(async (req) => {
     const span = Math.min(Math.max(Number(days) || 30, 1), 62);
     const H = { "Client-Id": String(clientId).trim(), "Api-Key": String(apiKey).trim(), "Content-Type": "application/json" };
     const errors: string[] = [];
+    const notes: string[] = [];
+    const dbg: Record<string, unknown> = {};
     const post = async (path: string, body: unknown): Promise<Any> => {
       const r = await fetch("https://api-seller.ozon.ru" + path, { method: "POST", headers: H, body: JSON.stringify(body) });
       const t = await r.text(); let j: Any = null; try { j = JSON.parse(t); } catch { /* */ }
@@ -33,77 +39,56 @@ serve(async (req) => {
     const nowIso = new Date().toISOString();
     const sinceOf = (d: number) => new Date(Date.now() - d * 864e5).toISOString();
 
-    // ---- отправления (FBO + FBS) ----
-    const notes: string[] = []; // ошибки запасных путей — не показываем, если основной сработал
-    const listFbo = async (since: string, status?: string): Promise<Any[]> => {
-      const tries: [string, number][] = [["/v3/posting/fbo/list", 100], ["/v2/posting/fbo/list", 1000]];
-      for (const [path, lim] of tries) {
-        const out: Any[] = [];
-        try {
-          for (let off = 0, i = 0; i < 80; i++, off += lim) {
-            const filter: Any = { since, to: nowIso }; if (status) filter.status = status;
-            const j = await post(path, { dir: "DESC", filter, limit: lim, offset: off, translit: false, with: { analytics_data: false, financial_data: false } });
-            const arr: Any[] = Array.isArray(j?.result) ? j.result : (j?.result?.postings || []);
-            out.push(...arr);
-            if (arr.length < lim) break;
-          }
-          return out;
-        } catch (e) { notes.push((e as Error).message); }
+    // ---- отправления FBO: v3 с курсором (за 90 дней одним списком) ----
+    const fbo: Any[] = [];
+    try {
+      let cursor = "";
+      for (let i = 0; i < 150; i++) {
+        const body: Any = { dir: "DESC", filter: { since: sinceOf(90), to: nowIso }, limit: 100, with: { analytics_data: false, financial_data: false } };
+        if (cursor) body.cursor = cursor;
+        const j = await post("/v3/posting/fbo/list", body);
+        const arr: Any[] = j?.postings || j?.result?.postings || (Array.isArray(j?.result) ? j.result : []);
+        fbo.push(...arr);
+        cursor = j?.cursor || j?.result?.cursor || "";
+        if (!(j?.has_next ?? j?.result?.has_next) || !cursor || !arr.length) break;
       }
-      errors.push("не удалось получить заказы FBO: " + notes.slice(-2).join(" | "));
-      return [];
-    };
-    const listFbs = async (since: string, status?: string): Promise<Any[]> => {
-      const out: Any[] = [];
-      try {
-        for (let off = 0, i = 0; i < 40; i++, off += 100) {
-          const filter: Any = { since, to: nowIso }; if (status) filter.status = status;
-          const j = await post("/v3/posting/fbs/list", { dir: "DESC", filter, limit: 100, offset: off, with: {} });
-          const arr: Any[] = j?.result?.postings || [];
-          out.push(...arr);
-          if (arr.length < 100 || !j?.result?.has_next) break;
-        }
-      } catch (e) { notes.push((e as Error).message); }
-      return out;
-    };
+    } catch (e) { errors.push((e as Error).message); }
+    dbg.fboTotal = fbo.length;
 
-    const fbo = await listFbo(sinceOf(span));
-    const fbs = await listFbs(sinceOf(span));
+    type Bag = { n: number; sum: number; items: Record<string, { n: number; sum: number }>; codes: Record<string, number> };
+    const bag = (): Bag => ({ n: 0, sum: 0, items: {}, codes: {} });
     const orders: Record<string, { n: number; sum: number; p: Record<string, number> }> = {};
-    const priceBy: Record<string, number> = {}; // offer_id / sku → цена
+    const priceBy: Record<string, number> = {};
+    const way = { to: bag(), from: bag() };
+    const addTo = (w: Bag, name: string, offer: unknown, q: number, sum: number) => {
+      w.n += q; w.sum += sum;
+      const it = w.items[name] || (w.items[name] = { n: 0, sum: 0 }); it.n += q; it.sum += sum;
+      const c = codeOf(offer); if (c) w.codes[c] = (w.codes[c] || 0) + q;
+    };
+    const spanFrom = dayMsk(sinceOf(span));
+    const stCount: Record<string, number> = {};
     const seen = new Set<string>();
-    for (const po of [...fbo, ...fbs]) {
+    for (const po of fbo) {
       const pn = String(po.posting_number || po.order_id || "");
       if (pn && seen.has(pn)) continue; seen.add(pn);
+      const st = String(po.status || "?"); stCount[st] = (stCount[st] || 0) + 1;
       const created = po.created_at || po.in_process_at || po.order_date;
-      if (!created) continue;
       for (const p of (po.products || [])) {
-        const q = num(p.quantity) || 1, price = num(p.price);
+        const q = num(p.quantity) || 1, price = pr(p.price);
         if (p.offer_id) priceBy[String(p.offer_id)] = price || priceBy[String(p.offer_id)] || 0;
         if (p.sku) priceBy[String(p.sku)] = price || priceBy[String(p.sku)] || 0;
-        if (String(po.status) === "cancelled") continue;
+        if (st === "cancelled") continue;
+        const nm = String(p.name || p.offer_id || p.sku || "Товар").slice(0, 80);
+        if (st === "delivering") addTo(way.to, nm, p.offer_id, q, price * q);
+        if (!created) continue;
         const d = dayMsk(created);
+        if (d < spanFrom) continue;
         const o = orders[d] || (orders[d] = { n: 0, sum: 0, p: {} });
         o.n += q; o.sum += price * q;
-        const nm = String(p.name || p.offer_id || p.sku || "Товар").slice(0, 80);
         o.p[nm] = (o.p[nm] || 0) + q;
       }
     }
-
-    // ---- в пути к покупателю ----
-    const way = { to: { n: 0, sum: 0, items: {} as Record<string, { n: number; sum: number }> }, from: { n: 0, sum: 0, items: {} as Record<string, { n: number; sum: number }> } };
-    const addWay = (k: "to" | "from", name: string, q: number, sum: number) => {
-      const w = way[k]; w.n += q; w.sum += sum;
-      const it = w.items[name] || (w.items[name] = { n: 0, sum: 0 }); it.n += q; it.sum += sum;
-    };
-    const delFbo = await listFbo(sinceOf(90), "delivering");
-    const delFbs = await listFbs(sinceOf(90), "delivering");
-    const seen2 = new Set<string>();
-    for (const po of [...delFbo, ...delFbs]) {
-      const pn = String(po.posting_number || ""); if (pn && seen2.has(pn)) continue; seen2.add(pn);
-      if (String(po.status) !== "delivering") continue;
-      for (const p of (po.products || [])) { const q = num(p.quantity) || 1; addWay("to", String(p.name || p.offer_id || "Товар").slice(0, 80), q, num(p.price) * q); }
-    }
+    dbg.statuses = stCount;
 
     // ---- в пути от покупателя (возвраты) ----
     const retStatuses: Record<string, number> = {};
@@ -116,8 +101,8 @@ serve(async (req) => {
           const st = String(r?.visual?.status?.display_name || r?.visual?.status?.sys_name || "?");
           retStatuses[st] = (retStatuses[st] || 0) + 1;
           if (/в пути|едет|везут|возвращается|перемещ|доставляется на склад/i.test(st) && !/получен|выдан|утилиз|принят|на складе/i.test(st)) {
-            const pr = r.product || {}; const q = num(pr.quantity) || 1;
-            addWay("from", String(pr.name || pr.offer_id || "Товар").slice(0, 80), q, num(pr.price?.price ?? pr.price) * q);
+            const rp = r.product || {}; const q = num(rp.quantity) || 1;
+            addTo(way.from, String(rp.name || rp.offer_id || "Товар").slice(0, 80), rp.offer_id, q, pr(rp.price) * q);
           }
           last = Math.max(last, num(r.id));
         }
@@ -131,14 +116,14 @@ serve(async (req) => {
       for (let i = 0; i < 20; i++) {
         const j = await post("/v5/product/info/prices", { filter: { visibility: "ALL" }, limit: 1000, cursor: last });
         const items: Any[] = j?.items || [];
-        for (const it of items) { const pr = num(it?.price?.price ?? it?.price); if (pr && it.offer_id && !priceBy[String(it.offer_id)]) priceBy[String(it.offer_id)] = pr; if (pr && it.product_id) priceBy[String(it.product_id)] = priceBy[String(it.product_id)] || pr; }
+        for (const it of items) { const p0 = pr(it?.price); if (p0 && it.offer_id && !priceBy[String(it.offer_id)]) priceBy[String(it.offer_id)] = p0; if (p0 && it.product_id) priceBy[String(it.product_id)] = priceBy[String(it.product_id)] || p0; }
         last = j?.cursor || "";
         if (!last || items.length < 1000) break;
       }
     } catch (e) { notes.push((e as Error).message); }
 
     // ---- остатки на складах Озон ----
-    const stock = { n: 0, sum: 0, byWh: {} as Record<string, number>, items: {} as Record<string, { n: number; sum: number }> };
+    const stock = { ...bag(), byWh: {} as Record<string, number> };
     try {
       for (let off = 0, i = 0; i < 30; i++, off += 1000) {
         const j = await post("/v2/analytics/stock_on_warehouses", { limit: 1000, offset: off, warehouse_type: "ALL" });
@@ -146,19 +131,16 @@ serve(async (req) => {
         for (const r of rows) {
           const q = num(r.free_to_sell_amount); if (!q) continue;
           const price = priceBy[String(r.item_code)] || priceBy[String(r.sku)] || 0;
-          stock.n += q; stock.sum += price * q;
           const wh = String(r.warehouse_name || "Склад"); stock.byWh[wh] = (stock.byWh[wh] || 0) + q;
-          const nm = String(r.item_name || r.item_code || "Товар").slice(0, 80);
-          const it = stock.items[nm] || (stock.items[nm] = { n: 0, sum: 0 }); it.n += q; it.sum += price * q;
+          addTo(stock, String(r.item_name || r.item_code || "Товар").slice(0, 80), r.item_code, q, price * q);
         }
         if (rows.length < 1000) break;
       }
     } catch (e) { errors.push((e as Error).message); }
 
-    // если вообще ничего не получилось — отдаём ошибку, чтобы было видно причину
     const nothing = !Object.keys(orders).length && !way.to.n && !stock.n;
     if (nothing && errors.length && errors.every((e) => /\b(401|403)\b/.test(e))) return json({ error: "Озон отклонил ключ: " + errors[0] }, 502);
-    return json({ v: 1, updatedAt: new Date().toISOString(), span, orders, way, stock, errors, notes, retStatuses });
+    return json({ v: 2, updatedAt: new Date().toISOString(), span, orders, way, stock, errors, notes, dbg, retStatuses });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
