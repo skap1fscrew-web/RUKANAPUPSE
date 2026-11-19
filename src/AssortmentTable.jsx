@@ -11041,7 +11041,8 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
 }
 
 function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null, statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, ozCfg = {}, setOzCfg, onFetchOz, ozLoading = false, ozMsg = "", onClose }) {
-  const [tab, setTab] = useState(initialTab || "statuses");
+  const [tab, setTab] = useState(() => (initialTab === "wbapi" || initialTab === "oz" || initialTab === "tg" ? "integr" : initialTab || "statuses"));
+  const [intg, setIntg] = useState(() => (initialTab === "oz" ? "oz" : initialTab === "tg" ? "tg" : "wb")); // раздел «Интеграции»: wb | oz | tg
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
   const toggleTrgOpen = (id) => setTrgOpen((o) => ({ ...o, [id]: !o[id] }));
 
@@ -11187,7 +11188,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + ((tab === "triggers" || tab === "cycles") ? "max-w-4xl" : "max-w-lg")} style={{ maxHeight: zvh(85) }} onClick={(e) => e.stopPropagation()}>
+      <div className={"rounded-2xl flex w-full flex-col overflow-hidden bg-white shadow-xl transition-[max-width] " + ((tab === "triggers" || tab === "cycles" || tab === "integr") ? "max-w-4xl" : "max-w-lg")} style={{ maxHeight: zvh(85) }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
           <h2 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-900"><Settings2 size={18} /> Настройки</h2>
           <button onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100"><X size={18} /></button>
@@ -11200,12 +11201,48 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
           <TabBtn id="cycles">Циклы</TabBtn>
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
-          <TabBtn id="wbapi">API ВБ</TabBtn>
-          <TabBtn id="oz">Озон</TabBtn>
-          <TabBtn id="tg">Telegram</TabBtn>
+          <TabBtn id="integr">Интеграции</TabBtn>
         </div>
 
-        <div className="flex-1 overflow-auto p-5">
+        <div className={"flex-1 overflow-auto " + (tab === "integr" ? "flex p-0" : "p-5")}>
+          {tab === "integr" && (() => {
+            const tgN = taskPeople.filter((x) => tgLinks[x.id]).length;
+            const wbN = (wbApiKey ? 1 : 0) + (wbAdKey ? 1 : 0), ozN = (ozCfg.clientId && ozCfg.apiKey ? 1 : 0) + (ozCfg.perfId && ozCfg.perfSecret ? 1 : 0);
+            const items = [
+              { id: "wb", short: "WB", name: "Wildberries", bg: "linear-gradient(135deg,#cb11ab,#481173)", badge: wbN ? wbN + " " + (wbN === 1 ? "ключ" : "ключа") : "не подключено", ok: wbN > 0 },
+              { id: "oz", short: "Oz", name: "Озон", bg: "#005bff", badge: ozN ? ozN + " " + (ozN === 1 ? "ключ" : "ключа") : "не подключено", ok: ozN > 0 },
+              { id: "tg", short: "TG", name: "Telegram", bg: "#2481cc", badge: tgN + " из " + taskPeople.length, ok: tgN > 0, warn: tgN < taskPeople.length },
+            ];
+            return (
+              <div className="w-[260px] shrink-0 border-r border-neutral-100 bg-neutral-50 p-4">
+                <div className="mb-2.5 px-1.5 text-[11px] font-extrabold tracking-wider text-neutral-400">ИНТЕГРАЦИИ</div>
+                {items.map((it) => (
+                  <button key={it.id} onClick={() => setIntg(it.id)} className={"mb-1.5 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition " + (intg === it.id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-600 hover:bg-white/60")}>
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-extrabold text-white" style={{ background: it.bg }}>{it.short}</span>
+                    <span className="min-w-0 flex-1 truncate">{it.name}</span>
+                    <span className={"rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (it.ok ? (it.warn ? "bg-orange-100 text-orange-700" : "bg-emerald-100 text-emerald-700") : "bg-neutral-200 text-neutral-500")}>{it.badge}</span>
+                  </button>
+                ))}
+                {[["МС", "МойСклад", "#16a34a"], ["ЯМ", "Яндекс Маркет", "#f59e0b"]].map(([sh, nm, bg]) => (
+                  <div key={sh} className="mb-1.5 flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-bold text-neutral-400 opacity-70">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-extrabold text-white" style={{ background: bg }}>{sh}</span>
+                    <span className="min-w-0 flex-1 truncate">{nm}</span>
+                    <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[11px] font-extrabold text-neutral-500">скоро</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+          <div className={tab === "integr" ? "min-w-0 flex-1 overflow-auto p-6" : ""}>
+          {tab === "integr" && (() => {
+            const M = { wb: ["Wildberries", "Заказы, выкупы, остатки, в пути и реклама. Данные попадают в РНП и сводку.", "linear-gradient(135deg,#cb11ab,#481173)", "WB"], oz: ["Озон", "Заказы, остатки, возвраты и реклама (Performance). Данные попадают в сводку.", "#005bff", "Oz"], tg: ["Telegram-бот", "Поручения, напоминания о сроках и создание задач из чата.", "#2481cc", "TG"] }[intg];
+            return (
+              <div className="mb-5 flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold text-white" style={{ background: M[2] }}>{M[3]}</span>
+                <div><h3 className="text-xl font-extrabold text-neutral-900">{M[0]}</h3><p className="text-[13px] text-neutral-500">{M[1]}</p></div>
+              </div>
+            );
+          })()}
           {tab === "nav" && (() => {
             const ord = (navCfg.order || []).filter((id) => TABS.some((t) => t.id === id));
             const list = [...ord, ...TABS.map((t) => t.id).filter((id) => !ord.includes(id))].map((id) => TABS.find((t) => t.id === id));
@@ -11611,7 +11648,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
             </>
           )}
 
-          {tab === "tg" && (() => {
+          {tab === "integr" && intg === "tg" && (() => {
             const me = taskPeople.find((p) => p.id === myProfileId) || null;
             const linked = (id) => !!tgLinks[id];
             const connect = async () => {
@@ -11651,7 +11688,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
               </>
             );
           })()}
-          {tab === "oz" && (
+          {tab === "integr" && intg === "oz" && (
             <>
               <p className="mb-1 text-xs text-neutral-400">Seller API: кабинет Озон → Настройки → Seller API → «Сгенерировать ключ» (роль «Администратор» или «Только чтение»). Нужен для заказов, остатков и «в пути».</p>
               <label className="mb-1 mt-3 block text-xs font-medium text-neutral-500">Client-Id</label>
@@ -11671,7 +11708,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
               </div>
             </>
           )}
-          {tab === "wbapi" && (
+          {tab === "integr" && intg === "wb" && (
             <>
               <p className="mb-3 text-xs text-neutral-400">Ключ берётся в кабинете ВБ → Настройки → Доступ к API → категория «Статистика». Хранится в базе, доступен только вашей команде. Нужен для подгрузки заказов в блок «Продвижение».</p>
               <label className="mb-1 block text-xs font-medium text-neutral-500">API-ключ (Статистика)</label>
@@ -11700,6 +11737,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
     </div>
