@@ -9353,8 +9353,8 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
     setFocusCheckId(null);
   }, [focusCheckId, (j.checklist || []).length]);
   // пересчёт высоты заметки и подзадач по изменению их текста / раскрытия окна
-  useLayoutEffect(() => { sizeNote(); }, [j.note, expanded]);
-  useLayoutEffect(() => { Object.values(checkRefs.current).forEach(sizeCheck); }, [j.checklist, expanded, subDoneOpen]);
+  useLayoutEffect(() => { sizeNote(); const tm = setTimeout(sizeNote, 60); return () => clearTimeout(tm); }, [j.note, size]);
+  useLayoutEffect(() => { Object.values(checkRefs.current).forEach(sizeCheck); }, [j.checklist, size, subDoneOpen]);
   const jtags = Array.isArray(j.tags) ? j.tags : [];
   const toggleTag = (id) => set("tags", jtags.includes(id) ? jtags.filter((x) => x !== id) : [...jtags, id]);
   const checklist = Array.isArray(j.checklist) ? j.checklist : [];
@@ -9550,7 +9550,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
             </div>
           </div>
         ) : (
-        <div className={"grid flex-1 grid-cols-1 overflow-y-auto " + (big ? "sm:grid-cols-[340px_1fr_300px]" : "sm:grid-cols-[1fr_300px]")}>
+        <div className={"grid flex-1 grid-cols-1 overflow-y-auto " + (big ? "sm:grid-cols-[442px_1fr_300px]" : "sm:grid-cols-[1fr_300px]")}>
           {/* ЛЕВО: название · заметка · подзадачи */}
           <div className="flex flex-col gap-5 border-b border-neutral-100 p-5 sm:border-b-0 sm:border-r">
             <textarea value={j.title} rows={1} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="Название задачи…" autoFocus
