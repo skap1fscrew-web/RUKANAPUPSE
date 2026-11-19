@@ -1167,7 +1167,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [prodCycle, setProdCycle] = useState(() => normCycle(null)); // производственный цикл — этапы и правила автозадач по умолчанию
   const [colSettings, setColSettings] = useState(false);
   const [wbApiKey, setWbApiKey] = useState("");
-  const [focusLine, setFocusLine] = useState(""); // «Главный фокус» — общая строка для команды
+  const [focusLine, setFocusLine] = useState(""); // устаревшее: прежняя общая строка (оставлена для переноса)
+  const [focusLines, setFocusLines] = useState({}); // «Главный фокус» у каждого пользователя свой: { profileId: текст }
   const [wbOrders, setWbOrders] = useState({}); // { "articleCode:YYYY-MM-DD": count }
   const [wbOrdersMeta, setWbOrdersMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbSales, setWbSales] = useState({}); // { "артикул|nmId:YYYY-MM-DD": [выкупов, возвратов] }
@@ -1372,6 +1373,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           if (settings.rnp.days) setRnpDays(settings.rnp.days);
           syncedRef.current.settings.rnp = JSON.stringify(settings.rnp);
         }
+        if (settings.focusLines && typeof settings.focusLines === "object") { setFocusLines(settings.focusLines); syncedRef.current.settings.focusLines = JSON.stringify(settings.focusLines); }
         if (typeof settings.focusLine === "string") { setFocusLine(settings.focusLine); syncedRef.current.settings.focusLine = JSON.stringify(settings.focusLine); }
         if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = JSON.stringify(settings.wbApiKey); }
         if (settings.wbOrders && typeof settings.wbOrders === "object") { setWbOrders(settings.wbOrders); syncedRef.current.settings.wbOrders = JSON.stringify(settings.wbOrders); }
@@ -1493,7 +1495,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1536,7 +1538,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
 
   // Построчное сохранение задач (таблица jobs). Пишем только изменённые строки,
   // удаляем только исчезнувшие — чужая старая копия массива больше не затирает соседние задачи.
@@ -1670,6 +1672,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         else if (key === "dbColumns") setDbColumns(value || {});
         else if (key === "unitConst") setUnitConst((c) => ({ ...c, ...(value || {}) }));
         else if (key === "wbApiKey") setWbApiKey(value);
+        else if (key === "focusLines") setFocusLines(value && typeof value === "object" ? value : {});
         else if (key === "focusLine") setFocusLine(typeof value === "string" ? value : "");
         else if (key === "wbOrders") setWbOrders(value || {});
         else if (key === "wbOrdersMeta") setWbOrdersMeta(value || {});
@@ -2981,8 +2984,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         {activeTab === "tasks" && (
           <TasksView
             onOpenBatch={(id) => { setPurchFocusId(id); setActiveTab("purchases"); }}
-            focusLine={focusLine}
-            onFocusLine={setFocusLine}
+            focusLine={myProfile ? (focusLines[myProfile.id] || "") : ""}
+            onFocusLine={(t) => { if (myProfile) setFocusLines((m) => ({ ...m, [myProfile.id]: t })); }}
             jobs={liveJobs}
             taskLabels={taskLabels}
             taskTags={taskTags}
