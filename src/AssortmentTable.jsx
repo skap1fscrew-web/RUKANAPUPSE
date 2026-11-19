@@ -1227,6 +1227,43 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     if (stale && Date.now() - wayTriedRef.current > 5 * 60 * 1000 && (wbApiKey || wbAdKey)) { wayTriedRef.current = Date.now(); fetchWbWay(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, loaded, wbWay, wbApiKey, wbAdKey]);
+  const [ozCfg, setOzCfg] = useState({}); // ключи Озона: { clientId, apiKey, perfId, perfSecret }
+  const [ozData, setOzData] = useState(null); // кэш oz-sum
+  const [ozAd, setOzAd] = useState(null); // кэш oz-adv
+  const [ozLoading, setOzLoading] = useState(false);
+  const [ozMsg, setOzMsg] = useState("");
+  const ozTriedRef = useRef(0);
+  const fetchOz = async () => {
+    const c = ozCfg || {};
+    if (!c.clientId || !c.apiKey) { setOzMsg("Нет ключей Озона (Настройки → Озон)"); return; }
+    setOzLoading(true); setOzMsg("");
+    try {
+      const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/oz-sum", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: c.clientId, apiKey: c.apiKey, days: 30 }) });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) throw new Error((data && data.error) || ("oz-sum " + resp.status));
+      if (!data || !data.orders) throw new Error("пустой ответ");
+      setOzData(data);
+      try { await upsertSetting("ozSum", data); } catch (_) {}
+      if (data.errors && data.errors.length) setOzMsg("Частично: " + String(data.errors[0]).slice(0, 140));
+    } catch (e) { setOzMsg("Озон: " + (e.message || e)); }
+    if (c.perfId && c.perfSecret) {
+      try {
+        const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/oz-adv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: c.perfId, clientSecret: c.perfSecret, days: 30 }) });
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok) throw new Error((data && data.error) || ("oz-adv " + resp.status));
+        if (data && data.ad) { setOzAd(data); try { await upsertSetting("ozAd", data); } catch (_) {} }
+      } catch (e) { setOzMsg((m) => m || ("Реклама Озон: " + (e.message || e))); }
+    }
+    setOzLoading(false);
+  };
+  useEffect(() => {
+    if (activeTab !== "summary" || !loaded || ozLoading) return;
+    const c = ozCfg || {};
+    if (!c.clientId || !c.apiKey) return;
+    const stale = !ozData || !ozData.updatedAt || Date.now() - new Date(ozData.updatedAt).getTime() > 30 * 60 * 1000;
+    if (stale && Date.now() - ozTriedRef.current > 5 * 60 * 1000) { ozTriedRef.current = Date.now(); fetchOz(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, loaded, ozData, ozCfg]);
   const [wbAdSpend, setWbAdSpend] = useState({}); // { "nmId:YYYY-MM-DD": ₽ } факт внутренней рекламы
   const [wbAdMeta, setWbAdMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbAdLoading, setWbAdLoading] = useState(false);
@@ -1342,6 +1379,9 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (settings.wbOrdSum && typeof settings.wbOrdSum === "object") { setWbOrdSum(settings.wbOrdSum); syncedRef.current.settings.wbOrdSum = JSON.stringify(settings.wbOrdSum); }
         if (settings.wbOrdSumMeta && typeof settings.wbOrdSumMeta === "object") { setWbOrdSumMeta(settings.wbOrdSumMeta); syncedRef.current.settings.wbOrdSumMeta = JSON.stringify(settings.wbOrdSumMeta); }
         if (settings.wbSalesMeta && typeof settings.wbSalesMeta === "object") { setWbSalesMeta(settings.wbSalesMeta); syncedRef.current.settings.wbSalesMeta = JSON.stringify(settings.wbSalesMeta); }
+        if (settings.ozCfg && typeof settings.ozCfg === "object") { setOzCfg(settings.ozCfg); syncedRef.current.settings.ozCfg = JSON.stringify(settings.ozCfg); }
+        if (settings.ozSum && typeof settings.ozSum === "object") setOzData(settings.ozSum);
+        if (settings.ozAd && typeof settings.ozAd === "object") setOzAd(settings.ozAd);
         if (settings.wbAdKey) { setWbAdKey(settings.wbAdKey); syncedRef.current.settings.wbAdKey = JSON.stringify(settings.wbAdKey); }
         if (settings.wbAdSpend && typeof settings.wbAdSpend === "object") { setWbAdSpend(settings.wbAdSpend); syncedRef.current.settings.wbAdSpend = JSON.stringify(settings.wbAdSpend); }
         if (settings.wbAdMeta && typeof settings.wbAdMeta === "object") { setWbAdMeta(settings.wbAdMeta); syncedRef.current.settings.wbAdMeta = JSON.stringify(settings.wbAdMeta); }
@@ -1453,7 +1493,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1496,7 +1536,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
 
   // Построчное сохранение задач (таблица jobs). Пишем только изменённые строки,
   // удаляем только исчезнувшие — чужая старая копия массива больше не затирает соседние задачи.
@@ -1638,6 +1678,9 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         else if (key === "wbOrdSum") setWbOrdSum(value || {});
         else if (key === "wbOrdSumMeta") setWbOrdSumMeta(value || {});
         else if (key === "wbAdKey") setWbAdKey(value);
+        else if (key === "ozCfg") setOzCfg(value && typeof value === "object" ? value : {});
+        else if (key === "ozSum") setOzData(value && typeof value === "object" ? value : null);
+        else if (key === "ozAd") setOzAd(value && typeof value === "object" ? value : null);
         else if (key === "wbAdSpend") setWbAdSpend(value || {});
         else if (key === "wbAdMeta") setWbAdMeta(value || {});
         else if (key === "rnp") { if (value.startDate) setRnpStartDate(value.startDate); if (value.days) setRnpDays(value.days); }
@@ -2957,7 +3000,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           />
         )}
 
-        {activeTab === "summary" && <SummaryTab products={products} wbOrders={wbOrders} way={wbWay} wayLoading={wayLoading} wayMsg={wayMsg} onRefreshWay={fetchWbWay} />}
+        {activeTab === "summary" && <SummaryTab products={products} wbOrders={wbOrders} way={wbWay} wayLoading={wayLoading} wayMsg={wayMsg} onRefreshWay={fetchWbWay} oz={ozData} ozAd={ozAd} ozReady={!!(ozCfg && ozCfg.clientId && ozCfg.apiKey)} ozLoading={ozLoading} ozMsg={ozMsg} onRefreshOz={fetchOz} />}
         {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} purchaseBatches={purchaseBatches} onOpen={(id) => setCardModal(id)} onOpenPopup={(pid, task, dateKey) => setGanttModal({ productId: pid, mode: "popup", task, dateKey })} onOpenDB={(pid, task) => setGanttModal({ productId: pid, mode: "db", task })} onSetCell={(pid, k, v) => setRnpCell(pid, k, v)} onSetFlag={(pid, f, v) => setRnpFlag(pid, f, v)} onSetBudget={(pid, v) => setRnpBudget(pid, v)} onSetFunds={(pid, f) => setRnpFunds(pid, f)} />}
 
         {activeTab === "strategy" && (
@@ -3077,6 +3120,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           wbApiKey={wbApiKey}
           setWbApiKey={setWbApiKey}
           wbAdKey={wbAdKey} setWbAdKey={setWbAdKey} onFetchAd={fetchWbAd} adLoading={wbAdLoading} adMsg={wbAdMsg}
+          ozCfg={ozCfg} setOzCfg={setOzCfg} onFetchOz={() => { fetchOz(); }} ozLoading={ozLoading} ozMsg={ozMsg}
           onFetchWb={() => { setSettingsOpen(false); fetchWbOrders(); }}
           onClose={() => setSettingsOpen(false)}
         />
@@ -9849,7 +9893,33 @@ function SummaryDonut({ parts, total, label }) {
     </div>
   );
 }
-function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = false, wayMsg = "", onRefreshWay }) {
+const SUM_OZ = ["#1e40af", "#2563eb", "#60a5fa", "#bfdbfe"];
+const sumShort = (v) => v >= 1e6 ? (Math.round(v / 1e5) / 10).toLocaleString("ru-RU") + "м" : v >= 1000 ? Math.round(v / 1000) + "к" : String(Math.round(v));
+// Универсальный линейный график сводки: series = [{ vals, color, labels }]
+function SumLineChart({ days, series, labelEvery = 1, gid = "c" }) {
+  const W = 1000, H = 330, padL = 46, padR = 24, padT = 28, padB = 28;
+  const mxRaw = Math.max(1, ...series.flatMap((sr) => sr.vals));
+  const mag = Math.pow(10, Math.floor(Math.log10(mxRaw)));
+  const step = [1, 2, 5, 10].map((m) => m * mag).find((st) => mxRaw / st <= 5) || mag * 10;
+  const mx = Math.ceil(mxRaw * 1.1 / step) * step;
+  const x = (i) => padL + (days.length === 1 ? 0 : i * (W - padL - padR) / (days.length - 1));
+  const y = (v) => H - padB - (v / mx) * (H - padT - padB);
+  const grid = []; for (let v = 0; v <= mx + 1e-9; v += step) grid.push(v);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 400 }}>
+      <defs>{series.map((sr, k) => <linearGradient key={k} id={`${gid}${k}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={sr.color} stopOpacity=".2" /><stop offset="1" stopColor={sr.color} stopOpacity="0" /></linearGradient>)}</defs>
+      {grid.map((v) => <g key={v}><line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="#eee" /><text x={0} y={y(v) + 4} fontSize="11" fill="#a3a3a3">{sumShort(v)}</text></g>)}
+      {series.map((sr, k) => <path key={"a" + k} d={`${sumPath(sr.vals, x, y)} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)}Z`} fill={`url(#${gid}${k})`} />)}
+      {series.map((sr, k) => <path key={"l" + k} d={sumPath(sr.vals, x, y)} fill="none" stroke={sr.color} strokeWidth="3" strokeLinecap="round" />)}
+      {series.map((sr, k) => sr.vals.map((v, i) => <g key={k + "p" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke={sr.color} strokeWidth="2" />{sr.labels && i % labelEvery === 0 && <text x={x(i)} y={y(v) - 10} fontSize="12" fontWeight="700" textAnchor="middle" fill={sr.color}>{sumShort(v)}</text>}</g>))}
+      {days.map((d, i) => i % labelEvery === 0 && <text key={d.key} x={x(i)} y={H - 6} fontSize="11" textAnchor="middle" fill="#a3a3a3">{d.n}</text>)}
+    </svg>
+  );
+}
+function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = false, wayMsg = "", onRefreshWay, oz = null, ozAd = null, ozReady = false, ozLoading = false, ozMsg = "", onRefreshOz }) {
+  const [mp, setMp] = useState(() => { const v = lsGet("sum.mp", "wb"); return v === "oz" || v === "all" ? v : "wb"; }); // кабинет: wb | oz | all
+  useEffect(() => lsSet("sum.mp", mp), [mp]);
+  const [ozSer, setOzSer] = useState("orders");
   const [span, setSpan] = useState(() => lsGet("sum.span", 14));
   const [cut, setCut] = useState(() => lsGet("sum.cut", "product"));
   const [ser, setSer] = useState("both");
@@ -9939,12 +10009,110 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
       ) : <div className="py-8 text-center text-sm text-neutral-400">Нет данных за период</div>}
     </div>
   );
+  const hdr = (
+    <div className="flex flex-wrap items-center gap-3">
+      <h2 className="mr-auto text-lg font-extrabold text-neutral-900">{mp === "wb" ? "Сводка по кабинету WB" : mp === "oz" ? "Сводка по кабинету Озон" : "Сводка по кабинетам"}</h2>
+      <Seg items={[["wb", "WB"], ["oz", "Озон"], ["all", "Всё вместе"]]} value={mp} onChange={setMp} />
+      <Seg items={[[7, "7 дней"], [14, "14 дней"], [30, "30 дней"]]} value={span} onChange={setSpan} />
+    </div>
+  );
+  const WB_C = "#a4258b", OZ_C = "#005bff";
+  const sumA = (a) => a.reduce((x2, y2) => x2 + y2, 0);
+  const ozOrders = (oz && oz.orders) || {};
+  const ozOd = days.map((d) => (ozOrders[d.key] || {}).n || 0), ozRd = days.map((d) => (ozOrders[d.key] || {}).sum || 0), ozAdd = days.map((d) => (ozAd && ozAd.ad && ozAd.ad[d.key]) || 0);
+  const ozTotO = sumA(ozOd), ozTotR = sumA(ozRd), ozTotA = sumA(ozAdd);
+  const ozDrr = ozTotR > 0 && ozTotA > 0 ? Math.round(ozTotA / ozTotR * 1000) / 10 : null;
+  const ozTime = oz && oz.updatedAt ? new Date(oz.updatedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+  const ozBy = (w) => w && w.items ? Object.entries(w.items).map(([n, v]) => [n, v.n, v.sum]).sort((a, b) => b[2] - a[2] || b[1] - a[1]) : [];
+  const ozWayTo = (oz && oz.way && oz.way.to) || { n: 0, sum: 0 }, ozWayFrom = (oz && oz.way && oz.way.from) || { n: 0, sum: 0 }, ozStock = (oz && oz.stock) || { n: 0, sum: 0 };
+  const ozParts = (() => {
+    const m = new Map();
+    for (const d of days) { const pr = (ozOrders[d.key] || {}).p || {}; for (const [nm, n] of Object.entries(pr)) m.set(nm, (m.get(nm) || 0) + n); }
+    const arr = [...m.entries()].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+    const top = arr.slice(0, 4).map(([name, n], i) => ({ name, n, color: SUM_OZ[i] }));
+    const rest = arr.slice(4).reduce((s2, [, n]) => s2 + n, 0);
+    if (rest > 0) top.push({ name: "Остальные", n: rest, color: SUM_GRAY });
+    return top;
+  })();
+  const refreshBtn = (
+    <div className="flex shrink-0 flex-col items-end justify-center gap-1 text-[11px] text-neutral-400">
+      <button onClick={() => onRefreshOz && onRefreshOz()} disabled={ozLoading || !ozReady} className="h-8 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">{ozLoading ? "Загрузка…" : "Обновить Озон"}</button>
+      <span className="max-w-[220px] text-right">{ozMsg || (ozTime ? `обновлено в ${ozTime}` : "данных пока нет")}</span>
+    </div>
+  );
+  const labelEvery2 = span <= 14 ? 1 : span <= 30 ? 2 : 3;
+  const Split = ({ a, b }) => { const t = a + b; return <div className="my-2.5 flex h-2 overflow-hidden rounded-full bg-neutral-100"><i style={{ width: t > 0 ? (a / t * 100) + "%" : "0%", background: WB_C }} /><i style={{ width: t > 0 ? (b / t * 100) + "%" : "0%", background: OZ_C }} /></div>; };
+  const Line2 = ({ name, color, val }) => <div className="flex items-center justify-between py-0.5 text-[13.5px] text-neutral-600"><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ background: color }} />{name}</span><b className="tabular-nums text-neutral-900">{val}</b></div>;
+  if (mp === "oz") {
+    if (!ozReady) return (
+      <div className="space-y-3">{hdr}
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-500">Озон не подключён. Добавьте ключи: Настройки → Озон.</div>
+      </div>
+    );
+    const ser = ozSer === "rev" ? { vals: ozRd, tot: fmtMoney(ozTotR), name: "выручка", color: "#0ea5e9" } : ozSer === "ad" ? { vals: ozAdd, tot: fmtMoney(ozTotA), name: "реклама", color: "#ea580c" } : { vals: ozOd, tot: ozTotO.toLocaleString("ru-RU"), name: "заказов", color: OZ_C };
+    return (
+      <div className="space-y-3">{hdr}
+        <div className="flex flex-wrap items-stretch gap-3">
+          <WayTile icon="🚚" title="В пути до покупателя" qty={ozWayTo.n} sum={ozWayTo.sum} color="#005bff" bg="#e0ebff" by={ozBy(ozWayTo)} />
+          <WayTile icon="↩️" title="В пути от покупателя" qty={ozWayFrom.n} sum={ozWayFrom.sum} color="#ea580c" bg="#ffedd5" by={ozBy(ozWayFrom)} />
+          <WayTile icon="📦" title="Остатки на складах Озон" qty={ozStock.n} sum={ozStock.sum} color="#4f46e5" bg="#e0e7ff" by={ozBy(ozStock)} />
+          {refreshBtn}
+        </div>
+        <div className="grid gap-3 lg:grid-cols-[1.9fr_1fr]">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+            <div className="mb-1 flex flex-wrap items-start gap-6">
+              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: OZ_C }}>{ozTotO.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">заказов</span></div>
+              <div><b className="block text-3xl font-extrabold tabular-nums text-sky-500">{fmtMoney(ozTotR)}</b><span className="text-xs text-neutral-500">выручка</span></div>
+              <div><b className="block text-3xl font-extrabold tabular-nums text-orange-600">{ozDrr != null ? String(ozDrr).replace(".", ",") + "%" : "—"}</b><span className="text-xs text-neutral-500">{ozAd ? `ДРР · реклама ${fmtMoney(ozTotA)}` : "ДРР · реклама не подключена"}</span></div>
+              <div className="ml-auto"><Seg items={[["orders", "Заказы"], ["rev", "Выручка"], ["ad", "Реклама"]]} value={ozSer} onChange={setOzSer} /></div>
+            </div>
+            <SumLineChart days={days} series={[{ vals: ser.vals, color: ser.color, labels: true }]} labelEvery={labelEvery2} gid="oz" />
+            <div className="mt-1 text-[11px] text-neutral-400">Данные Озон за последние 30 дней, обновляются при открытии сводки. Заказы без отменённых.</div>
+          </div>
+          <div className="flex flex-col gap-3"><Struct title="Структура заказов" parts={ozParts} total={ozTotO} label="заказов" /></div>
+        </div>
+      </div>
+    );
+  }
+  if (mp === "all") {
+    const wbR = sumA(days.map((d) => products.reduce((a, p2) => a + (rnpOrderSum(p2, d.key) || 0), 0)));
+    const wbA = sumA(days.map((d) => products.reduce((a, p2) => a + (rnpAdDay(p2, d.key) || 0), 0)));
+    const totR = wbR + ozTotR, totA = wbA + ozTotA;
+    const drr = (a, r) => r > 0 && a > 0 ? String(Math.round(a / r * 1000) / 10).replace(".", ",") + "%" : "—";
+    const Card = ({ title, big, a, b, la, lb }) => (
+      <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+        <div className="text-xs font-bold text-neutral-500">{title}</div>
+        <div className="text-3xl font-extrabold tabular-nums text-neutral-900">{big}</div>
+        <Split a={a} b={b} />
+        <Line2 name="WB" color={WB_C} val={la} /><Line2 name="Озон" color={OZ_C} val={lb} />
+      </div>
+    );
+    return (
+      <div className="space-y-3">{hdr}
+        <div className="grid gap-3 md:grid-cols-3">
+          <Card title="Заказов" big={(totO + ozTotO).toLocaleString("ru-RU")} a={totO} b={ozTotO} la={totO.toLocaleString("ru-RU")} lb={ozTotO.toLocaleString("ru-RU")} />
+          <Card title="Выручка (заказы, до СПП у WB)" big={fmtMoney(totR)} a={wbR} b={ozTotR} la={fmtMoney(wbR)} lb={fmtMoney(ozTotR)} />
+          <Card title="Реклама · ДРР" big={drr(totA, totR)} a={wbA} b={ozTotA} la={`${fmtMoney(wbA)} · ${drr(wbA, wbR)}`} lb={ozAd ? `${fmtMoney(ozTotA)} · ${drr(ozTotA, ozTotR)}` : "не подключена"} />
+        </div>
+        <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+            <div className="mb-1 flex items-center gap-4"><h3 className="mr-auto text-sm font-extrabold text-neutral-900">Заказы по дням</h3><span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-500"><i className="h-2 w-2 rounded-full" style={{ background: WB_C }} />WB</span><span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-500"><i className="h-2 w-2 rounded-full" style={{ background: OZ_C }} />Озон</span></div>
+            <SumLineChart days={days} series={[{ vals: data.od, color: WB_C }, { vals: ozOd, color: OZ_C }]} labelEvery={labelEvery2} gid="al" />
+          </div>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <h3 className="mb-2 text-sm font-extrabold text-neutral-900">В пути · остатки</h3>
+            <Line2 name="🚚 к покупателю" color="transparent" val={`${(wayTot.to + ozWayTo.n).toLocaleString("ru-RU")} шт · ${fmtMoney(wayTot.toSum + ozWayTo.sum)}`} />
+            <Line2 name="↩️ от покупателя" color="transparent" val={`${(wayTot.from + ozWayFrom.n).toLocaleString("ru-RU")} шт · ${fmtMoney(wayTot.fromSum + ozWayFrom.sum)}`} />
+            <Line2 name="📦 на складах" color="transparent" val={`${(wayTot.st + ozStock.n).toLocaleString("ru-RU")} шт · ${fmtMoney(wayTot.stSum + ozStock.sum)}`} />
+            <div className="mt-3 text-[11px] text-neutral-400">WB и Озон суммируются; отдельно по кабинету — переключатель сверху. {ozReady ? (ozMsg || "") : "Озон не подключён (Настройки → Озон)."}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-lg font-extrabold text-neutral-900">Сводка по кабинету WB</h2>
-        <Seg items={[[7, "7 дней"], [14, "14 дней"], [30, "30 дней"]]} value={span} onChange={setSpan} />
-      </div>
+      {hdr}
       <div className="flex flex-wrap items-stretch gap-3">
         <WayTile icon="🚚" title="В пути к клиенту" qty={wayTot.to} sum={wayTot.toSum} color="#16a34a" bg="#dcfce7" by={wayTot.byTo} />
         <WayTile icon="↩️" title="В пути от клиента" qty={wayTot.from} sum={wayTot.fromSum} color="#ea580c" bg="#ffedd5" by={wayTot.byFrom} />
@@ -10858,7 +11026,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null, statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, onClose }) {
+function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null, statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, ozCfg = {}, setOzCfg, onFetchOz, ozLoading = false, ozMsg = "", onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
   const toggleTrgOpen = (id) => setTrgOpen((o) => ({ ...o, [id]: !o[id] }));
@@ -11019,6 +11187,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
           <TabBtn id="wbapi">API ВБ</TabBtn>
+          <TabBtn id="oz">Озон</TabBtn>
           <TabBtn id="tg">Telegram</TabBtn>
         </div>
 
@@ -11468,6 +11637,26 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
               </>
             );
           })()}
+          {tab === "oz" && (
+            <>
+              <p className="mb-1 text-xs text-neutral-400">Seller API: кабинет Озон → Настройки → Seller API → «Сгенерировать ключ» (роль «Администратор» или «Только чтение»). Нужен для заказов, остатков и «в пути».</p>
+              <label className="mb-1 mt-3 block text-xs font-medium text-neutral-500">Client-Id</label>
+              <input value={ozCfg.clientId || ""} onChange={(e) => setOzCfg({ ...ozCfg, clientId: e.target.value })} placeholder="1234567" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ fontFamily: "monospace" }} />
+              <label className="mb-1 mt-3 block text-xs font-medium text-neutral-500">Api-Key</label>
+              <input value={ozCfg.apiKey || ""} onChange={(e) => setOzCfg({ ...ozCfg, apiKey: e.target.value })} type="password" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ fontFamily: "monospace" }} />
+              <div className="mt-6 border-t border-neutral-100 pt-4">
+                <p className="mb-1 text-xs text-neutral-400">Performance API (реклама): кабинет Озон Performance → Настройки → Ключи API. Это отдельная пара ключей — без неё реклама не покажется.</p>
+              <label className="mb-1 mt-3 block text-xs font-medium text-neutral-500">Client-Id (Performance)</label>
+              <input value={ozCfg.perfId || ""} onChange={(e) => setOzCfg({ ...ozCfg, perfId: e.target.value })} placeholder="12345678-1234567890@advertising.performance.ozon.ru" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ fontFamily: "monospace" }} />
+              <label className="mb-1 mt-3 block text-xs font-medium text-neutral-500">Client-Secret (Performance)</label>
+              <input value={ozCfg.perfSecret || ""} onChange={(e) => setOzCfg({ ...ozCfg, perfSecret: e.target.value })} type="password" placeholder="••••••••" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ fontFamily: "monospace" }} />
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <button onClick={() => onFetchOz && onFetchOz()} disabled={!ozCfg.clientId || !ozCfg.apiKey || ozLoading} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">{ozLoading ? "Загрузка…" : "Сохранить и загрузить"}</button>
+                <span className="text-xs text-neutral-400">{ozMsg || (ozCfg.clientId && ozCfg.apiKey ? "✓ ключи заданы" : "ключи не заданы")}</span>
+              </div>
+            </>
+          )}
           {tab === "wbapi" && (
             <>
               <p className="mb-3 text-xs text-neutral-400">Ключ берётся в кабинете ВБ → Настройки → Доступ к API → категория «Статистика». Хранится в базе, доступен только вашей команде. Нужен для подгрузки заказов в блок «Продвижение».</p>
