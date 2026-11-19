@@ -9095,6 +9095,231 @@ const TASK_TYPE_META = [
   { key: "project", label: "Проектная", short: "Проектная", Icon: FileText, tint: "#7c3aed", bg: "#f5f3ff", hint: "раздел «Проектные»" },
   { key: "product", label: "Товар", short: "Товар", Icon: Box, tint: "#ea580c", bg: "#fff7ed", hint: "раздел «Задачи по товарам»" },
 ];
+// ===== Материалы задачи: таблицы с «/»-панелью (как в Notion) =====
+const TT_STATUSES = [
+  { id: "wait", label: "Ожидает", bg: "#dbeafe", fg: "#1d4ed8" },
+  { id: "work", label: "В работе", bg: "#fef3c7", fg: "#b45309" },
+  { id: "done", label: "Готово", bg: "#dcfce7", fg: "#15803d" },
+  { id: "block", label: "Блок", bg: "#fee2e2", fg: "#b91c1c" },
+  { id: "idea", label: "Идея", bg: "#ede9fe", fg: "#6d28d9" },
+];
+const TT_KINDS = [
+  { k: "check", label: "Чекбокс", ic: "☑", kw: "чекбокс галочка check" },
+  { k: "list", label: "Список с галочками", ic: "☰", kw: "список галочки пункты list" },
+  { k: "status", label: "Статус / тег", ic: "●", kw: "статус тег метка status" },
+  { k: "user", label: "Исполнитель", ic: "👤", kw: "исполнитель человек user" },
+  { k: "date", label: "Дата", ic: "▣", kw: "дата date" },
+  { k: "link", label: "Ссылка", ic: "↗", kw: "ссылка link url" },
+  { k: "text", label: "Текст", ic: "Aa", kw: "текст text" },
+];
+function ttNewTable() {
+  return { id: uid(), title: "Новая таблица", cols: [1, 2, 3].map((n) => ({ id: uid(), name: "Столбец " + n })), rows: [1, 2, 3].map(() => ({ id: uid(), cells: {} })) };
+}
+function ttCellText(cell, people) {
+  if (!cell) return "";
+  if (cell.k === "check") return cell.v ? "☑" : "☐";
+  if (cell.k === "list") return (cell.v || []).filter((x) => x.text).map((x) => (x.done ? "☑ " : "☐ ") + x.text).join(", ");
+  if (cell.k === "status") { const s = TT_STATUSES.find((x) => x.id === cell.v); return s ? s.label : ""; }
+  if (cell.k === "user") { const p = (people || []).find((x) => x.id === cell.v); return p ? profileLabel(p) : ""; }
+  if (cell.k === "date") return cell.v ? String(cell.v).split("-").reverse().slice(0, 2).join(".") : "";
+  return String(cell.v || "");
+}
+function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
+  const t = table;
+  const [pop, setPop] = useState(null); // {kind:'slash'|'type'|'status'|'user', rid, cid, x, y, sel}
+  const [delAsk, setDelAsk] = useState(false);
+  const upd = (patch) => onChange({ ...t, ...patch });
+  const setCell = (rid, cid, cell) => upd({ rows: t.rows.map((r) => (r.id === rid ? { ...r, cells: { ...r.cells, [cid]: cell } } : r)) });
+  const addRow = () => { const id = uid(); upd({ rows: [...t.rows, { id, cells: {} }] }); return id; };
+  const addCol = () => upd({ cols: [...t.cols, { id: uid(), name: "Столбец " + (t.cols.length + 1) }] });
+  const delRow = (rid) => upd({ rows: t.rows.filter((r) => r.id !== rid) });
+  const delCol = (cid) => { if (t.cols.length <= 1) return; upd({ cols: t.cols.filter((c) => c.id !== cid), rows: t.rows.map((r) => { const cells = { ...r.cells }; delete cells[cid]; return { ...r, cells }; }) }); };
+  const focusCell = (key) => setTimeout(() => { const el = document.querySelector('[data-cell="' + key + '"]'); if (el) { el.focus(); if (el.select && el.type !== "date") el.select(); } }, 40);
+  const posOf = (el) => { const r = el.getBoundingClientRect(); return { x: Math.max(8, Math.min(r.left, window.innerWidth - 236)), y: Math.min(r.bottom + 4, window.innerHeight - 290) }; };
+  const slashItems = (q) => { const s = String(q || "").trim().toLowerCase(); return s ? TT_KINDS.filter((k) => k.label.toLowerCase().includes(s) || k.kw.includes(s)) : TT_KINDS; };
+  const cellVal = (rid, cid) => { const r = t.rows.find((x) => x.id === rid); const c = r && r.cells[cid]; return c && c.k === "text" ? String(c.v || "") : ""; };
+  const pickKind = (rid, cid, k, pos) => {
+    const first = uid();
+    const init = { check: false, list: [{ id: first, text: "", done: false }], status: null, user: null, date: "", link: "", text: "" }[k];
+    setCell(rid, cid, { k, v: init });
+    if (k === "status" || k === "user") setPop({ kind: k, rid, cid, x: pos.x, y: pos.y });
+    else setPop(null);
+    if (k === "list") focusCell(rid + ":" + cid + ":" + first);
+    else if (k === "link" || k === "date" || k === "text") focusCell(rid + ":" + cid);
+  };
+  const onTextChange = (e, rid, cid) => {
+    const v = e.target.value; setCell(rid, cid, { k: "text", v });
+    if (v.startsWith("/")) { const pos = posOf(e.target); setPop({ kind: "slash", rid, cid, sel: 0, x: pos.x, y: pos.y }); }
+    else setPop((p) => (p && p.kind === "slash" ? null : p));
+  };
+  const onTextKey = (e, ri, rid, cid, ci) => {
+    const inSlash = pop && pop.kind === "slash" && pop.rid === rid && pop.cid === cid;
+    if (inSlash) {
+      const items = slashItems(cellVal(rid, cid).slice(1));
+      if (items.length) {
+        if (e.key === "ArrowDown") { e.preventDefault(); setPop({ ...pop, sel: (pop.sel + 1) % items.length }); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); setPop({ ...pop, sel: (pop.sel - 1 + items.length) % items.length }); return; }
+        if (e.key === "Enter") { e.preventDefault(); pickKind(rid, cid, items[pop.sel % items.length].k, pop); return; }
+      }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setPop(null); return; }
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const next = t.rows[ri + 1];
+      if (next) focusCell(next.id + ":" + cid); else { const id = addRow(); focusCell(id + ":" + cid); }
+    }
+  };
+  const onPaste = (e, ri, ci) => {
+    const raw = e.clipboardData.getData("text").replace(/\r/g, "").replace(/\n$/, "");
+    if (!/[\t\n]/.test(raw)) return;
+    e.preventDefault();
+    const lines = raw.split("\n").map((l) => l.split("\t"));
+    const cols = [...t.cols], rows = [...t.rows];
+    const needC = ci + Math.max(...lines.map((l) => l.length));
+    while (cols.length < needC) cols.push({ id: uid(), name: "Столбец " + (cols.length + 1) });
+    while (rows.length < ri + lines.length) rows.push({ id: uid(), cells: {} });
+    lines.forEach((l, i) => { const r = rows[ri + i]; const cells = { ...r.cells }; l.forEach((v, j) => { cells[cols[ci + j].id] = { k: "text", v }; }); rows[ri + i] = { ...r, cells }; });
+    upd({ cols, rows }); setPop(null);
+  };
+  const inCls = "h-[38px] w-full bg-transparent px-3 text-[13.5px] text-neutral-800 placeholder:text-neutral-300 focus:bg-violet-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-violet-500";
+  const renderCell = (r, ri, c, ci) => {
+    const cell = r.cells[c.id] || { k: "text", v: "" };
+    const key = r.id + ":" + c.id;
+    const typeBtn = (
+      <button type="button" onClick={(e) => { const p = posOf(e.currentTarget.closest("td")); setPop({ kind: "type", rid: r.id, cid: c.id, x: p.x, y: p.y }); }}
+        className="absolute right-1 top-[9px] hidden h-5 w-5 items-center justify-center rounded text-[13px] font-bold leading-none text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600 group-hover:flex" title="Сменить тип ячейки">⋯</button>
+    );
+    const tdp = (e) => posOf(e.currentTarget.closest("td"));
+    let body;
+    if (cell.k === "check") {
+      body = (
+        <div className="flex h-[38px] items-center px-3">
+          <button type="button" onClick={() => setCell(r.id, c.id, { k: "check", v: !cell.v })} className={"flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] transition " + (cell.v ? "border-green-500 bg-green-500 text-white" : "border-neutral-300 bg-white hover:border-neutral-400")}>{cell.v && <Check size={12} strokeWidth={3} />}</button>
+        </div>
+      );
+    } else if (cell.k === "list") {
+      const arr = Array.isArray(cell.v) ? cell.v : [];
+      const setArr = (a) => setCell(r.id, c.id, { k: "list", v: a });
+      body = (
+        <div className="px-3 py-[7px] pr-7">
+          {arr.map((it, ii) => (
+            <div key={it.id} className="flex items-center gap-2 py-[1px]">
+              <button type="button" onClick={() => setArr(arr.map((x) => (x.id === it.id ? { ...x, done: !x.done } : x)))} className={"flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-[5px] border-[1.5px] " + (it.done ? "border-green-500 bg-green-500 text-white" : "border-neutral-300 bg-white")}>{it.done && <Check size={11} strokeWidth={3} />}</button>
+              <input data-cell={key + ":" + it.id} value={it.text} placeholder="Пункт"
+                onChange={(e) => setArr(arr.map((x) => (x.id === it.id ? { ...x, text: e.target.value } : x)))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); const nid = uid(); const a = [...arr]; a.splice(ii + 1, 0, { id: nid, text: "", done: false }); setArr(a); focusCell(key + ":" + nid); }
+                  else if (e.key === "Backspace" && !it.text) { e.preventDefault(); if (arr.length <= 1) { setCell(r.id, c.id, { k: "text", v: "" }); focusCell(key); } else { setArr(arr.filter((x) => x.id !== it.id)); const pv = arr[ii - 1] || arr[ii + 1]; if (pv) focusCell(key + ":" + pv.id); } }
+                }}
+                className={"min-w-0 flex-1 bg-transparent py-[3px] text-[13.5px] placeholder:text-neutral-300 focus:outline-none " + (it.done ? "text-neutral-400 line-through" : "text-neutral-800")} />
+            </div>
+          ))}
+          <button type="button" onClick={() => { const nid = uid(); setArr([...arr, { id: nid, text: "", done: false }]); focusCell(key + ":" + nid); }} className="hidden text-[12px] font-semibold text-neutral-300 hover:text-neutral-500 group-hover:block">+ пункт</button>
+        </div>
+      );
+    } else if (cell.k === "status") {
+      const s = TT_STATUSES.find((x) => x.id === cell.v);
+      body = (
+        <button type="button" onClick={(e) => { const p = tdp(e); setPop({ kind: "status", rid: r.id, cid: c.id, x: p.x, y: p.y }); }} className="flex h-[38px] w-full items-center px-3 text-left">
+          {s ? <span className="rounded-md px-2 py-[2px] text-[12.5px] font-bold" style={{ background: s.bg, color: s.fg }}>{s.label}</span> : <span className="text-[13px] text-neutral-300">выбрать статус…</span>}
+        </button>
+      );
+    } else if (cell.k === "user") {
+      const p = people.find((x) => x.id === cell.v);
+      body = (
+        <button type="button" onClick={(e) => { const pp = tdp(e); setPop({ kind: "user", rid: r.id, cid: c.id, x: pp.x, y: pp.y }); }} className="flex h-[38px] w-full items-center gap-2 px-3 text-left">
+          {p ? <><PersonAvatar p={p} size={20} /><span className="truncate text-[13.5px] font-semibold text-neutral-800">{profileLabel(p)}</span></> : <span className="text-[13px] text-neutral-300">выбрать…</span>}
+        </button>
+      );
+    } else if (cell.k === "date") {
+      body = <input data-cell={key} type="date" value={cell.v || ""} onChange={(e) => setCell(r.id, c.id, { k: "date", v: e.target.value })} className={inCls + " pr-7"} />;
+    } else if (cell.k === "link") {
+      const url = String(cell.v || "").trim();
+      body = (
+        <div className="flex items-center">
+          <input data-cell={key} value={cell.v || ""} placeholder="https://…" onChange={(e) => setCell(r.id, c.id, { k: "link", v: e.target.value })} className={inCls + " " + (url ? "text-violet-700 underline" : "")} />
+          {url && <a href={/^https?:\/\//i.test(url) ? url : "https://" + url} target="_blank" rel="noreferrer" className="mr-7 shrink-0 text-neutral-300 hover:text-violet-600" title="Открыть"><ExternalLink size={13} /></a>}
+        </div>
+      );
+    } else {
+      body = <input data-cell={key} value={cell.v || ""} onChange={(e) => onTextChange(e, r.id, c.id)} onKeyDown={(e) => onTextKey(e, ri, r.id, c.id, ci)} onPaste={(e) => onPaste(e, ri, ci)} onBlur={() => setPop((p) => (p && p.kind === "slash" ? null : p))} className={inCls} />;
+    }
+    return (
+      <td key={c.id} className="group relative min-w-[170px] border border-neutral-200 p-0 align-top">
+        {body}
+        {cell.k !== "text" && typeBtn}
+      </td>
+    );
+  };
+  const popItems = pop && (pop.kind === "slash" ? slashItems(cellVal(pop.rid, pop.cid).slice(1)) : TT_KINDS);
+  return (
+    <div className="fixed inset-0 z-[85] flex flex-col bg-white" onClick={(e) => e.stopPropagation()}>
+      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
+        <button onClick={onClose} className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] font-bold text-violet-600 hover:bg-violet-50"><ChevronLeft size={15} /> К задаче</button>
+        <input value={t.title} onChange={(e) => upd({ title: e.target.value })} placeholder="Название таблицы" className="min-w-[160px] flex-1 border-none bg-transparent text-[17px] font-extrabold text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
+        <button onClick={addRow} className="inline-flex h-8 items-center gap-1 rounded-[9px] border border-neutral-200 px-3 text-[12.5px] font-bold text-neutral-700 hover:bg-neutral-50"><Plus size={13} /> Строка</button>
+        <button onClick={addCol} className="inline-flex h-8 items-center gap-1 rounded-[9px] border border-neutral-200 px-3 text-[12.5px] font-bold text-neutral-700 hover:bg-neutral-50"><Plus size={13} /> Столбец</button>
+        {delAsk
+          ? <button onClick={onDelete} onMouseLeave={() => setDelAsk(false)} className="inline-flex h-8 items-center rounded-[9px] bg-red-600 px-3 text-[12.5px] font-bold text-white">Точно удалить?</button>
+          : <button onClick={() => setDelAsk(true)} className="inline-flex h-8 w-8 items-center justify-center rounded-[9px] border border-neutral-200 text-neutral-400 hover:text-red-500" title="Удалить таблицу"><Trash2 size={14} /></button>}
+        <button onClick={onClose} className="inline-flex h-8 items-center rounded-[9px] bg-neutral-900 px-4 text-[12.5px] font-bold text-white hover:bg-neutral-700">Готово</button>
+      </div>
+      <div className="flex-1 overflow-auto p-5">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className="w-7 border border-transparent" />
+              {t.cols.map((c) => (
+                <th key={c.id} className="group relative border border-neutral-200 bg-neutral-50 p-0 text-left">
+                  <input value={c.name} onChange={(e) => upd({ cols: t.cols.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)) })} className="h-[36px] w-full bg-transparent px-3 pr-7 text-[12px] font-extrabold uppercase tracking-wide text-neutral-500 focus:bg-violet-50 focus:outline-none" />
+                  {t.cols.length > 1 && <button onClick={() => delCol(c.id)} className="absolute right-1.5 top-[9px] hidden h-[18px] w-[18px] items-center justify-center rounded text-neutral-300 hover:bg-neutral-200 hover:text-red-500 group-hover:flex" title="Удалить столбец"><X size={12} /></button>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {t.rows.map((r, ri) => (
+              <tr key={r.id} className="group/row">
+                <td className="w-7 border border-transparent p-0 text-center align-top"><button onClick={() => delRow(r.id)} className="mt-[10px] hidden h-[18px] w-[18px] items-center justify-center rounded text-neutral-300 hover:bg-neutral-100 hover:text-red-500 group-hover/row:inline-flex" title="Удалить строку"><X size={12} /></button></td>
+                {t.cols.map((c, ci) => renderCell(r, ri, c, ci))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button onClick={() => { const id = addRow(); focusCell(id + ":" + t.cols[0].id); }} className="ml-7 mt-1 inline-flex items-center gap-1 px-1 py-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> строка</button>
+        <p className="ml-7 mt-3 text-[12px] text-neutral-400">«/» в ячейке — выбрать тип (чекбокс, статус, дата…). Enter — вниз, Tab — вправо. Cmd+V — вставка таблицы из Excel или Google Таблиц. Сохраняется автоматически.</p>
+      </div>
+      {pop && (
+        <>
+          {pop.kind !== "slash" && <div className="fixed inset-0 z-[1]" onClick={() => setPop(null)} />}
+          <div className="fixed z-[2] w-[220px] rounded-[10px] border border-neutral-200 bg-white p-1 shadow-2xl" style={{ left: pop.x, top: pop.y }} onMouseDown={(e) => e.preventDefault()}>
+            {(pop.kind === "slash" || pop.kind === "type") && (popItems.length === 0
+              ? <div className="px-2 py-1.5 text-[12.5px] text-neutral-400">Ничего не найдено</div>
+              : popItems.map((k, i) => (
+                <button key={k.k} type="button" onClick={() => pickKind(pop.rid, pop.cid, k.k, pop)} className={"flex h-7 w-full items-center gap-2 rounded-[7px] px-2 text-left text-[13px] font-semibold text-neutral-800 " + (pop.kind === "slash" && i === pop.sel % popItems.length ? "bg-violet-50" : "hover:bg-neutral-50")}>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-md bg-neutral-100 text-[11px] font-bold text-neutral-500">{k.ic}</span>{k.label}
+                </button>
+              )))}
+            {pop.kind === "status" && (
+              <>
+                {TT_STATUSES.map((s) => <button key={s.id} type="button" onClick={() => { setCell(pop.rid, pop.cid, { k: "status", v: s.id }); setPop(null); }} className="flex h-7 w-full items-center rounded-[7px] px-2 hover:bg-neutral-50"><span className="rounded-md px-2 py-[2px] text-[12.5px] font-bold" style={{ background: s.bg, color: s.fg }}>{s.label}</span></button>)}
+                <button type="button" onClick={() => { setCell(pop.rid, pop.cid, { k: "status", v: null }); setPop(null); }} className="h-7 w-full rounded-[7px] px-2 text-left text-[12.5px] text-neutral-400 hover:bg-neutral-50">Очистить</button>
+              </>
+            )}
+            {pop.kind === "user" && (
+              <>
+                {people.map((p) => <button key={p.id} type="button" onClick={() => { setCell(pop.rid, pop.cid, { k: "user", v: p.id }); setPop(null); }} className="flex h-8 w-full items-center gap-2 rounded-[7px] px-2 text-left text-[13px] font-semibold text-neutral-800 hover:bg-neutral-50"><PersonAvatar p={p} size={20} />{profileLabel(p)}</button>)}
+                {people.length === 0 && <div className="px-2 py-1.5 text-[12.5px] text-neutral-400">Нет профилей</div>}
+                <button type="button" onClick={() => { setCell(pop.rid, pop.cid, { k: "user", v: null }); setPop(null); }} className="h-7 w-full rounded-[7px] px-2 text-left text-[12.5px] text-neutral-400 hover:bg-neutral-50">Очистить</button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onOpenProduct, onClose }) {
   const [j, setJ] = useState(job);
   const [expanded, setExpanded] = useState(() => lsGet("rnp.taskExpanded", false)); // раскрытое окно задачи
@@ -9104,6 +9329,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
   const [focusCheckId, setFocusCheckId] = useState(null);
   const [subDoneOpen, setSubDoneOpen] = useState(false); // раскрыт ли список выполненных подзадач
   const noteRef = useRef(null);
+  const [tblOpen, setTblOpen] = useState(null); // id открытой таблицы-материала
   // авто-высота полей считается ТОЛЬКО при изменении контента/раскрытия,
   // а не на каждом ре-рендере — иначе layout дёргается и скролл прыгает наверх
   const sizeNote = () => { const el = noteRef.current; if (!el) return; el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; const max = lh * 12; el.style.height = Math.min(Math.max(el.scrollHeight, lh + 18), max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; };
@@ -9131,6 +9357,8 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
   const jtags = Array.isArray(j.tags) ? j.tags : [];
   const toggleTag = (id) => set("tags", jtags.includes(id) ? jtags.filter((x) => x !== id) : [...jtags, id]);
   const checklist = Array.isArray(j.checklist) ? j.checklist : [];
+  const tables = Array.isArray(j.tables) ? j.tables : [];
+  const openTable = tables.find((x) => x.id === tblOpen) || null;
   const setCl = (cl) => set("checklist", cl);
   const addCheck = () => { const id = uid(); setCl([...checklist, { id, text: "", done: false }]); setFocusCheckId(id); };
   const toggleCheck = (id) => setCl(checklist.map((c) => (c.id === id ? { ...c, done: !c.done } : c)));
@@ -9235,6 +9463,7 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
+      {openTable && <TaskTableEditor table={openTable} people={people} onChange={(nt) => set("tables", tables.map((x) => (x.id === nt.id ? nt : x)))} onClose={() => setTblOpen(null)} onDelete={() => { set("tables", tables.filter((x) => x.id !== openTable.id)); setTblOpen(null); }} />}
       <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
         {/* Шапка: компактный переключатель типа + создано + действия */}
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
@@ -9309,6 +9538,28 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
                   {subDoneOpen && <div className="mt-1 flex flex-col">{doneSubs.map((c) => renderSubRow(c))}</div>}
                 </div>
               ); })()}
+            </div>
+
+            {/* Материалы: таблицы */}
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <div className={fieldL + " flex-1"}>Материалы</div>
+                <button onClick={() => { const nt = ttNewTable(); set("tables", [...tables, nt]); setTblOpen(nt.id); }} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Таблица</button>
+              </div>
+              {tables.length > 0 && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {tables.map((tb) => (
+                    <button key={tb.id} onClick={() => setTblOpen(tb.id)} className="flex min-w-0 flex-col rounded-[14px] border border-neutral-200 bg-white p-3 text-left transition hover:border-violet-300 hover:shadow-sm">
+                      <div className="mb-2 flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[14px] font-extrabold text-neutral-800">▦ {tb.title || "Таблица"}</span><span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-[11px] font-bold text-neutral-500">таблица</span></div>
+                      <table className="w-full table-fixed border-collapse text-[11.5px]">
+                        <thead><tr>{tb.cols.slice(0, 3).map((c) => <th key={c.id} className="truncate border border-neutral-100 bg-neutral-50 px-1.5 py-1 text-left font-bold text-neutral-500">{c.name}</th>)}</tr></thead>
+                        <tbody>{tb.rows.slice(0, 3).map((r) => <tr key={r.id}>{tb.cols.slice(0, 3).map((c) => <td key={c.id} className="h-[24px] truncate border border-neutral-100 px-1.5 text-neutral-700">{ttCellText(r.cells[c.id], people)}</td>)}</tr>)}</tbody>
+                      </table>
+                      <div className="mt-2 flex items-center justify-between text-[11.5px] text-neutral-400"><span>{tb.rows.length} стр. × {tb.cols.length} стлб.</span><span className="font-bold text-violet-600">Открыть →</span></div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Вложения */}
