@@ -1172,6 +1172,9 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [wbOrdersMeta, setWbOrdersMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbSales, setWbSales] = useState({}); // { "артикул|nmId:YYYY-MM-DD": [выкупов, возвратов] }
   const [wbSalesMeta, setWbSalesMeta] = useState({});
+  const [tgLinks, setTgLinks] = useState({}); // { profileId: chatId } — пишет только функция tg-webhook
+  const [tgBot, setTgBot] = useState(""); // имя Telegram-бота (без @)
+  const saveTgBot = (v) => { const n = String(v || "").trim().replace(/^@/, ""); setTgBot(n); upsertSetting("tgBot", n).catch(() => {}); };
   const [wbOrdSum, setWbOrdSum] = useState({}); // сумма заказов по дням { "артикул|nmId:YYYY-MM-DD": ₽ }
   const [wbOrdSumMeta, setWbOrdSumMeta] = useState({});
   const [wbAdKey, setWbAdKey] = useState(""); // ключ WB, категория «Продвижение»
@@ -1251,6 +1254,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
         if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
+        if (settings.tgLinks && typeof settings.tgLinks === "object") setTgLinks(settings.tgLinks);
+        if (typeof settings.tgBot === "string") setTgBot(settings.tgBot);
         if (Array.isArray(settings.profiles)) { const np = normProfiles(settings.profiles); setProfiles(np); syncedRef.current.settings.profiles = JSON.stringify(np); }
         if (settings.prodCycle && typeof settings.prodCycle === "object") { const nc = normCycle(settings.prodCycle); setProdCycle(nc); syncedRef.current.settings.prodCycle = JSON.stringify(nc); }
         // cycleTriggers: загрузка готового списка либо одноразовая миграция из старых автозадач этапов
@@ -1547,6 +1552,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         // начинается шторм эха между вкладками — правки лагают и затираются.
         if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = JSON.stringify(ns); setStrategy(ns); } return; }
         if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = JSON.stringify(nd); setDuties(nd); } return; }
+        if (key === "tgLinks") { if (value && typeof value === "object") setTgLinks(value); return; }
+        if (key === "tgBot") { if (typeof value === "string") setTgBot(value); return; }
         if (key === "profiles") { if (Array.isArray(value)) { const np = normProfiles(value); syncedRef.current.settings.profiles = JSON.stringify(np); setProfiles(np); } return; }
         if (key === "prodCycle") { if (value && typeof value === "object") { const nc = normCycle(value); syncedRef.current.settings.prodCycle = JSON.stringify(nc); setProdCycle(nc); } return; }
         syncedRef.current.settings[key] = js;
@@ -2982,6 +2989,10 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
       {settingsOpen && (
         <SettingsModal
+          tgLinks={tgLinks}
+          tgBot={tgBot}
+          saveTgBot={saveTgBot}
+          myProfileId={myProfile ? myProfile.id : null}
           statuses={statuses}
           setStatuses={setStatuses}
           defaultTasks={defaultTasks}
@@ -10479,7 +10490,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, onClose }) {
+function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null, statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, onClose }) {
   const [tab, setTab] = useState(initialTab || "statuses");
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
   const toggleTrgOpen = (id) => setTrgOpen((o) => ({ ...o, [id]: !o[id] }));
@@ -10640,6 +10651,7 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
           <TabBtn id="subjects">Комиссии ВБ</TabBtn>
           <TabBtn id="unit">Единые данные</TabBtn>
           <TabBtn id="wbapi">API ВБ</TabBtn>
+          <TabBtn id="tg">Telegram</TabBtn>
         </div>
 
         <div className="flex-1 overflow-auto p-5">
@@ -11048,6 +11060,46 @@ function SettingsModal({ statuses, setStatuses, defaultTasks, setDefaultTasks, t
             </>
           )}
 
+          {tab === "tg" && (() => {
+            const me = taskPeople.find((p) => p.id === myProfileId) || null;
+            const linked = (id) => !!tgLinks[id];
+            const connect = async () => {
+              if (!me || !tgBot) return;
+              const arr = new Uint8Array(9); crypto.getRandomValues(arr);
+              const code = Array.from(arr, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 12);
+              try { await upsertSetting("tgCodes", { [code]: { pid: me.id, exp: Date.now() + 15 * 60 * 1000 } }); } catch (_) {}
+              window.open(`https://t.me/${tgBot}?start=${code}`, "_blank");
+            };
+            const unlink = async () => { if (!me) return; const n = { ...tgLinks }; delete n[me.id]; try { await upsertSetting("tgLinks", n); } catch (_) {} };
+            return (
+              <>
+                <p className="mb-3 text-xs text-neutral-500">Бот присылает в Telegram «Вам поручена задача» и напоминания о сроке (за день и в день срока, в 10:00 по Москве), а ещё принимает задачи текстом: «Позвонить в Китай завтра» или «Проверить приёмку до 25.11 @Анна».</p>
+                <label className="mb-1 block text-xs font-medium text-neutral-500">Имя бота (из BotFather, без @)</label>
+                <input defaultValue={tgBot} onBlur={(e) => saveTgBot && saveTgBot(e.target.value)} placeholder="rnp_pro_bot" className="w-full max-w-sm rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ fontFamily: "monospace" }} />
+                <div className="mt-5 rounded-xl border border-neutral-200 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-bold text-neutral-900">Мой Telegram</div>
+                      <div className="text-xs text-neutral-500">{!me ? "Для вашей почты не создан профиль (Настройки → профили)" : linked(me.id) ? "✓ Привязан. Уведомления приходят в Telegram" : "Не привязан"}</div>
+                    </div>
+                    {me && linked(me.id) && <button onClick={unlink} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">Отвязать</button>}
+                    <button onClick={connect} disabled={!me || !tgBot} title={!tgBot ? "Сначала укажите имя бота" : ""} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-neutral-800 disabled:opacity-40">{me && linked(me.id) ? "Привязать заново" : "Привязать"}</button>
+                  </div>
+                  <p className="mt-2 text-[11px] text-neutral-400">Откроется Telegram — нажмите «Запустить» (Start). Ссылка действует 15 минут.</p>
+                </div>
+                <div className="mt-4">
+                  <div className="mb-1.5 text-xs font-bold text-neutral-700">Команда</div>
+                  {taskPeople.length === 0 ? <p className="text-xs text-neutral-400">Профилей нет</p> : taskPeople.map((p) => (
+                    <div key={p.id} className="flex items-center gap-2 border-t border-neutral-100 py-1.5 text-sm first:border-t-0">
+                      <PersonAvatar p={p} size={22} />
+                      <span className="flex-1 font-semibold text-neutral-800">{profileLabel(p)}</span>
+                      <span className={"text-xs font-semibold " + (linked(p.id) ? "text-emerald-600" : "text-neutral-400")}>{linked(p.id) ? "в Telegram" : "не привязан"}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
           {tab === "wbapi" && (
             <>
               <p className="mb-3 text-xs text-neutral-400">Ключ берётся в кабинете ВБ → Настройки → Доступ к API → категория «Статистика». Хранится в базе, доступен только вашей команде. Нужен для подгрузки заказов в блок «Продвижение».</p>
