@@ -9320,12 +9320,13 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
   );
 }
 
+let TASK_SIZE_MEM = null; // последний выбранный размер окна задачи (общий для всех задач)
 function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onOpenProduct, onClose }) {
   const [j, setJ] = useState(job);
-  const [size, setSize] = useState(() => { const v = lsGet("rnp.taskSize", null); if (v === 0 || v === 1 || v === 2) return v; return lsGet("rnp.taskExpanded", false) ? 1 : 0; }); // размер окна задачи: 0 обычный · 1 широкий · 2 на весь экран
+  const [size, setSize] = useState(() => { if (TASK_SIZE_MEM === 0 || TASK_SIZE_MEM === 1 || TASK_SIZE_MEM === 2) return TASK_SIZE_MEM; const v = lsGet("rnp.taskSize", null); if (v === 0 || v === 1 || v === 2) return v; return lsGet("rnp.taskExpanded", false) ? 1 : 0; }); // размер окна задачи: 0 обычный · 1 широкий · 2 на весь экран
   const expanded = size >= 1, big = size === 2;
   const [showLog, setShowLog] = useState(false); // показывать «Историю» вместо деталей
-  useEffect(() => lsSet("rnp.taskSize", size), [size]);
+  useEffect(() => { TASK_SIZE_MEM = size; lsSet("rnp.taskSize", size); }, [size]);
   const checkRefs = useRef({});          // ref на поля подзадач — для фокуса новой
   const [focusCheckId, setFocusCheckId] = useState(null);
   const [subDoneOpen, setSubDoneOpen] = useState(false); // раскрыт ли список выполненных подзадач
