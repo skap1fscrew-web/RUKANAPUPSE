@@ -1189,8 +1189,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     try {
       const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-stocks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key }) });
       if (resp.status === 429) { setWayMsg("WB ограничил частоту запросов — повторите через минуту"); return; }
-      if (!resp.ok) throw new Error("wb-stocks " + resp.status);
-      const data = await resp.json();
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) throw new Error((data && data.error) || ("wb-stocks " + resp.status));
       if (!data || !data.items) throw new Error("пустой ответ");
       setWbWay(data);
       try { await upsertSetting("wbWay", data); } catch (_) {}

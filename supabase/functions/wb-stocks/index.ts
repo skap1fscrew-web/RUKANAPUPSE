@@ -1,7 +1,9 @@
-// Supabase Edge Function — товары «в пути» (WB Statistics API, остатки).
+// Supabase Edge Function — товары «в пути» (WB Seller Analytics API, отчёт по остаткам).
 // POST { apiKey } → { updatedAt, items: { "артикул": {to, from, toSum, fromSum}, "nmId": {...} } }
-// to / from — штуки «в пути к клиенту» / «в пути от клиента»; суммы = штуки × Price × (1 − Discount/100) (цена продавца, до СПП).
-// WB: GET /api/v1/supplier/stocks?dateFrom=2019-06-20. Лимит — 1 запрос в минуту.
+// to / from — штуки «в пути к клиенту» / «в пути от клиента» (toClientCount / fromClientCount).
+// Суммы = штуки × цена товара (среднее currentPrice.minPrice/maxPrice) — оценка по цене продавца.
+// WB: POST https://seller-analytics-api.wildberries.ru/api/v2/stocks-report/products/products (токен с доступом к «Аналитике»).
+// Старый метод statistics /supplier/stocks WB отключил.
 // Деплой: supabase functions deploy wb-stocks --no-verify-jwt
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
@@ -14,25 +16,48 @@ const cors = {
 const json = (obj: unknown, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
+// deno-lint-ignore no-explicit-any
+type Any = any;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const { apiKey } = await req.json();
     if (!apiKey) return json({ error: "нужен apiKey" }, 400);
-    const r = await fetch("https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=2019-06-20", { headers: { Authorization: apiKey } });
-    if (!r.ok) return json({ error: `WB API ${r.status}: ${await r.text()}` }, r.status);
-    const rows = await r.json();
+    const today = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10); // по Москве
     const items: Record<string, { to: number; from: number; toSum: number; fromSum: number }> = {};
-    for (const x of Array.isArray(rows) ? rows : []) {
-      const to = Number(x.inWayToClient) || 0, from = Number(x.inWayFromClient) || 0;
-      if (!to && !from) continue;
-      const price = (Number(x.Price) || 0) * (1 - (Number(x.Discount) || 0) / 100);
-      for (const key of [x.supplierArticle, x.nmId]) {
-        if (!key) continue;
-        const k = String(key);
-        const o = items[k] || (items[k] = { to: 0, from: 0, toSum: 0, fromSum: 0 });
-        o.to += to; o.from += from; o.toSum += Math.round(to * price); o.fromSum += Math.round(from * price);
+    const LIMIT = 1000;
+    for (let offset = 0, page = 0; page < 10; page++, offset += LIMIT) {
+      const r = await fetch("https://seller-analytics-api.wildberries.ru/api/v2/stocks-report/products/products", {
+        method: "POST",
+        headers: { Authorization: apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPeriod: { start: today, end: today },
+          stockType: "",
+          skipDeletedNm: true,
+          orderBy: { field: "stockCount", mode: "desc" },
+          availabilityFilters: [],
+          limit: LIMIT,
+          offset,
+        }),
+      });
+      if (!r.ok) return json({ error: `WB ${r.status}: ${(await r.text()).slice(0, 300)}` }, 502);
+      const j: Any = await r.json();
+      const rows: Any[] = Array.isArray(j?.data?.items) ? j.data.items : Array.isArray(j?.data) ? j.data : [];
+      for (const x of rows) {
+        const m = x.metrics || {};
+        const to = Number(m.toClientCount) || 0, from = Number(m.fromClientCount) || 0;
+        if (!to && !from) continue;
+        const cp = m.currentPrice || {};
+        const price = ((Number(cp.minPrice) || 0) + (Number(cp.maxPrice) || Number(cp.minPrice) || 0)) / 2;
+        for (const key of [x.vendorCode, x.nmID]) {
+          if (!key) continue;
+          const k = String(key);
+          const o = items[k] || (items[k] = { to: 0, from: 0, toSum: 0, fromSum: 0 });
+          o.to += to; o.from += from; o.toSum += Math.round(to * price); o.fromSum += Math.round(from * price);
+        }
       }
+      if (rows.length < LIMIT) break;
     }
     return json({ updatedAt: new Date().toISOString(), items });
   } catch (e) {
