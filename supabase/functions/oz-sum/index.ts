@@ -34,34 +34,36 @@ serve(async (req) => {
     const sinceOf = (d: number) => new Date(Date.now() - d * 864e5).toISOString();
 
     // ---- отправления (FBO + FBS) ----
+    const notes: string[] = []; // ошибки запасных путей — не показываем, если основной сработал
     const listFbo = async (since: string, status?: string): Promise<Any[]> => {
-      const out: Any[] = [];
-      for (const path of ["/v2/posting/fbo/list", "/v3/posting/fbo/list"]) {
+      const tries: [string, number][] = [["/v3/posting/fbo/list", 100], ["/v2/posting/fbo/list", 1000]];
+      for (const [path, lim] of tries) {
+        const out: Any[] = [];
         try {
-          out.length = 0;
-          for (let off = 0, i = 0; i < 20; i++, off += 1000) {
+          for (let off = 0, i = 0; i < 80; i++, off += lim) {
             const filter: Any = { since, to: nowIso }; if (status) filter.status = status;
-            const j = await post(path, { dir: "DESC", filter, limit: 1000, offset: off, translit: false, with: { analytics_data: false, financial_data: false } });
+            const j = await post(path, { dir: "DESC", filter, limit: lim, offset: off, translit: false, with: { analytics_data: false, financial_data: false } });
             const arr: Any[] = Array.isArray(j?.result) ? j.result : (j?.result?.postings || []);
             out.push(...arr);
-            if (arr.length < 1000) break;
+            if (arr.length < lim) break;
           }
           return out;
-        } catch (e) { errors.push((e as Error).message); }
+        } catch (e) { notes.push((e as Error).message); }
       }
-      return out;
+      errors.push("не удалось получить заказы FBO: " + notes.slice(-2).join(" | "));
+      return [];
     };
     const listFbs = async (since: string, status?: string): Promise<Any[]> => {
       const out: Any[] = [];
       try {
-        for (let off = 0, i = 0; i < 20; i++, off += 1000) {
+        for (let off = 0, i = 0; i < 40; i++, off += 100) {
           const filter: Any = { since, to: nowIso }; if (status) filter.status = status;
-          const j = await post("/v3/posting/fbs/list", { dir: "DESC", filter, limit: 1000, offset: off, with: {} });
+          const j = await post("/v3/posting/fbs/list", { dir: "DESC", filter, limit: 100, offset: off, with: {} });
           const arr: Any[] = j?.result?.postings || [];
           out.push(...arr);
-          if (arr.length < 1000 || !j?.result?.has_next) break;
+          if (arr.length < 100 || !j?.result?.has_next) break;
         }
-      } catch (e) { errors.push((e as Error).message); }
+      } catch (e) { notes.push((e as Error).message); }
       return out;
     };
 
@@ -123,6 +125,18 @@ serve(async (req) => {
       }
     } catch (e) { errors.push((e as Error).message); }
 
+    // цены из каталога (для суммы остатков)
+    try {
+      let last = "";
+      for (let i = 0; i < 20; i++) {
+        const j = await post("/v5/product/info/prices", { filter: { visibility: "ALL" }, limit: 1000, cursor: last });
+        const items: Any[] = j?.items || [];
+        for (const it of items) { const pr = num(it?.price?.price ?? it?.price); if (pr && it.offer_id && !priceBy[String(it.offer_id)]) priceBy[String(it.offer_id)] = pr; if (pr && it.product_id) priceBy[String(it.product_id)] = priceBy[String(it.product_id)] || pr; }
+        last = j?.cursor || "";
+        if (!last || items.length < 1000) break;
+      }
+    } catch (e) { notes.push((e as Error).message); }
+
     // ---- остатки на складах Озон ----
     const stock = { n: 0, sum: 0, byWh: {} as Record<string, number>, items: {} as Record<string, { n: number; sum: number }> };
     try {
@@ -144,7 +158,7 @@ serve(async (req) => {
     // если вообще ничего не получилось — отдаём ошибку, чтобы было видно причину
     const nothing = !Object.keys(orders).length && !way.to.n && !stock.n;
     if (nothing && errors.length && errors.every((e) => /\b(401|403)\b/.test(e))) return json({ error: "Озон отклонил ключ: " + errors[0] }, 502);
-    return json({ v: 1, updatedAt: new Date().toISOString(), span, orders, way, stock, errors, retStatuses });
+    return json({ v: 1, updatedAt: new Date().toISOString(), span, orders, way, stock, errors, notes, retStatuses });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
