@@ -46,6 +46,33 @@ serve(async (req) => {
         errs.push("нет полей рейтинга");
       } catch (e) { errs.push((e as Error).message); }
     }
+    // Запасной путь: карточка с CDN (imt_id) → публичные отзывы feedbacks{1,2}.wb.ru
+    const items2: Record<string, { r: number; f: number }> = {};
+    for (const nm of ids.slice(0, 20)) {
+      try {
+        const n = Number(nm), vol = Math.floor(n / 100000), part = Math.floor(n / 1000);
+        const hosts = Array.from({ length: 40 }, (_, i) => String(i + 1).padStart(2, "0"));
+        const card: Any = await Promise.any(hosts.map(async (h) => {
+          const r = await fetch(`https://basket-${h}.wbbasket.ru/vol${vol}/part${part}/${nm}/info/ru/card.json`, { headers: { "User-Agent": "Mozilla/5.0" } });
+          if (!r.ok) throw new Error(String(r.status));
+          return await r.json();
+        }));
+        const imt = card?.imt_id;
+        if (!imt) { errs.push(nm + ": нет imt_id"); continue; }
+        let got = false;
+        for (const host of ["feedbacks1", "feedbacks2"]) {
+          const r = await fetch(`https://${host}.wb.ru/feedbacks/v2/${imt}`, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } });
+          if (!r.ok) { errs.push(`${host} ${r.status}`); continue; }
+          const j: Any = await r.json();
+          const rating = Number(j?.valuation ?? j?.ratingValuation);
+          const fb = Number(j?.feedbackCount ?? j?.feedbackCountWithText ?? 0);
+          if (isFinite(rating) && rating > 0) { items2[nm] = { r: rating, f: isFinite(fb) ? fb : 0 }; got = true; break; }
+          errs.push(host + " без рейтинга");
+        }
+        if (!got) errs.push(nm + ": нет отзывов");
+      } catch (e) { errs.push(nm + ": " + ((e as Error).message || "cdn").slice(0, 60)); }
+    }
+    if (Object.keys(items2).length) return json({ items: items2, via: "cdn" });
     return json({ error: "WB не отдал рейтинг: " + errs.join(", ") }, 502);
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
