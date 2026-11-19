@@ -168,6 +168,7 @@ const zvh = (n) => (n / uiZ()) + "vh";
 const TABS = [
   { id: "assortment", label: "Товары" },
   { id: "rnp", label: "РНП" },
+  { id: "summary", label: "Сводка" },
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
   { id: "strategy", label: "Карты" },
@@ -2896,6 +2897,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           />
         )}
 
+        {activeTab === "summary" && <SummaryTab products={products} wbOrders={wbOrders} />}
         {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} purchaseBatches={purchaseBatches} onOpen={(id) => setCardModal(id)} onOpenPopup={(pid, task, dateKey) => setGanttModal({ productId: pid, mode: "popup", task, dateKey })} onOpenDB={(pid, task) => setGanttModal({ productId: pid, mode: "db", task })} onSetCell={(pid, k, v) => setRnpCell(pid, k, v)} onSetFlag={(pid, f, v) => setRnpFlag(pid, f, v)} onSetBudget={(pid, v) => setRnpBudget(pid, v)} onSetFunds={(pid, f) => setRnpFunds(pid, f)} />}
 
         {activeTab === "strategy" && (
@@ -9486,6 +9488,129 @@ function nodeIsDone(n) { return (n.checklist && n.checklist.length) ? n.checklis
 
 // Обёртка: список карт-стратегий + переключатель. Новая карта создаётся по выбранному шаблону.
 // ---- Вкладка «РНП»: данные РНП из карточек по всем товарам (дни × строки) ----
+// ===== Сводка по кабинету WB: структура заказов/выкупов + график по дням =====
+const SUM_GO = ["#15803d", "#22c55e", "#4ade80", "#86efac"], SUM_GS = ["#0f766e", "#14b8a6", "#2dd4bf", "#99f6e4"], SUM_GRAY = "#d4d4d4";
+function sumPath(vals, x, y) {
+  if (!vals.length) return "";
+  let d = `M${x(0)},${y(vals[0])}`;
+  for (let i = 0; i < vals.length - 1; i++) { const cx = (x(i) + x(i + 1)) / 2; d += ` C${cx},${y(vals[i])} ${cx},${y(vals[i + 1])} ${x(i + 1)},${y(vals[i + 1])}`; }
+  return d;
+}
+function SummaryDonut({ parts, total, label }) {
+  const R = 15.9; let off = 0;
+  return (
+    <div className="relative h-[116px] w-[116px] shrink-0">
+      <svg viewBox="0 0 42 42" width="116" height="116" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx="21" cy="21" r={R} fill="none" stroke="#f3f3f3" strokeWidth="7" />
+        {total > 0 && parts.map((p, i) => { const pc = p.n / total * 100; const el = <circle key={i} cx="21" cy="21" r={R} fill="none" stroke={p.color} strokeWidth="7" strokeDasharray={`${Math.max(pc - 0.8, 0)} ${100 - Math.max(pc - 0.8, 0)}`} strokeDashoffset={-off} />; off += pc; return el; })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center"><b className="text-xl font-extrabold tabular-nums text-neutral-900">{total.toLocaleString("ru-RU")}</b><span className="text-[10px] text-neutral-500">{label}</span></div>
+    </div>
+  );
+}
+function SummaryTab({ products = [], wbOrders = {} }) {
+  const [span, setSpan] = useState(() => lsGet("sum.span", 14));
+  const [cut, setCut] = useState(() => lsGet("sum.cut", "product"));
+  const [ser, setSer] = useState("both");
+  useEffect(() => lsSet("sum.span", span), [span]);
+  useEffect(() => lsSet("sum.cut", cut), [cut]);
+  const iso = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const days = useMemo(() => { const out = []; const t = new Date(); t.setHours(0, 0, 0, 0); for (let i = span - 1; i >= 0; i--) { const d = new Date(t); d.setDate(d.getDate() - i); out.push({ key: iso(d), n: d.getDate() }); } return out; }, [span]);
+  const data = useMemo(() => {
+    const per = products.map((p) => {
+      let o = 0, s = 0; const od = [], sd = [];
+      for (const d of days) { const a = rnpWbCount({ id: "orders" }, p, d.key, wbOrders) || 0, b = rnpWbCount({ src: "sales" }, p, d.key, wbOrders) || 0; o += a; s += b; od.push(a); sd.push(b); }
+      return { p, o, s, od, sd };
+    });
+    return { per, od: days.map((_, i) => per.reduce((x, r) => x + r.od[i], 0)), sd: days.map((_, i) => per.reduce((x, r) => x + r.sd[i], 0)) };
+  }, [products, wbOrders, days]);
+  const totO = data.od.reduce((a, b) => a + b, 0), totS = data.sd.reduce((a, b) => a + b, 0);
+  // структура: топ-4 + «Остальные»
+  const group = (key, colors) => {
+    const m = new Map();
+    for (const r of data.per) { const k = cut === "subject" ? (r.p.subject || "Без предмета") : (r.p.name || r.p.code || r.p.wb || "Без названия"); m.set(k, (m.get(k) || 0) + r[key]); }
+    const arr = [...m.entries()].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+    const top = arr.slice(0, 4).map(([name, n], i) => ({ name, n, color: colors[i] }));
+    const rest = arr.slice(4).reduce((s, [, n]) => s + n, 0);
+    if (rest > 0) top.push({ name: "Остальные", n: rest, color: SUM_GRAY });
+    return top;
+  };
+  const partsO = group("o", SUM_GO), partsS = group("s", SUM_GS);
+  // график
+  const W = 1000, H = 380, padL = 38, padR = 24, padT = 30, padB = 30;
+  const mxRaw = Math.max(1, ...(ser === "sales" ? data.sd : ser === "orders" ? data.od : [...data.od, ...data.sd]));
+  const step = mxRaw <= 10 ? 2 : mxRaw <= 40 ? 10 : mxRaw <= 100 ? 20 : mxRaw <= 250 ? 50 : 100;
+  const mx = Math.ceil(mxRaw * 1.12 / step) * step;
+  const x = (i) => padL + (days.length === 1 ? 0 : i * (W - padL - padR) / (days.length - 1));
+  const y = (v) => H - padB - (v / mx) * (H - padT - padB);
+  const showO = ser !== "sales", showS = ser !== "orders";
+  const labelEvery = span <= 14 ? 1 : span <= 30 ? 2 : 3;
+  const grid = []; for (let v = 0; v <= mx; v += step) grid.push(v);
+  const Seg = ({ items, value, onChange }) => (
+    <div className="inline-flex rounded-lg bg-neutral-100 p-0.5">{items.map(([id, l]) => <button key={id} onClick={() => onChange(id)} className={"h-7 rounded-md px-3 text-xs font-semibold transition " + (value === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800")}>{l}</button>)}</div>
+  );
+  const Struct = ({ title, parts, total, label }) => (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+      <h3 className="mb-3 text-sm font-extrabold text-neutral-900">{title}</h3>
+      {total > 0 ? (
+        <div className="flex items-center gap-4">
+          <SummaryDonut parts={parts} total={total} label={label} />
+          <div className="min-w-0 flex-1">
+            {parts.map((p, i) => (
+              <div key={i} className="flex h-[26px] items-center gap-2 text-[13px]">
+                <i className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: p.color }} />
+                <span className="min-w-0 flex-1 truncate font-semibold text-neutral-800" title={p.name}>{p.name}</span>
+                <span className="text-neutral-400 tabular-nums">{p.n}</span>
+                <b className="w-10 text-right font-extrabold tabular-nums text-neutral-900">{Math.round(p.n / total * 100)}%</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : <div className="py-8 text-center text-sm text-neutral-400">Нет данных за период</div>}
+    </div>
+  );
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-lg font-extrabold text-neutral-900">Сводка по кабинету WB</h2>
+        <Seg items={[[7, "7 дней"], [14, "14 дней"], [30, "30 дней"]]} value={span} onChange={setSpan} />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-[1.9fr_1fr]">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+          <div className="mb-1 flex flex-wrap items-start gap-4">
+            <div className="flex gap-8">
+              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#16a34a" }}>{totO.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">заказов</span></div>
+              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#0d9488" }}>{totS.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">выкупов</span></div>
+              <div><b className="block text-3xl font-extrabold tabular-nums text-neutral-800">{totO > 0 ? (Math.round(totS / totO * 1000) / 10).toLocaleString("ru-RU") + "%" : "—"}</b><span className="text-xs text-neutral-500">выкуп к заказам</span></div>
+            </div>
+            <div className="ml-auto"><Seg items={[["both", "Оба"], ["orders", "Заказы"], ["sales", "Выкупы"]]} value={ser} onChange={setSer} /></div>
+          </div>
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 420 }}>
+            <defs>
+              <linearGradient id="sumGa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#22c55e" stopOpacity=".22" /><stop offset="1" stopColor="#22c55e" stopOpacity="0" /></linearGradient>
+              <linearGradient id="sumGb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#14b8a6" stopOpacity=".2" /><stop offset="1" stopColor="#14b8a6" stopOpacity="0" /></linearGradient>
+            </defs>
+            {grid.map((v) => <g key={v}><line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="#eee" /><text x={0} y={y(v) + 4} fontSize="11" fill="#a3a3a3">{v}</text></g>)}
+            {showO && <path d={`${sumPath(data.od, x, y)} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)}Z`} fill="url(#sumGa)" />}
+            {showS && <path d={`${sumPath(data.sd, x, y)} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)}Z`} fill="url(#sumGb)" />}
+            {showO && <path d={sumPath(data.od, x, y)} fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" />}
+            {showS && <path d={sumPath(data.sd, x, y)} fill="none" stroke="#14b8a6" strokeWidth="3" strokeLinecap="round" />}
+            {showO && data.od.map((v, i) => <g key={"o" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#22c55e" strokeWidth="2" />{i % labelEvery === 0 && <text x={x(i)} y={y(v) - 10} fontSize="12" fontWeight="700" textAnchor="middle" fill="#171717">{v}</text>}</g>)}
+            {showS && data.sd.map((v, i) => <g key={"s" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#14b8a6" strokeWidth="2" />{i % labelEvery === 0 && <text x={x(i)} y={y(v) + 20} fontSize="12" fontWeight="700" textAnchor="middle" fill="#0d9488">{v}</text>}</g>)}
+            {days.map((d, i) => i % labelEvery === 0 && <text key={d.key} x={x(i)} y={H - 6} fontSize="11" textAnchor="middle" fill="#a3a3a3">{d.n}</text>)}
+          </svg>
+          <div className="mt-1 text-[11px] text-neutral-400">Данные из РНП: если период длиннее загруженного в РНП, дни вне него будут пустыми. Обновить заказы можно в РНП (↻ у строки «Заказы»).</div>
+        </div>
+        <div className="flex flex-col gap-3">
+          <Seg items={[["product", "Товары"], ["subject", "Предметы"]]} value={cut} onChange={setCut} />
+          <Struct title="Структура заказов" parts={partsO} total={totO} label="заказов" />
+          <Struct title="Структура выкупов" parts={partsS} total={totS} label="выкупов" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatches = [], onOpen, onOpenPopup, onOpenDB, onSetCell, onSetFlag, onSetBudget, onSetFunds }) {
   const iso = (d) => { const x = new Date(d); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); };
   const todayISO = iso(new Date());
