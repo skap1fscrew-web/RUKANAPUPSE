@@ -1172,6 +1172,30 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [wbOrdersMeta, setWbOrdersMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbSales, setWbSales] = useState({}); // { "артикул|nmId:YYYY-MM-DD": [выкупов, возвратов] }
   const [wbSalesMeta, setWbSalesMeta] = useState({});
+  const [wbRating, setWbRating] = useState({}); // { nmId: { r: рейтинг, f: отзывов, t: когда обновлено } }
+  const ratingTriedRef = useRef({});
+  useEffect(() => {
+    // рейтинг и отзывы открытой карточки — с публичной карточки WB (обновляем не чаще раза в 6 часов)
+    if (!cardModal || !loaded) return;
+    const p = products.find((x) => x.id === cardModal);
+    const nm = String((p && p.wb) || "").trim();
+    if (!/^\d{5,}$/.test(nm)) return;
+    const c = wbRating[nm];
+    if (c && c.t && Date.now() - new Date(c.t).getTime() < 6 * 3600e3) return;
+    if (Date.now() - (ratingTriedRef.current[nm] || 0) < 5 * 60e3) return;
+    ratingTriedRef.current[nm] = Date.now();
+    (async () => {
+      try {
+        const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-rating", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nmIds: [nm] }) });
+        const d = await resp.json().catch(() => null);
+        if (!resp.ok || !d || !d.items || !d.items[nm]) return;
+        const it = d.items[nm];
+        const next = { ...wbRating, [nm]: { r: it.r, f: it.f, t: new Date().toISOString() } };
+        setWbRating(next);
+        try { await upsertSetting("wbRating", next); } catch (_) {}
+      } catch (_) {}
+    })();
+  }, [cardModal, loaded, products, wbRating]);
   const [tgLinks, setTgLinks] = useState({}); // { profileId: chatId } — пишет только функция tg-webhook
   const [tgBot, setTgBot] = useState(""); // имя Telegram-бота (без @)
   const saveTgBot = (v) => { const n = String(v || "").trim().replace(/^@/, ""); setTgBot(n); upsertSetting("tgBot", n).catch(() => {}); };
@@ -1280,6 +1304,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
         if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
         if (settings.wbWay && typeof settings.wbWay === "object") setWbWay(settings.wbWay);
+        if (settings.wbRating && typeof settings.wbRating === "object") setWbRating(settings.wbRating);
         if (settings.tgLinks && typeof settings.tgLinks === "object") setTgLinks(settings.tgLinks);
         if (typeof settings.tgBot === "string") setTgBot(settings.tgBot);
         if (Array.isArray(settings.profiles)) { const np = normProfiles(settings.profiles); setProfiles(np); syncedRef.current.settings.profiles = JSON.stringify(np); }
@@ -1579,6 +1604,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = JSON.stringify(ns); setStrategy(ns); } return; }
         if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = JSON.stringify(nd); setDuties(nd); } return; }
         if (key === "wbWay") { if (value && typeof value === "object") setWbWay(value); return; }
+        if (key === "wbRating") { if (value && typeof value === "object") setWbRating(value); return; }
         if (key === "tgLinks") { if (value && typeof value === "object") setTgLinks(value); return; }
         if (key === "tgBot") { if (typeof value === "string") setTgBot(value); return; }
         if (key === "profiles") { if (Array.isArray(value)) { const np = normProfiles(value); syncedRef.current.settings.profiles = JSON.stringify(np); setProfiles(np); } return; }
@@ -3062,6 +3088,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         return (
           <CardTasksModal
             product={withConst(cp)}
+            rating={wbRating[String(cp.wb || "").trim()] || null}
             statuses={statuses}
             onSetName={(v) => updateProduct(cp.id, "name", v)}
             onSetTasks={(tasks) => setProductTasks(cp.id, tasks)}
@@ -6484,7 +6511,7 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
   );
 }
 
-function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, onClose }) {
+function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, rating = null, onClose }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [wbEdit, setWbEdit] = useState(false);
   const [ratesEdit, setRatesEdit] = useState(false);
@@ -6732,15 +6759,8 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
           {product.image && <button onClick={(e) => { e.stopPropagation(); onSetField && onSetField("image", null); }} title="Удалить фото" className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/55 p-0.5 text-white hover:bg-red-600 group-hover:block"><X size={11} /></button>}
         </div>
         <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5 min-h-[92px]">
-          <div className="-ml-2 flex h-[22px] flex-wrap items-center gap-2 text-[14px]">
-            <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код" style={{ width: Math.max(String(product.code || "").length, 3) + 2.4 + "ch" }} className={"h-[22px] rounded-md border border-transparent bg-transparent px-2 text-[14px] outline-none transition placeholder:font-semibold placeholder:text-neutral-400 hover:bg-neutral-100 focus:border-neutral-300 focus:bg-neutral-100 " + (product.code ? "font-extrabold text-neutral-700 hover:border-neutral-200" : "text-neutral-700 hover:border-dashed hover:border-neutral-200")} />
-            {product.wb && !wbEdit ? (
-              <span className="group inline-flex items-center gap-1.5"><span className="text-neutral-300">·</span>
-                <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" title={"Артикул WB " + product.wb + " — открыть на сайте"} className="inline-flex items-center gap-1 text-[13px] font-extrabold text-violet-700 hover:text-violet-900">WB <ExternalLink size={13} /></a>
-                <button onClick={() => setWbEdit(true)} title="Изменить артикул WB" className="hidden rounded p-0.5 text-neutral-300 hover:text-neutral-600 group-hover:inline-flex"><Pencil size={11} /></button></span>
-            ) : (
-              <input autoFocus={wbEdit} value={product.wb || ""} onChange={(e) => onSetField("wb", e.target.value)} onBlur={() => setWbEdit(false)} onKeyDown={(e) => e.key === "Enter" && setWbEdit(false)} placeholder="+ WB артикул" style={{ width: Math.max(String(product.wb || "").length, 12) + 2.4 + "ch" }} className="h-[22px] rounded-md border border-transparent bg-transparent px-2 text-[12.5px] outline-none transition placeholder:font-semibold placeholder:text-neutral-400 hover:border-dashed hover:border-neutral-200 hover:bg-neutral-100 focus:border-solid focus:border-neutral-300 focus:bg-neutral-100" />
-            )}
+          <div className="-ml-1.5 -mb-1 flex h-[18px] items-center">
+            <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код" style={{ width: Math.max(String(product.code || "").length, 3) + 2.4 + "ch" }} className={"h-[18px] rounded-md border border-transparent bg-transparent px-1.5 text-[13px] leading-none outline-none transition placeholder:font-semibold placeholder:text-neutral-400 hover:bg-neutral-100 focus:border-neutral-300 focus:bg-neutral-100 " + (product.code ? "font-semibold text-neutral-500 hover:border-neutral-200" : "font-semibold text-neutral-500 hover:border-dashed hover:border-neutral-200")} />
           </div>
           <input
             value={product.name}
@@ -6750,7 +6770,7 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
           />
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
-              <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-bold transition hover:brightness-95" style={curStatus ? { background: curStatus.color + "1f", color: curStatus.color } : { background: "#f1f1f3", color: "#9a9a9a" }}>
+              <button onClick={() => setStatusOpen((v) => !v)} className="inline-flex h-[26px] items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-semibold transition hover:brightness-95" style={curStatus ? { background: curStatus.color + "1f", color: curStatus.color } : { background: "#f1f1f3", color: "#9a9a9a" }}>
                 {curStatus ? curStatus.name : "Без статуса"}
                 <ChevronDown size={12} className="opacity-60" />
               </button>
@@ -6775,6 +6795,13 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
               )}
             </div>
             <div className="flex h-[26px] items-center rounded-lg bg-neutral-100 px-1.5"><SubjectCombo auto value={product.subject} subjects={subjects} onChange={(v) => onSetField("subject", v)} /></div>
+            {product.wb && !wbEdit ? (
+              <span className="group inline-flex items-center gap-1.5">
+                <a href={`https://global.wildberries.ru/catalog/${String(product.wb).trim()}/detail.aspx`} target="_blank" rel="noreferrer" title={"Артикул WB " + product.wb + " — открыть на сайте"} className="inline-flex items-center gap-1 text-[13px] font-semibold text-violet-700 hover:text-violet-900">WB <ExternalLink size={13} /></a>
+                <button onClick={() => setWbEdit(true)} title="Изменить артикул WB" className="hidden rounded p-0.5 text-neutral-300 hover:text-neutral-600 group-hover:inline-flex"><Pencil size={11} /></button></span>
+            ) : (
+              <input autoFocus={wbEdit} value={product.wb || ""} onChange={(e) => onSetField("wb", e.target.value)} onBlur={() => setWbEdit(false)} onKeyDown={(e) => e.key === "Enter" && setWbEdit(false)} placeholder="+ WB артикул" style={{ width: Math.max(String(product.wb || "").length, 12) + 2.4 + "ch" }} className="h-[26px] rounded-md border border-transparent bg-transparent px-2 text-[13px] font-semibold outline-none transition placeholder:font-semibold placeholder:text-neutral-400 hover:border-dashed hover:border-neutral-200 hover:bg-neutral-100 focus:border-solid focus:border-neutral-300 focus:bg-neutral-100" />
+            )}
           </div>
         </div>
         {(() => {
@@ -6788,15 +6815,21 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
           const delta = prev > 0 ? Math.round((total - prev) / prev * 100) : null;
           const mx = Math.max(1, ...cur.map((x) => x.n));
           return (
-            <div className="hidden shrink-0 items-end gap-3 self-end pr-1 md:flex" title="Заказы за последние 7 дней">
-              <div className="text-right leading-tight">
-                <div className="text-[10.5px] font-semibold text-neutral-400">Заказы · 7 дней</div>
+            <div className="hidden shrink-0 items-end gap-5 self-end pr-1 md:flex">
+              {(() => { const rt = rating && typeof rating.r === "number" ? rating : null; const col = !rt ? "#a3a3a3" : rt.r >= 4.7 ? "#15803d" : rt.r >= 4.5 ? "#b45309" : "#dc2626"; return (
+                <div className="border-r border-neutral-200 pr-5 text-left leading-tight" title={rt ? "Рейтинг и отзывы на WB" + (rating.t ? " · обновлено " + new Date(rating.t).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "") : "Рейтинг WB не загружен"}>
+                  <div className="text-[11px] font-semibold text-neutral-400">Рейтинг WB · отзывы</div>
+                  <div className="flex items-baseline gap-1.5 text-[22px] font-extrabold tabular-nums"><span style={{ color: "#f59e0b" }}>★</span><span style={{ color: col }}>{rt ? String(rt.r.toFixed(1)).replace(".", ",") : "—"}</span>{rt && <span className="text-[13px] font-semibold text-neutral-500">{Number(rating.f || 0).toLocaleString("ru-RU")} {(() => { const n = Number(rating.f || 0) % 100, d = n % 10; return n > 10 && n < 15 ? "отзывов" : d === 1 ? "отзыв" : d >= 2 && d <= 4 ? "отзыва" : "отзывов"; })()}</span>}</div>
+                </div>
+              ); })()}
+              <div className="text-left leading-tight">
+                <div className="text-[11px] font-semibold text-neutral-400">Заказы · 7 дней</div>
                 <div className="text-[22px] font-extrabold tabular-nums text-neutral-900">{total}{delta !== null && <span className="ml-1.5 align-middle text-[11px] font-extrabold" style={{ color: delta >= 0 ? "#16a34a" : "#dc2626" }}>{delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}%</span>}</div>
               </div>
-              <div className="flex h-[58px] items-end gap-1">
+              <div className="flex h-[88px] items-end gap-1.5">
                 {cur.map((x, i) => (<div key={x.key} title={x.dd + ": " + x.n} className="flex flex-col items-center justify-end">
-                  <span className="mb-0.5 text-[10px] font-bold leading-none tabular-nums" style={{ color: i === 6 ? "#0f766e" : (x.n > 0 ? "#737373" : "#d4d4d4") }}>{x.n}</span>
-                  <div className="w-[12px] rounded-t-[3px]" style={{ height: Math.max(3, Math.round(x.n / mx * 40)), background: i === 6 ? "#0d9488" : "#86efac" }} />
+                  <span className="mb-0.5 text-[12px] font-bold leading-none tabular-nums" style={{ color: i === 6 ? "#0f766e" : (x.n > 0 ? "#737373" : "#d4d4d4") }}>{x.n}</span>
+                  <div className="w-[20px] rounded-t-[4px]" style={{ height: Math.max(4, Math.round(x.n / mx * 64)), background: i === 6 ? "#0d9488" : "#86efac" }} />
                 </div>))}
               </div>
             </div>
