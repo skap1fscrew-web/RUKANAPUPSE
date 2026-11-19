@@ -1199,7 +1199,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   };
   useEffect(() => {
     if (activeTab !== "summary" || !loaded || wayLoading) return;
-    const stale = !wbWay || !wbWay.updatedAt || Date.now() - new Date(wbWay.updatedAt).getTime() > 30 * 60 * 1000;
+    const stale = !wbWay || !wbWay.updatedAt || wbWay.v !== 2 || Date.now() - new Date(wbWay.updatedAt).getTime() > 30 * 60 * 1000;
     if (stale && Date.now() - wayTriedRef.current > 5 * 60 * 1000 && (wbApiKey || wbAdKey)) { wayTriedRef.current = Date.now(); fetchWbWay(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, loaded, wbWay, wbApiKey, wbAdKey]);
@@ -9563,17 +9563,18 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
     return { per, od: days.map((_, i) => per.reduce((x, r) => x + r.od[i], 0)), sd: days.map((_, i) => per.reduce((x, r) => x + r.sd[i], 0)) };
   }, [products, wbOrders, days]);
   const wayTot = useMemo(() => {
-    const t = { to: 0, from: 0, toSum: 0, fromSum: 0, byTo: [], byFrom: [] };
+    const t = { to: 0, from: 0, toSum: 0, fromSum: 0, st: 0, stSum: 0, byTo: [], byFrom: [], bySt: [] };
     if (!way || !way.items) return t;
     for (const p of products) {
       const w = way.items[p.code || ""] || way.items[String(p.wb || "")];
       if (!w) continue;
-      t.to += w.to; t.from += w.from; t.toSum += w.toSum; t.fromSum += w.fromSum;
+      t.to += w.to; t.from += w.from; t.toSum += w.toSum; t.fromSum += w.fromSum; t.st += w.st || 0; t.stSum += w.stSum || 0;
       const nm = p.name || p.code || p.wb || "Товар";
       if (w.to) t.byTo.push([nm, w.to, w.toSum]);
       if (w.from) t.byFrom.push([nm, w.from, w.fromSum]);
+      if (w.st) t.bySt.push([nm, w.st, w.stSum || 0]);
     }
-    t.byTo.sort((a, b) => b[2] - a[2]); t.byFrom.sort((a, b) => b[2] - a[2]);
+    t.byTo.sort((a, b) => b[2] - a[2]); t.byFrom.sort((a, b) => b[2] - a[2]); t.bySt.sort((a, b) => b[2] - a[2]);
     return t;
   }, [products, way]);
   const fmtMoney = (n) => n >= 1e6 ? (Math.round(n / 1e4) / 100).toLocaleString("ru-RU") + " млн ₽" : Math.round(n).toLocaleString("ru-RU") + " ₽";
@@ -9644,6 +9645,7 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
       <div className="flex flex-wrap items-stretch gap-3">
         <WayTile icon="🚚" title="В пути к клиенту" qty={wayTot.to} sum={wayTot.toSum} color="#16a34a" bg="#dcfce7" by={wayTot.byTo} />
         <WayTile icon="↩️" title="В пути от клиента" qty={wayTot.from} sum={wayTot.fromSum} color="#ea580c" bg="#ffedd5" by={wayTot.byFrom} />
+        <WayTile icon="📦" title="Остатки на складах WB" qty={wayTot.st} sum={wayTot.stSum} color="#2563eb" bg="#dbeafe" by={wayTot.bySt} />
         <div className="flex shrink-0 flex-col items-end justify-center gap-1 text-[11px] text-neutral-400">
           <button onClick={() => onRefreshWay && onRefreshWay()} disabled={wayLoading} className="h-8 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">{wayLoading ? "Загрузка…" : "↻ Обновить"}</button>
           <span>{wayMsg || (wayTime ? `обновлено в ${wayTime} · цена до СПП` : "данных пока нет")}</span>
