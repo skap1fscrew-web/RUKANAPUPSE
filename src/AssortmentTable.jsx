@@ -227,6 +227,9 @@ const AB_FIELDS = [
 const RNP_TASKS = [
   { id: "orders",   label: "Заказы", kind: "wbOrders" },
   { id: "orderSum", label: "Сумма заказов", kind: "wbOrders", src: "orderSum" },
+  { id: "priceBefore", label: "Цена до СПП", kind: "wbOrders", src: "pBefore" },
+  { id: "priceAfter",  label: "Цена после СПП", kind: "wbOrders", src: "pAfter" },
+  { id: "priceDisc",   label: "Скидка МП", kind: "wbOrders", src: "pDisc" },
   { id: "sales",    label: "Выкупы", kind: "wbOrders", src: "sales" },
   { id: "internal", label: "Внутренняя реклама", kind: "singleCost", cost: true },
   { id: "drr",      label: "ДРРвз", kind: "wbOrders", src: "drr" },
@@ -248,21 +251,39 @@ function rnpSalesVal(product, dkey) { return RNP_SALES[`${product.code || produc
 // Число в строке «Заказы» / «Выкупы WB» за день
 let RNP_ORDSUM = {}; // сумма заказов по дням из WB: { "артикул|nmId:YYYY-MM-DD": ₽ }
 function rnpOrderSum(product, dkey) { return RNP_ORDSUM[`${product.code || product.wb || ""}:${dkey}`] || RNP_ORDSUM[`${product.wb}:${dkey}`] || 0; }
+// Цена до/после СПП = сумма заказов / число заказов (по неотменённым заказам WB), скидка МП — разница между ними в %
+function rnpOrdN(product, dkey) { return RNP_ORDSUM[`${product.code || product.wb || ""}:${dkey}:n`] || RNP_ORDSUM[`${product.wb}:${dkey}:n`] || 0; }
+function rnpOrdSumF(product, dkey) { return RNP_ORDSUM[`${product.code || product.wb || ""}:${dkey}:f`] || RNP_ORDSUM[`${product.wb}:${dkey}:f`] || 0; }
+function rnpPriceVal(src, product, dkey) {
+  const n = rnpOrdN(product, dkey); if (!n) return 0;
+  const before = rnpOrderSum(product, dkey) / n, after = rnpOrdSumF(product, dkey) / n;
+  if (src === "pBefore") return before;
+  if (src === "pAfter") return after;
+  return before > 0 && after > 0 ? (before - after) / before * 100 : 0;
+}
 // Формат значения строки: сумма компактно, ДРРвз в процентах
 function rnpWbFmt(task, n) {
   if (!n) return "";
+  if (task.src === "pBefore" || task.src === "pAfter") return Math.round(n).toLocaleString("ru-RU");
+  if (task.src === "pDisc") return (Math.round(n * 10) / 10).toLocaleString("ru-RU") + "%";
   if (task.src === "orderSum") return n >= 10000 ? (Math.round(n / 100) / 10).toLocaleString("ru-RU") + "к" : Math.round(n).toLocaleString("ru-RU");
   if (task.src === "drr") return (Math.round(n * 10) / 10).toLocaleString("ru-RU") + "%";
   return String(n);
 }
 function rnpWbTip(task, product, dkey) {
   if (task.src === "sales") { const v = rnpSalesVal(product, dkey); return v ? `Выкупов: ${v[0]}, возвратов: ${v[1]}` : undefined; }
+  if (task.src === "pBefore" || task.src === "pAfter" || task.src === "pDisc") {
+    const n = rnpOrdN(product, dkey); if (!n) return undefined;
+    const b = rnpPriceVal("pBefore", product, dkey), a = rnpPriceVal("pAfter", product, dkey);
+    return `Заказов: ${n}. Цена до СПП: ${Math.round(b).toLocaleString("ru-RU")} ₽, после СПП: ${Math.round(a).toLocaleString("ru-RU")} ₽`;
+  }
   if (task.src === "orderSum") { const n = rnpOrderSum(product, dkey); return n ? `Сумма заказов: ${Math.round(n).toLocaleString("ru-RU")} ₽` : undefined; }
   if (task.src === "drr") { const n = rnpOrderSum(product, dkey), ad = rnpInternalDay(RNP_TASKS.find((t) => t.id === "internal"), product, dkey); return n && ad ? `ДРР ко всем заказам: реклама ${Math.round(ad).toLocaleString("ru-RU")} ₽ / заказы ${Math.round(n).toLocaleString("ru-RU")} ₽` : undefined; }
   return undefined;
 }
 function rnpWbCount(task, product, dkey, wbOrders) {
   if (task.src === "orderSum") return rnpOrderSum(product, dkey);
+  if (task.src === "pBefore" || task.src === "pAfter" || task.src === "pDisc") return rnpPriceVal(task.src, product, dkey);
   if (task.src === "drr") { const n = rnpOrderSum(product, dkey), ad = rnpInternalDay(RNP_TASKS.find((t) => t.id === "internal"), product, dkey); return n > 0 && ad > 0 ? ad / n * 100 : 0; }
   if (task.src === "sales") { const v = rnpSalesVal(product, dkey); return v ? v[0] : 0; }
   const code = product.code || product.wb || "";
@@ -285,7 +306,7 @@ function rnpSingleTotal(task, product) {
   for (const [k, v] of Object.entries(product.rnp?.cells || {})) if (k.startsWith(pre) && !seen.has(k.slice(pre.length))) { const n = toNum(v); if (!isNaN(n)) sum += n; }
   return sum;
 }
-const RNP_COLORS = { orders: "#16a34a", orderSum: "#16a34a", drr: "#b45309", sales: "#0d9488", internal: "#2563eb", vykupy: "#16a34a", bloggers: "#db2777", razdachi: "#d97706", stars: "#7c3aed", wibes: "#0891b2", promo: "#ea580c", ab: "#64748b" };
+const RNP_COLORS = { orders: "#16a34a", orderSum: "#16a34a", priceBefore: "#16a34a", priceAfter: "#16a34a", priceDisc: "#16a34a", drr: "#b45309", sales: "#0d9488", internal: "#2563eb", vykupy: "#16a34a", bloggers: "#db2777", razdachi: "#d97706", stars: "#7c3aed", wibes: "#0891b2", promo: "#ea580c", ab: "#64748b" };
 // дашборд «Контент» — чек-лист готовности карточки
 const CONTENT_ITEMS = [
   { id: "main", label: "Главный слайд" },
@@ -1837,7 +1858,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     const addD = (ds, n) => { const d = new Date(ds + "T00:00:00"); d.setDate(d.getDate() + n); return iso(d); };
     const today = new Date(); today.setHours(0, 0, 0, 0); const todayStr = iso(today);
     const allDays = []; { const cur = new Date(rnpStartDate + "T00:00:00"); for (let i = 0; i < rnpDays && cur <= today; i++) { allDays.push(iso(cur)); cur.setDate(cur.getDate() + 1); } }
-    const todo = allDays.filter((day) => !(wbOrdSumMeta[day] && wbOrdSumMeta[day] >= addD(day, 3)));
+    const oldFmt = wbOrdSumMeta.__v !== 2; // v2: добавлены цена после СПП и число заказов — один раз перезагружаем весь период
+    const todo = allDays.filter((day) => oldFmt || !(wbOrdSumMeta[day] && wbOrdSumMeta[day] >= addD(day, 3)));
     if (!todo.length) return;
     const dateFrom = todo[0];
     try {
@@ -1851,7 +1873,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       if (!data) return;
       const next = {}; for (const [k, v] of Object.entries(wbOrdSum)) { if ((k.split(":")[1] || "") < dateFrom) next[k] = v; }
       Object.assign(next, data);
-      const meta = { ...wbOrdSumMeta }; for (const d of allDays) if (d >= dateFrom) meta[d] = todayStr;
+      const meta = { ...wbOrdSumMeta }; if (Object.keys(data).some((k) => k.endsWith(":n"))) meta.__v = 2; /* v2 только если функция уже задеплоена */ for (const d of allDays) if (d >= dateFrom) meta[d] = todayStr;
       setWbOrdSum(next); setWbOrdSumMeta(meta);
       try { await Promise.all([upsertSetting("wbOrdSum", next), upsertSetting("wbOrdSumMeta", meta)]); syncedRef.current.settings.wbOrdSum = JSON.stringify(next); syncedRef.current.settings.wbOrdSumMeta = JSON.stringify(meta); } catch (_) {}
     } catch (e) { console.warn("[WB] сумма заказов не загрузилась:", e); }

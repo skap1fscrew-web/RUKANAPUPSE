@@ -1,5 +1,6 @@
 // Supabase Edge Function — сумма заказов по дням (WB Statistics API, заказы).
-// POST { apiKey, dateFrom: "YYYY-MM-DD" } → { "артикул:YYYY-MM-DD": ₽, "nmId:YYYY-MM-DD": ₽ }
+// POST { apiKey, dateFrom: "YYYY-MM-DD" } → { "артикул:YYYY-MM-DD": ₽, "nmId:YYYY-MM-DD": ₽,
+//   "…:YYYY-MM-DD:f": ₽ (сумма finishedPrice — цена покупателя после СПП), "…:YYYY-MM-DD:n": число заказов }
 // Сумма = priceWithDisc (цена с учётом скидки продавца, до СПП) по неотменённым заказам.
 // WB: GET /api/v1/supplier/orders?dateFrom=…&flag=0. Лимит — 1 запрос в минуту.
 // Деплой: supabase functions deploy wb-orders-sum --no-verify-jwt
@@ -31,10 +32,13 @@ serve(async (req) => {
       if (!date || date < dateFrom) continue; // дни до dateFrom пришли неполными
       const sum = Number(x.priceWithDisc ?? x.finishedPrice);
       if (!isFinite(sum)) continue;
+      const fin = Number(x.finishedPrice);
       for (const key of [x.supplierArticle, x.nmId]) {
         if (!key) continue;
         const k = `${key}:${date}`;
         out[k] = Math.round(((out[k] || 0) + sum) * 100) / 100;
+        if (isFinite(fin)) out[k + ":f"] = Math.round(((out[k + ":f"] || 0) + fin) * 100) / 100;
+        out[k + ":n"] = (out[k + ":n"] || 0) + 1;
       }
     }
     return json(out);
