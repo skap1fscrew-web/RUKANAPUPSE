@@ -9896,7 +9896,7 @@ function SummaryDonut({ parts, total, label }) {
   );
 }
 const SUM_OZ = ["#1e40af", "#2563eb", "#60a5fa", "#bfdbfe"];
-const sumK = (v) => (v / 1000).toFixed(2); // тыс ₽ с двумя знаками: 167.40
+const sumK = (v) => (v / 1000).toFixed(3); // рубли, тысячи через точку, всегда три знака: 167.300
 const sumShort = (v) => v >= 1e6 ? (Math.round(v / 1e5) / 10).toLocaleString("ru-RU") + "м" : v >= 1000 ? Math.round(v / 1000) + "к" : String(Math.round(v));
 // Универсальный линейный график сводки: series = [{ vals, color, labels }]
 function SumLineChart({ days, series, labelEvery = 1, gid = "c", mode = "both" }) {
@@ -10081,7 +10081,7 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
               <div className="ml-auto flex flex-wrap items-center gap-2">{ozSer === "orders" && <Seg items={[["pcs", "Только шт"], ["both", "Шт + ₽"], ["rub", "Только ₽"]]} value={lab} onChange={setLab} />}<Seg items={[["orders", "Заказы"], ["rev", "Выручка"], ["ad", "Реклама"]]} value={ozSer} onChange={setOzSer} /></div>
             </div>
             <SumLineChart days={days} series={[{ vals: ser.vals, color: ser.color, labels: true, sub: ser.sub }]} labelEvery={labelEvery2} gid="oz" mode={lab} />
-            <div className="mt-1 text-[11px] text-neutral-400">Данные Озон за последние 30 дней, обновляются при открытии сводки. Заказы без отменённых; суммы в тыс ₽ — до соинвеста (цена продавца).</div>
+            <div className="mt-1 text-[11px] text-neutral-400">Данные Озон за последние 30 дней, обновляются при открытии сводки. Заказы без отменённых; суммы в рублях (167.300 = 167 300 ₽) — до соинвеста (цена продавца).</div>
           </div>
           <div className="flex flex-col gap-3"><Struct title="Структура заказов" parts={ozParts} total={ozTotO} label="заказов" /></div>
         </div>
@@ -10160,7 +10160,7 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
             {showS && data.sd.map((v, i) => <g key={"s" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#14b8a6" strokeWidth="2" />{i % labelEvery === 0 && <PtLabel x={x(i)} y={y(v)} v={v} sum={data.ss[i]} mode={lab} color="#0f766e" />}</g>)}
             {days.map((d, i) => i % labelEvery === 0 && <text key={d.key} x={x(i)} y={H - 8} fontSize="11" textAnchor="middle" fill="#a3a3a3">{d.n}</text>)}
           </svg>
-          <div className="mt-1 text-[11px] text-neutral-400">Суммы на графике — в тыс ₽: заказы по цене до СПП, выкупы — оценка (выкупы × средняя цена до СПП). Данные из РНП: если период длиннее загруженного в РНП, дни вне него будут пустыми. Обновить заказы можно в РНП (↻ у строки «Заказы»).</div>
+          <div className="mt-1 text-[11px] text-neutral-400">Суммы на графике — в рублях (167.300 = 167 300 ₽): заказы по цене до СПП, выкупы — оценка (выкупы × средняя цена до СПП). Данные из РНП: если период длиннее загруженного в РНП, дни вне него будут пустыми. Обновить заказы можно в РНП (↻ у строки «Заказы»).</div>
         </div>
         <div className="flex flex-col gap-3">
           <Seg items={[["product", "Товары"], ["subject", "Предметы"]]} value={cut} onChange={setCut} />
