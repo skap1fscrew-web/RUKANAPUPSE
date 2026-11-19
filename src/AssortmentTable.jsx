@@ -6758,8 +6758,8 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
           </div>
           {product.image && <button onClick={(e) => { e.stopPropagation(); onSetField && onSetField("image", null); }} title="Удалить фото" className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/55 p-0.5 text-white hover:bg-red-600 group-hover:block"><X size={11} /></button>}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5 min-h-[92px]">
-          <div className="-ml-1.5 -mb-1 flex h-[18px] items-center">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 py-0.5 min-h-[92px]">
+          <div className="-ml-1.5 -mb-1.5 flex h-[18px] items-center">
             <input value={product.code || ""} onChange={(e) => onSetField("code", e.target.value)} placeholder="код" style={{ width: Math.max(String(product.code || "").length, 3) + 2.4 + "ch" }} className={"h-[18px] rounded-md border border-transparent bg-transparent px-1.5 text-[13px] leading-none outline-none transition placeholder:font-semibold placeholder:text-neutral-400 hover:bg-neutral-100 focus:border-neutral-300 focus:bg-neutral-100 " + (product.code ? "font-semibold text-neutral-500 hover:border-neutral-200" : "font-semibold text-neutral-500 hover:border-dashed hover:border-neutral-200")} />
           </div>
           <input
