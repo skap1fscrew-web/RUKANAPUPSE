@@ -9896,10 +9896,11 @@ function SummaryDonut({ parts, total, label }) {
   );
 }
 const SUM_OZ = ["#1e40af", "#2563eb", "#60a5fa", "#bfdbfe"];
+const sumK = (v) => (v / 1000).toFixed(2); // тыс ₽ с двумя знаками: 167.40
 const sumShort = (v) => v >= 1e6 ? (Math.round(v / 1e5) / 10).toLocaleString("ru-RU") + "м" : v >= 1000 ? Math.round(v / 1000) + "к" : String(Math.round(v));
 // Универсальный линейный график сводки: series = [{ vals, color, labels }]
-function SumLineChart({ days, series, labelEvery = 1, gid = "c" }) {
-  const W = 1000, H = 330, padL = 46, padR = 24, padT = 28, padB = 28;
+function SumLineChart({ days, series, labelEvery = 1, gid = "c", mode = "both" }) {
+  const W = 1000, H = 330, padL = 52, padR = 28, padT = 40, padB = 28;
   const mxRaw = Math.max(1, ...series.flatMap((sr) => sr.vals));
   const mag = Math.pow(10, Math.floor(Math.log10(mxRaw)));
   const step = [1, 2, 5, 10].map((m) => m * mag).find((st) => mxRaw / st <= 5) || mag * 10;
@@ -9913,7 +9914,7 @@ function SumLineChart({ days, series, labelEvery = 1, gid = "c" }) {
       {grid.map((v) => <g key={v}><line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="#eee" /><text x={0} y={y(v) + 4} fontSize="11" fill="#a3a3a3">{sumShort(v)}</text></g>)}
       {series.map((sr, k) => <path key={"a" + k} d={`${sumPath(sr.vals, x, y)} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)}Z`} fill={`url(#${gid}${k})`} />)}
       {series.map((sr, k) => <path key={"l" + k} d={sumPath(sr.vals, x, y)} fill="none" stroke={sr.color} strokeWidth="3" strokeLinecap="round" />)}
-      {series.map((sr, k) => sr.vals.map((v, i) => <g key={k + "p" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke={sr.color} strokeWidth="2" />{sr.labels && i % labelEvery === 0 && <text x={x(i)} y={y(v) - 10} fontSize="12" fontWeight="700" textAnchor="middle" fill={sr.color}>{sumShort(v)}</text>}</g>))}
+      {series.map((sr, k) => sr.vals.map((v, i) => <g key={k + "p" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke={sr.color} strokeWidth="2" />{sr.labels && i % labelEvery === 0 && (sr.sub ? <g fontWeight="700" textAnchor="middle" stroke="#fff" strokeWidth="4" paintOrder="stroke">{mode !== "rub" && <text x={x(i)} y={y(v) - (mode === "both" ? 26 : 12)} fontSize="14" fill={sr.color}>{v}</text>}{mode !== "pcs" && <text x={x(i)} y={y(v) - (mode === "both" ? 12 : 12)} fontSize={mode === "rub" ? 13 : 10.5} fill={mode === "rub" ? sr.color : "#525252"}>{sr.sub[i]}</text>}</g> : <text x={x(i)} y={y(v) - 10} fontSize="12" fontWeight="700" textAnchor="middle" fill={sr.color}>{sumShort(v)}</text>)}</g>))}
       {days.map((d, i) => i % labelEvery === 0 && <text key={d.key} x={x(i)} y={H - 6} fontSize="11" textAnchor="middle" fill="#a3a3a3">{d.n}</text>)}
     </svg>
   );
@@ -9925,17 +9926,26 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
   const [span, setSpan] = useState(() => lsGet("sum.span", 14));
   const [cut, setCut] = useState(() => lsGet("sum.cut", "product"));
   const [ser, setSer] = useState("both");
+  const [lab, setLab] = useState(() => { const v = lsGet("sum.lab", "both"); return v === "pcs" || v === "rub" ? v : "both"; }); // подписи на графике: шт · шт + ₽ · ₽
+  useEffect(() => lsSet("sum.lab", lab), [lab]);
   useEffect(() => lsSet("sum.span", span), [span]);
   useEffect(() => lsSet("sum.cut", cut), [cut]);
   const iso = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   const days = useMemo(() => { const out = []; const t = new Date(); t.setHours(0, 0, 0, 0); for (let i = span - 1; i >= 0; i--) { const d = new Date(t); d.setDate(d.getDate() - i); out.push({ key: iso(d), n: d.getDate() }); } return out; }, [span]);
   const data = useMemo(() => {
     const per = products.map((p) => {
-      let o = 0, s = 0; const od = [], sd = [];
-      for (const d of days) { const a = rnpWbCount({ id: "orders" }, p, d.key, wbOrders) || 0, b = rnpWbCount({ src: "sales" }, p, d.key, wbOrders) || 0; o += a; s += b; od.push(a); sd.push(b); }
-      return { p, o, s, od, sd };
+      let o = 0, s = 0; const od = [], sd = [], os = [], ss = [];
+      let sumAll = 0, nAll = 0; for (const d of days) { sumAll += rnpOrderSum(p, d.key); nAll += rnpOrdN(p, d.key); }
+      const avg = nAll > 0 ? sumAll / nAll : 0; // средняя цена до СПП за период — на дни без заказов
+      for (const d of days) {
+        const a = rnpWbCount({ id: "orders" }, p, d.key, wbOrders) || 0, b = rnpWbCount({ src: "sales" }, p, d.key, wbOrders) || 0;
+        const n = rnpOrdN(p, d.key), pr = n > 0 ? rnpOrderSum(p, d.key) / n : avg;
+        o += a; s += b; od.push(a); sd.push(b); os.push(rnpOrderSum(p, d.key)); ss.push(b * pr);
+      }
+      return { p, o, s, od, sd, os, ss };
     });
-    return { per, od: days.map((_, i) => per.reduce((x, r) => x + r.od[i], 0)), sd: days.map((_, i) => per.reduce((x, r) => x + r.sd[i], 0)) };
+    const col = (k) => days.map((_, i) => per.reduce((x, r) => x + r[k][i], 0));
+    return { per, od: col("od"), sd: col("sd"), os: col("os"), ss: col("ss") };
   }, [products, wbOrders, days]);
   const wayTot = useMemo(() => {
     const t = { to: 0, from: 0, toSum: 0, fromSum: 0, st: 0, stSum: 0, byTo: [], byFrom: [], bySt: [] };
@@ -9966,7 +9976,9 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
       </div>
     </div>
   );
+  const sumA0 = (a) => a.reduce((x2, y2) => x2 + y2, 0);
   const totO = data.od.reduce((a, b) => a + b, 0), totS = data.sd.reduce((a, b) => a + b, 0);
+  const PtLabel = ({ x: lx, y: ly, v, sum, mode, up, color }) => { const both = mode === "both", dy1 = up ? (both ? -26 : -10) : (both ? 22 : 20), dy2 = up ? -12 : 36; return (<g fontWeight="700" textAnchor="middle" stroke="#fff" strokeWidth="4" paintOrder="stroke">{mode !== "rub" && <text x={lx} y={ly + dy1} fontSize={both ? 14 : 12} fill={color}>{v}</text>}{mode !== "pcs" && <text x={lx} y={mode === "rub" ? ly + (up ? -10 : 20) : ly + dy2 + (up ? 0 : -1)} fontSize={mode === "rub" ? 12 : 10.5} fill={mode === "rub" ? color : "#525252"}>{sumK(sum)}</text>}</g>); };
   // структура: топ-4 + «Остальные»
   const group = (key, colors) => {
     const m = new Map();
@@ -9979,7 +9991,7 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
   };
   const partsO = group("o", SUM_GO), partsS = group("s", SUM_GS);
   // график
-  const W = 1000, H = 380, padL = 38, padR = 24, padT = 30, padB = 30;
+  const W = 1000, H = 420, padL = 52, padR = 28, padT = 44, padB = 44;
   const mxRaw = Math.max(1, ...(ser === "sales" ? data.sd : ser === "orders" ? data.od : [...data.od, ...data.sd]));
   const step = mxRaw <= 10 ? 2 : mxRaw <= 40 ? 10 : mxRaw <= 100 ? 20 : mxRaw <= 250 ? 50 : 100;
   const mx = Math.ceil(mxRaw * 1.12 / step) * step;
@@ -10051,7 +10063,7 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
         <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-500">Озон не подключён. Добавьте ключи: Настройки → Озон.</div>
       </div>
     );
-    const ser = ozSer === "rev" ? { vals: ozRd, tot: fmtMoney(ozTotR), name: "выручка", color: "#0ea5e9" } : ozSer === "ad" ? { vals: ozAdd, tot: fmtMoney(ozTotA), name: "реклама", color: "#ea580c" } : { vals: ozOd, tot: ozTotO.toLocaleString("ru-RU"), name: "заказов", color: OZ_C };
+    const ser = ozSer === "rev" ? { vals: ozRd, tot: fmtMoney(ozTotR), name: "выручка", color: "#0ea5e9" } : ozSer === "ad" ? { vals: ozAdd, tot: fmtMoney(ozTotA), name: "реклама", color: "#ea580c" } : { vals: ozOd, tot: ozTotO.toLocaleString("ru-RU"), name: "заказов", color: OZ_C, sub: ozRd.map(sumK) };
     return (
       <div className="space-y-3">{hdr}
         <div className="flex flex-wrap items-stretch gap-3">
@@ -10066,10 +10078,10 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
               <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: OZ_C }}>{ozTotO.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">заказов</span></div>
               <div><b className="block text-3xl font-extrabold tabular-nums text-sky-500">{fmtMoney(ozTotR)}</b><span className="text-xs text-neutral-500">выручка</span></div>
               <div><b className="block text-3xl font-extrabold tabular-nums text-orange-600">{ozDrr != null ? String(ozDrr).replace(".", ",") + "%" : "—"}</b><span className="text-xs text-neutral-500">{ozAd ? `ДРР · реклама ${fmtMoney(ozTotA)}` : "ДРР · реклама не подключена"}</span></div>
-              <div className="ml-auto"><Seg items={[["orders", "Заказы"], ["rev", "Выручка"], ["ad", "Реклама"]]} value={ozSer} onChange={setOzSer} /></div>
+              <div className="ml-auto flex flex-wrap items-center gap-2">{ozSer === "orders" && <Seg items={[["pcs", "Только шт"], ["both", "Шт + ₽"], ["rub", "Только ₽"]]} value={lab} onChange={setLab} />}<Seg items={[["orders", "Заказы"], ["rev", "Выручка"], ["ad", "Реклама"]]} value={ozSer} onChange={setOzSer} /></div>
             </div>
-            <SumLineChart days={days} series={[{ vals: ser.vals, color: ser.color, labels: true }]} labelEvery={labelEvery2} gid="oz" />
-            <div className="mt-1 text-[11px] text-neutral-400">Данные Озон за последние 30 дней, обновляются при открытии сводки. Заказы без отменённых.</div>
+            <SumLineChart days={days} series={[{ vals: ser.vals, color: ser.color, labels: true, sub: ser.sub }]} labelEvery={labelEvery2} gid="oz" mode={lab} />
+            <div className="mt-1 text-[11px] text-neutral-400">Данные Озон за последние 30 дней, обновляются при открытии сводки. Заказы без отменённых; суммы в тыс ₽ — до соинвеста (цена продавца).</div>
           </div>
           <div className="flex flex-col gap-3"><Struct title="Структура заказов" parts={ozParts} total={ozTotO} label="заказов" /></div>
         </div>
@@ -10128,11 +10140,11 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
         <div className="rounded-2xl border border-neutral-200 bg-white p-5">
           <div className="mb-1 flex flex-wrap items-start gap-4">
             <div className="flex gap-8">
-              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#16a34a" }}>{totO.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">заказов</span></div>
-              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#0d9488" }}>{totS.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">выкупов</span></div>
+              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#16a34a" }}>{totO.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">заказов</span><span className="block text-sm font-bold tabular-nums text-neutral-700">{fmtMoney(sumA0(data.os))}</span></div>
+              <div><b className="block text-3xl font-extrabold tabular-nums" style={{ color: "#0d9488" }}>{totS.toLocaleString("ru-RU")}</b><span className="text-xs text-neutral-500">выкупов</span><span className="block text-sm font-bold tabular-nums text-neutral-700">≈ {fmtMoney(sumA0(data.ss))}</span></div>
               <div><b className="block text-3xl font-extrabold tabular-nums text-neutral-800">{totO > 0 ? (Math.round(totS / totO * 1000) / 10).toLocaleString("ru-RU") + "%" : "—"}</b><span className="text-xs text-neutral-500">выкуп к заказам</span></div>
             </div>
-            <div className="ml-auto"><Seg items={[["both", "Оба"], ["orders", "Заказы"], ["sales", "Выкупы"]]} value={ser} onChange={setSer} /></div>
+            <div className="ml-auto flex flex-wrap items-center gap-2"><Seg items={[["pcs", "Только шт"], ["both", "Шт + ₽"], ["rub", "Только ₽"]]} value={lab} onChange={setLab} /><Seg items={[["both", "Оба"], ["orders", "Заказы"], ["sales", "Выкупы"]]} value={ser} onChange={setSer} /></div>
           </div>
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 420 }}>
             <defs>
@@ -10144,11 +10156,11 @@ function SummaryTab({ products = [], wbOrders = {}, way = null, wayLoading = fal
             {showS && <path d={`${sumPath(data.sd, x, y)} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)}Z`} fill="url(#sumGb)" />}
             {showO && <path d={sumPath(data.od, x, y)} fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" />}
             {showS && <path d={sumPath(data.sd, x, y)} fill="none" stroke="#14b8a6" strokeWidth="3" strokeLinecap="round" />}
-            {showO && data.od.map((v, i) => <g key={"o" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#22c55e" strokeWidth="2" />{i % labelEvery === 0 && <text x={x(i)} y={y(v) - 10} fontSize="12" fontWeight="700" textAnchor="middle" fill="#171717">{v}</text>}</g>)}
-            {showS && data.sd.map((v, i) => <g key={"s" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#14b8a6" strokeWidth="2" />{i % labelEvery === 0 && <text x={x(i)} y={y(v) + 20} fontSize="12" fontWeight="700" textAnchor="middle" fill="#0d9488">{v}</text>}</g>)}
-            {days.map((d, i) => i % labelEvery === 0 && <text key={d.key} x={x(i)} y={H - 6} fontSize="11" textAnchor="middle" fill="#a3a3a3">{d.n}</text>)}
+            {showO && data.od.map((v, i) => <g key={"o" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#22c55e" strokeWidth="2" />{i % labelEvery === 0 && <PtLabel x={x(i)} y={y(v)} v={v} sum={data.os[i]} mode={lab} up color="#15803d" />}</g>)}
+            {showS && data.sd.map((v, i) => <g key={"s" + i}><circle cx={x(i)} cy={y(v)} r="3.5" fill="#fff" stroke="#14b8a6" strokeWidth="2" />{i % labelEvery === 0 && <PtLabel x={x(i)} y={y(v)} v={v} sum={data.ss[i]} mode={lab} color="#0f766e" />}</g>)}
+            {days.map((d, i) => i % labelEvery === 0 && <text key={d.key} x={x(i)} y={H - 8} fontSize="11" textAnchor="middle" fill="#a3a3a3">{d.n}</text>)}
           </svg>
-          <div className="mt-1 text-[11px] text-neutral-400">Данные из РНП: если период длиннее загруженного в РНП, дни вне него будут пустыми. Обновить заказы можно в РНП (↻ у строки «Заказы»).</div>
+          <div className="mt-1 text-[11px] text-neutral-400">Суммы на графике — в тыс ₽: заказы по цене до СПП, выкупы — оценка (выкупы × средняя цена до СПП). Данные из РНП: если период длиннее загруженного в РНП, дни вне него будут пустыми. Обновить заказы можно в РНП (↻ у строки «Заказы»).</div>
         </div>
         <div className="flex flex-col gap-3">
           <Seg items={[["product", "Товары"], ["subject", "Предметы"]]} value={cut} onChange={setCut} />
