@@ -3164,7 +3164,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (!cp) return null;
         return (
           <CardTasksModal
-            msData={msData} msReady={!!(msCfg && msCfg.token)} msLoading={msLoading} onFetchMs={() => { fetchMs(); }}
+            msData={msData} msReady={!!(msCfg && msCfg.token)} msLoading={msLoading} onFetchMs={() => { fetchMs(); }} ozStockData={ozData} wbWayData={wbWay}
             product={withConst(cp)}
             rating={wbRating[String(cp.wb || "").trim()] || null}
             statuses={statuses}
@@ -6589,7 +6589,17 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
   );
 }
 
-function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, rating = null, msData = null, msReady = false, msLoading = false, onFetchMs, onClose }) {
+function stockSrc(product, msData, ozStockData, wbWayData) {
+  const pc = String(product.code || "").trim();
+  const msRows = msData && msData.items && pc ? msData.items.filter((it) => String(it.code || "").split("_")[0].trim() === pc) : [];
+  const ms = msRows.reduce((a, x) => a + (x.stock || 0), 0);
+  const wbw = wbWayData && wbWayData.items ? (wbWayData.items[pc] || wbWayData.items[String(product.wb || "")]) : null;
+  const wb = wbw ? (wbw.st || 0) : 0;
+  const oz = ozStockData && ozStockData.stock && ozStockData.stock.codes && pc ? (ozStockData.stock.codes[pc] || 0) : 0;
+  return { pc, msRows, ms, wb, oz, all: ms + wb + oz, hasMs: msRows.length > 0, hasWb: !!wbw, hasOz: !!(ozStockData && ozStockData.stock) };
+}
+
+function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, rating = null, msData = null, msReady = false, msLoading = false, onFetchMs, ozStockData = null, wbWayData = null, onClose }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [wbEdit, setWbEdit] = useState(false);
   const [ratesEdit, setRatesEdit] = useState(false);
@@ -7139,32 +7149,35 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
               </button>
 
               {(() => {
-                const pc = String(product.code || "").trim();
-                const rows = (msData && msData.items && pc ? msData.items.filter((it) => String(it.code || "").split("_")[0].trim() === pc) : []);
+                const src = stockSrc(product, msData, ozStockData, wbWayData);
+                const pc = src.pc, rows = src.msRows;
                 const SZ = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"];
-                const szOf = (it) => { const sfx = String(it.code || "").split("_")[1] || ""; const m = /\((\d+)\)/.exec(it.name || ""); return { k: sfx || "—", n: m ? m[1] : "" }; };
+                const szOf = (it) => { const sfx = String(it.code || "").split("_")[1] || ""; return { k: sfx || "—" }; };
                 const srt = rows.map((it) => ({ ...it, sz: szOf(it) })).sort((a, b) => (SZ.indexOf(a.sz.k) < 0 ? 99 : SZ.indexOf(a.sz.k)) - (SZ.indexOf(b.sz.k) < 0 ? 99 : SZ.indexOf(b.sz.k)) || a.sz.k.localeCompare(b.sz.k));
-                const tot = srt.reduce((a, x) => a + (x.stock || 0), 0);
+                const tot = src.all;
                 const lvl = (n) => n <= 0 ? ["#dc2626", "#fee2e2"] : n <= 5 ? ["#c2410c", "#ffedd5"] : ["#15803d", "#dcfce7"];
                 const isoD = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
                 let o7 = 0; for (let i = 0; i < 7; i++) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); o7 += rnpWbCount(RNP_TASKS[0], product, isoD(d), wbOrders || {}); }
                 const days = tot > 0 && o7 > 0 ? Math.round(tot / (o7 / 7)) : null;
                 const warn = srt.length > 0 && srt.some((x) => (x.stock || 0) <= 5);
-                const none = !msReady || !pc || srt.length === 0;
+                const none = !pc || (!src.hasMs && src.wb === 0 && src.oz === 0);
+                const parts = [["Склад", src.ms, "#16a34a"], ["WB", src.wb, "#cb11ab"], ["Озон", src.oz, "#005bff"]];
                 return (
                   <button onClick={() => setFullBlock("stock")} className={"group relative flex h-full flex-col rounded-2xl border p-4 text-left transition hover:shadow-sm " + (none ? "border-neutral-200 bg-white hover:border-orange-300" : warn ? "border-orange-200 bg-gradient-to-b from-white to-orange-50/50 hover:border-orange-300" : "border-neutral-200 bg-white hover:border-orange-300")}>
                     <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-orange-500" />
-                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-500" /> Остатки · МС</div>
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-500" /> Остатки</div>
                     {none ? (
                       <>
                         <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">—</div>
-                        <div className="text-[11px] text-neutral-400">{!msReady ? "МойСклад не подключён" : !pc ? "у товара нет кода" : msData ? "нет в МойСклад (по коду " + pc + ")" : "загружается…"}</div>
+                        <div className="text-[11px] text-neutral-400">{!pc ? "у товара нет кода" : !msReady && !src.hasWb && !src.hasOz ? "источники не подключены" : "остатков не найдено (код " + pc + ")"}</div>
                       </>
                     ) : (
                       <>
                         <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{tot} <span className="text-base font-semibold text-neutral-400">шт</span></div>
-                        <div className="text-[11px] text-neutral-400">на нашем складе{days !== null ? " · хватит на ~" + days + " дн." : ""}</div>
-                        <div className="mt-2 flex flex-wrap gap-1">{srt.slice(0, 8).map((x) => { const [c, bg] = lvl(x.stock || 0); return (<span key={x.id} className="rounded-md px-1.5 py-0.5 text-[11px] font-bold" style={{ color: c, background: bg }}>{x.sz.k} {x.stock || 0}</span>); })}</div>
+                        <div className="text-[11px] text-neutral-400">всего{days !== null ? " · хватит на ~" + days + " дн." : ""}</div>
+                        {tot > 0 && <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-neutral-100">{parts.map(([n, v, c]) => v > 0 ? <div key={n} style={{ width: (v / tot * 100) + "%", background: c }} /> : null)}</div>}
+                        <div className="mt-1.5 flex flex-wrap gap-x-2 text-[11px] text-neutral-500">{parts.map(([n, v, c]) => <span key={n}><i className="mr-0.5 inline-block h-1.5 w-1.5 rounded-full" style={{ background: c }} />{n} {v}</span>)}</div>
+                        {srt.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{srt.slice(0, 8).map((x) => { const [c, bg] = lvl(x.stock || 0); return (<span key={x.id} className="rounded-md px-1.5 py-0.5 text-[11px] font-bold" style={{ color: c, background: bg }}>{x.sz.k} {x.stock || 0}</span>); })}</div>}
                       </>
                     )}
                   </button>
@@ -7201,6 +7214,19 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                       const col = (n) => n <= 0 ? "#dc2626" : n <= 5 ? "#c2410c" : "#15803d";
                       return (
                         <div>
+                          {(() => { const sr = stockSrc(product, msData, ozStockData, wbWayData); return (
+                            <div className="mb-4">
+                              <div className="grid grid-cols-3 gap-2">
+                                {[["Наш склад · МС", sr.ms, "#16a34a", sr.hasMs], ["Wildberries", sr.wb, "#cb11ab", sr.hasWb], ["Озон", sr.oz, "#005bff", sr.hasOz]].map(([n, v, c, has]) => (
+                                  <div key={n} className="rounded-xl border border-neutral-200 p-3">
+                                    <div className="text-[11px] font-bold text-neutral-500"><i className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: c }} />{n}</div>
+                                    <div className="text-2xl font-extrabold tabular-nums text-neutral-900">{has ? v : "—"} <span className="text-xs font-semibold text-neutral-400">{has ? "шт" : "нет данных"}</span></div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="mt-2 flex flex-wrap items-center gap-x-4 rounded-xl bg-neutral-50 px-3 py-2 text-sm"><b>Всего {sr.all} шт</b><span className="text-[11px] text-neutral-400">WB и Озон отдают остаток по товару целиком, без разбивки по размерам</span></div>
+                            </div>
+                          ); })()}
                           <div className="mb-3 flex items-center gap-2">
                             <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-700">МойСклад · {(msData && msData.store) || "НАШ СКЛАД / ОДЕЖДА"}</span>
                             <span className="ml-auto text-[11px] text-neutral-400">{msData && msData.updatedAt ? "обновлено " + new Date(msData.updatedAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</span>
