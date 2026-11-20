@@ -2013,7 +2013,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       try {
         const nmIds = [...new Set(products.map((p) => parseInt(p.wb)).filter((n) => n > 0))];
         if (nmIds.length) {
-          const fdata = {}; let ws = dateFrom;
+          const fdata = {}; let ws = dateFrom > addD(todayStr, -7) ? dateFrom : addD(todayStr, -7); /* аналитика WB отдаёт историю только за последние 7 дней */
           while (ws <= todayStr) {
             let we = addD(ws, 6); if (we > todayStr) we = todayStr;
             let part = null;
