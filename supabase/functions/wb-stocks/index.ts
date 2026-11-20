@@ -34,7 +34,7 @@ serve(async (req) => {
         headers: { Authorization: apiKey, "Content-Type": "application/json" },
         body: JSON.stringify({
           currentPeriod: { start: today, end: today },
-          stockType: "",
+          stockType: "wb", // только склады WB (как в кабинете «Склад WB»); «mp» — свой склад продавца, он уже в МойСклад
           skipDeletedNm: true,
           orderBy: { field: "stockCount", mode: "desc" },
           availabilityFilters: [],
