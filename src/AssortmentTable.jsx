@@ -1274,16 +1274,23 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     if (!c.token) { setMsMsg("Нет токена МойСклад"); return; }
     setMsLoading(true); setMsMsg("");
     try {
-      const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/ms-stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: c.token }) });
+      const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/ms-stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: c.token, codes: [...new Set((products || []).map((x) => String(x.code || "").trim()).filter(Boolean))] }) });
       const data = await resp.json().catch(() => null);
       if (!resp.ok) throw new Error((data && data.error) || ("ms-stock " + resp.status));
       if (!data || !data.items) throw new Error("пустой ответ");
       setMsData(data);
       try { await upsertSetting("msStock", data); } catch (_) {}
-      setMsMsg(data.errors && data.errors.length ? "Частично: " + String(data.errors[0]).slice(0, 140) : "✓ загружено позиций: " + data.count + ", складов: " + (data.stores || []).length);
+      setMsMsg(data.errors && data.errors.length ? "Частично: " + String(data.errors[0]).slice(0, 140) : "✓ загружено позиций: " + data.count + " (склад: " + (data.store || "") + ")");
     } catch (e) { setMsMsg("МойСклад: " + (e.message || e)); }
     setMsLoading(false);
   };
+  const msTriedRef = useRef(0);
+  useEffect(() => {
+    if (!loaded || msLoading || !(msCfg && msCfg.token)) return;
+    const stale = !msData || msData.v !== 2 || !msData.updatedAt || Date.now() - new Date(msData.updatedAt).getTime() > 60 * 60 * 1000;
+    if (stale && Date.now() - msTriedRef.current > 5 * 60 * 1000) { msTriedRef.current = Date.now(); fetchMs(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, msData, msCfg]);
   const [wbAdSpend, setWbAdSpend] = useState({}); // { "nmId:YYYY-MM-DD": ₽ } факт внутренней рекламы
   const [wbAdMeta, setWbAdMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbAdLoading, setWbAdLoading] = useState(false);
@@ -3157,6 +3164,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (!cp) return null;
         return (
           <CardTasksModal
+            msData={msData} msReady={!!(msCfg && msCfg.token)} msLoading={msLoading} onFetchMs={() => { fetchMs(); }}
             product={withConst(cp)}
             rating={wbRating[String(cp.wb || "").trim()] || null}
             statuses={statuses}
@@ -6581,7 +6589,7 @@ function SizesBoard({ sizes = [], oneSize, oneLabel, onSizesSet, onSetOneSize, o
   );
 }
 
-function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, rating = null, onClose }) {
+function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpdateJob, statuses = [], onSetName, onSetTasks, onSetCompetitors, onSetSeasonality, analyticsCriteria = [], onSetCriteria, onSetAnalytics, onSizesSet, onSetOneSize, onSetOneLabel, onSetField, subjects = [], unitConst = {}, onSetUnitConst, productList, onCalEntry, onCalStart, onCalName, onCalComponents, onCalBuffer, onCalCopyFrom, hiddenTasks, rnpStartDate, rnpDays, onSetRnpStartDate, onSetRnpDays, onSetRnpCell, onSetRnpEntries, onSetRnpFill, onSetRnpFlag, onSetRnpBudget, onToggleTask, rnpOrder = [], onSetRnpOrder, purchaseBatches = [], onSetBatchItemFields, onOpenPopup, onOpenDB, wbOrders, wbLoading, wbProgress, onFetchWb, rating = null, msData = null, msReady = false, msLoading = false, onFetchMs, onClose }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [wbEdit, setWbEdit] = useState(false);
   const [ratesEdit, setRatesEdit] = useState(false);
@@ -7129,14 +7137,47 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                   </>
                 )}
               </button>
+
+              {(() => {
+                const pc = String(product.code || "").trim();
+                const rows = (msData && msData.items && pc ? msData.items.filter((it) => String(it.code || "").split("_")[0].trim() === pc) : []);
+                const SZ = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+                const szOf = (it) => { const sfx = String(it.code || "").split("_")[1] || ""; const m = /\((\d+)\)/.exec(it.name || ""); return { k: sfx || "—", n: m ? m[1] : "" }; };
+                const srt = rows.map((it) => ({ ...it, sz: szOf(it) })).sort((a, b) => (SZ.indexOf(a.sz.k) < 0 ? 99 : SZ.indexOf(a.sz.k)) - (SZ.indexOf(b.sz.k) < 0 ? 99 : SZ.indexOf(b.sz.k)) || a.sz.k.localeCompare(b.sz.k));
+                const tot = srt.reduce((a, x) => a + (x.stock || 0), 0);
+                const lvl = (n) => n <= 0 ? ["#dc2626", "#fee2e2"] : n <= 5 ? ["#c2410c", "#ffedd5"] : ["#15803d", "#dcfce7"];
+                const isoD = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+                let o7 = 0; for (let i = 0; i < 7; i++) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); o7 += rnpWbCount(RNP_TASKS[0], product, isoD(d), wbOrders || {}); }
+                const days = tot > 0 && o7 > 0 ? Math.round(tot / (o7 / 7)) : null;
+                const warn = srt.length > 0 && srt.some((x) => (x.stock || 0) <= 5);
+                const none = !msReady || !pc || srt.length === 0;
+                return (
+                  <button onClick={() => setFullBlock("stock")} className={"group relative flex h-full flex-col rounded-2xl border p-4 text-left transition hover:shadow-sm " + (none ? "border-neutral-200 bg-white hover:border-orange-300" : warn ? "border-orange-200 bg-gradient-to-b from-white to-orange-50/50 hover:border-orange-300" : "border-neutral-200 bg-white hover:border-orange-300")}>
+                    <Maximize2 size={13} className="absolute right-3 top-3 text-neutral-300 transition group-hover:text-orange-500" />
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"><span className="h-2 w-2 rounded-full bg-orange-500" /> Остатки · МС</div>
+                    {none ? (
+                      <>
+                        <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">—</div>
+                        <div className="text-[11px] text-neutral-400">{!msReady ? "МойСклад не подключён" : !pc ? "у товара нет кода" : msData ? "нет в МойСклад (по коду " + pc + ")" : "загружается…"}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="mt-3 text-2xl font-bold tabular-nums text-neutral-900">{tot} <span className="text-base font-semibold text-neutral-400">шт</span></div>
+                        <div className="text-[11px] text-neutral-400">на нашем складе{days !== null ? " · хватит на ~" + days + " дн." : ""}</div>
+                        <div className="mt-2 flex flex-wrap gap-1">{srt.slice(0, 8).map((x) => { const [c, bg] = lvl(x.stock || 0); return (<span key={x.id} className="rounded-md px-1.5 py-0.5 text-[11px] font-bold" style={{ color: c, background: bg }}>{x.sz.k} {x.stock || 0}</span>); })}</div>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
             </div>
 
             {/* Полноэкранный просмотр выбранного блока */}
             {fullBlock && (
               <div className="fixed inset-0 z-[70] flex items-start justify-center bg-neutral-900/40 p-3 sm:p-6" onClick={() => setFullBlock(null)}>
-                <div className={"flex flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "promo" ? "h-[96vh] max-h-[96vh] w-full max-w-[98vw]" : "max-h-[94vh] w-full " + (fullBlock === "analytics" ? "max-w-6xl" : (fullBlock === "mktfund" || fullBlock === "content") ? "max-w-2xl" : "max-w-5xl"))} onClick={(e) => e.stopPropagation()}>
+                <div className={"flex flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (fullBlock === "promo" ? "h-[96vh] max-h-[96vh] w-full max-w-[98vw]" : "max-h-[94vh] w-full " + (fullBlock === "analytics" ? "max-w-6xl" : (fullBlock === "mktfund" || fullBlock === "content" || fullBlock === "stock") ? "max-w-2xl" : "max-w-5xl"))} onClick={(e) => e.stopPropagation()}>
                   <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
-                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "РНП" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : fullBlock === "mktfund" ? "Фонд маркетинга" : fullBlock === "content" ? "Контент" : "Аналитика"}</h3>
+                    <h3 className="text-sm font-semibold text-neutral-800">{fullBlock === "promo" ? "РНП" : fullBlock === "purchase" ? "Закупка" : fullBlock === "sizes" ? "Размеры" : fullBlock === "stock" ? "Остатки" : fullBlock === "mktfund" ? "Фонд маркетинга" : fullBlock === "content" ? "Контент" : "Аналитика"}</h3>
                     {fullBlock === "sizes" && (
                       <div className="ml-2 inline-flex rounded-lg bg-neutral-100 p-0.5">
                         <button onClick={() => onSetOneSize(false)} className={"rounded-md px-3 py-1 text-xs font-semibold transition " + (!oneSize ? "bg-white text-teal-700 shadow-sm" : "text-neutral-500")}>Размерный ряд</button>
@@ -7150,6 +7191,45 @@ function CardTasksModal({ product, allJobs = [], onCardAddTask, onOpenJob, onUpd
                     {fullBlock === "promo" && (
                       <GanttBlock product={product} hiddenTasks={hiddenTasks} onToggleTask={onToggleTask} rnpOrder={rnpOrder} onSetRnpOrder={onSetRnpOrder} startDate={rnpStartDate} days={rnpDays} onSetStartDate={onSetRnpStartDate} onSetDays={onSetRnpDays} onSetCell={onSetRnpCell} onSetEntries={onSetRnpEntries} onSetFill={onSetRnpFill} onSetFlag={onSetRnpFlag} onSetBudget={onSetRnpBudget} onSetSaleStart={onCalEntry} onOpenPopup={onOpenPopup} onOpenDB={onOpenDB} wbOrders={wbOrders} wbLoading={wbLoading} wbProgress={wbProgress} onFetchWb={onFetchWb} hideBudget monthNav />
                     )}
+
+                    {fullBlock === "stock" && (() => {
+                      const pc = String(product.code || "").trim();
+                      const SZ = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+                      const rows = (msData && msData.items && pc ? msData.items.filter((it) => String(it.code || "").split("_")[0].trim() === pc) : []).map((it) => { const k = String(it.code || "").split("_")[1] || "—"; const m = /\((\d+)\)/.exec(it.name || ""); return { ...it, k, n: m ? m[1] : "" }; }).sort((a, b) => (SZ.indexOf(a.k) < 0 ? 99 : SZ.indexOf(a.k)) - (SZ.indexOf(b.k) < 0 ? 99 : SZ.indexOf(b.k)));
+                      const fm = (v) => Math.round(v).toLocaleString("ru-RU");
+                      const tot = rows.reduce((a, x) => a + (x.stock || 0), 0), res = rows.reduce((a, x) => a + (x.reserve || 0), 0), sum = rows.reduce((a, x) => a + (x.stock || 0) * (x.cost || 0), 0);
+                      const col = (n) => n <= 0 ? "#dc2626" : n <= 5 ? "#c2410c" : "#15803d";
+                      return (
+                        <div>
+                          <div className="mb-3 flex items-center gap-2">
+                            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-700">МойСклад · {(msData && msData.store) || "НАШ СКЛАД / ОДЕЖДА"}</span>
+                            <span className="ml-auto text-[11px] text-neutral-400">{msData && msData.updatedAt ? "обновлено " + new Date(msData.updatedAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                            <button onClick={() => onFetchMs && onFetchMs()} disabled={!msReady || msLoading} className="rounded-md border border-neutral-200 px-2 py-0.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-40">{msLoading ? "…" : "⟳ обновить"}</button>
+                          </div>
+                          {rows.length === 0 ? (
+                            <div className="py-10 text-center text-sm text-neutral-400">{!msReady ? "МойСклад не подключён (Настройки → Интеграции)" : !pc ? "У товара не заполнен код" : "Товар с кодом " + pc + " не найден на складе в МойСклад"}</div>
+                          ) : (
+                            <table className="w-full text-sm">
+                              <thead><tr className="text-left text-[11px] font-bold text-neutral-400"><th className="px-2 py-1.5">Размер</th><th>Код МС</th><th className="text-right">Остаток</th><th className="text-right">Резерв</th><th className="text-right">Себест.</th><th className="text-right">Стоимость</th></tr></thead>
+                              <tbody>
+                                {rows.map((x) => (
+                                  <tr key={x.id} className="border-t border-neutral-100">
+                                    <td className="px-2 py-2 font-bold">{x.k}{x.n ? " (" + x.n + ")" : ""}</td>
+                                    <td className="text-neutral-500">{x.code}</td>
+                                    <td className="text-right font-bold tabular-nums" style={{ color: col(x.stock || 0) }}>{x.stock || 0}</td>
+                                    <td className="text-right tabular-nums">{x.reserve || 0}</td>
+                                    <td className="text-right tabular-nums" title={x.costSrc === "supply" ? "последняя приёмка" + (x.costAt ? " " + x.costAt : "") : "из отчёта МС (приёмка не найдена)"}>{x.cost ? fm(x.cost) + " ₽" : "—"}{x.costSrc !== "supply" && x.cost ? "*" : ""}</td>
+                                    <td className="text-right tabular-nums">{x.cost ? fm((x.stock || 0) * x.cost) + " ₽" : "—"}</td>
+                                  </tr>
+                                ))}
+                                <tr className="border-t border-neutral-200 font-extrabold"><td className="px-2 py-2">Итого</td><td /><td className="text-right tabular-nums">{tot}</td><td className="text-right tabular-nums">{res}</td><td /><td className="text-right tabular-nums">{fm(sum)} ₽</td></tr>
+                              </tbody>
+                            </table>
+                          )}
+                          <p className="mt-3 text-[11px] text-neutral-400">Остаток — только склад «НАШ СКЛАД / ОДЕЖДА». Себестоимость — цена последней приёмки в МойСклад.</p>
+                        </div>
+                      );
+                    })()}
 
                     {fullBlock === "mktfund" && (
                       mktBatches.length === 0 ? (
