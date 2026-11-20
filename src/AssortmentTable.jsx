@@ -7872,6 +7872,8 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
   const [fltStatus, setFltStatus] = useState([]); // статусы (мультивыбор): wait|progress|done
   const [fltTag, setFltTag] = useState(null);
   const [fltAssignee, setFltAssignee] = useState([]); // исполнители (мультивыбор), "__none" — не назначен
+  const mineInitRef = useRef(false);
+  useEffect(() => { if (myId && !mineInitRef.current) { mineInitRef.current = true; setFltAssignee([myId]); } }, [myId]); // по умолчанию — «Свои»
   const togV = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const iAmOnly = !!myId && fltAssignee.length === 1 && fltAssignee[0] === myId;
   const resetFilters = () => { setFltPrio([]); setFltMark([]); setFltStatus([]); setFltAssignee([]); };
