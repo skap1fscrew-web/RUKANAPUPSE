@@ -1995,7 +1995,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     const addD = (ds, n) => { const d = new Date(ds + "T00:00:00"); d.setDate(d.getDate() + n); return iso(d); };
     const today = new Date(); today.setHours(0, 0, 0, 0); const todayStr = iso(today);
     const allDays = []; { const cur = new Date(rnpStartDate + "T00:00:00"); for (let i = 0; i < rnpDays && cur <= today; i++) { allDays.push(iso(cur)); cur.setDate(cur.getDate() + 1); } }
-    const oldFmt = wbOrdSumMeta.__v !== 2; // v2: добавлены цена после СПП и число заказов — один раз перезагружаем весь период
+    const oldFmt = wbOrdSumMeta.__v !== 3; // v3: сумма и число заказов из аналитики WB (как в кабинете) — один раз перезагружаем весь период
     const todo = allDays.filter((day) => oldFmt || !(wbOrdSumMeta[day] && wbOrdSumMeta[day] >= addD(day, 3)));
     if (!todo.length) return;
     const dateFrom = todo[0];
@@ -2008,9 +2008,31 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         data = await resp.json();
       }
       if (!data) return;
+      // сумма и число заказов — из аналитики WB (воронка продаж), как в кабинете; статистика WB неполная и без отменённых
+      let funnelOk = false;
+      try {
+        const nmIds = [...new Set(products.map((p) => parseInt(p.wb)).filter((n) => n > 0))];
+        if (nmIds.length) {
+          const fdata = {}; let ws = dateFrom;
+          while (ws <= todayStr) {
+            let we = addD(ws, 6); if (we > todayStr) we = todayStr;
+            let part = null;
+            for (let a = 0; a < 2 && !part; a++) {
+              const fr = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/wb-funnel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key, nmIds, start: ws, end: we }) });
+              if (fr.status === 429) { await new Promise((r) => setTimeout(r, 30000)); continue; }
+              if (!fr.ok) throw new Error("wb-funnel " + fr.status);
+              part = await fr.json();
+            }
+            if (!part) throw new Error("wb-funnel: нет ответа");
+            Object.assign(fdata, part);
+            ws = addD(we, 1);
+          }
+          Object.assign(data, fdata); funnelOk = Object.keys(fdata).length > 0;
+        }
+      } catch (e) { console.warn("[WB] воронка заказов не загрузилась:", e); }
       const next = {}; for (const [k, v] of Object.entries(wbOrdSum)) { if ((k.split(":")[1] || "") < dateFrom) next[k] = v; }
       Object.assign(next, data);
-      const meta = { ...wbOrdSumMeta }; if (Object.keys(data).some((k) => k.endsWith(":n"))) meta.__v = 2; /* v2 только если функция уже задеплоена */ for (const d of allDays) if (d >= dateFrom) meta[d] = todayStr;
+      const meta = { ...wbOrdSumMeta }; if (funnelOk) meta.__v = 3; /* v3 только если воронка загрузилась */ for (const d of allDays) if (d >= dateFrom) meta[d] = todayStr;
       setWbOrdSum(next); setWbOrdSumMeta(meta);
       try { await Promise.all([upsertSetting("wbOrdSum", next), upsertSetting("wbOrdSumMeta", meta)]); syncedRef.current.settings.wbOrdSum = JSON.stringify(next); syncedRef.current.settings.wbOrdSumMeta = JSON.stringify(meta); } catch (_) {}
     } catch (e) { console.warn("[WB] сумма заказов не загрузилась:", e); }
