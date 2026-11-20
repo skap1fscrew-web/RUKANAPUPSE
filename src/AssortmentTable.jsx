@@ -1265,6 +1265,25 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     if (stale && Date.now() - ozTriedRef.current > 5 * 60 * 1000) { ozTriedRef.current = Date.now(); fetchOz(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, loaded, ozData, ozCfg]);
+  const [msCfg, setMsCfg] = useState({}); // МойСклад: { token }
+  const [msData, setMsData] = useState(null); // кэш ms-stock
+  const [msLoading, setMsLoading] = useState(false);
+  const [msMsg, setMsMsg] = useState("");
+  const fetchMs = async () => {
+    const c = msCfg || {};
+    if (!c.token) { setMsMsg("Нет токена МойСклад"); return; }
+    setMsLoading(true); setMsMsg("");
+    try {
+      const resp = await fetch("https://ubfqwbdvrynbmydmcysp.supabase.co/functions/v1/ms-stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: c.token }) });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) throw new Error((data && data.error) || ("ms-stock " + resp.status));
+      if (!data || !data.items) throw new Error("пустой ответ");
+      setMsData(data);
+      try { await upsertSetting("msStock", data); } catch (_) {}
+      setMsMsg(data.errors && data.errors.length ? "Частично: " + String(data.errors[0]).slice(0, 140) : "✓ загружено позиций: " + data.count + ", складов: " + (data.stores || []).length);
+    } catch (e) { setMsMsg("МойСклад: " + (e.message || e)); }
+    setMsLoading(false);
+  };
   const [wbAdSpend, setWbAdSpend] = useState({}); // { "nmId:YYYY-MM-DD": ₽ } факт внутренней рекламы
   const [wbAdMeta, setWbAdMeta] = useState({}); // { "YYYY-MM-DD": "дата когда забрали" }
   const [wbAdLoading, setWbAdLoading] = useState(false);
@@ -1383,6 +1402,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (settings.wbSalesMeta && typeof settings.wbSalesMeta === "object") { setWbSalesMeta(settings.wbSalesMeta); syncedRef.current.settings.wbSalesMeta = JSON.stringify(settings.wbSalesMeta); }
         if (settings.ozCfg && typeof settings.ozCfg === "object") { setOzCfg(settings.ozCfg); syncedRef.current.settings.ozCfg = JSON.stringify(settings.ozCfg); }
         if (settings.ozSum && typeof settings.ozSum === "object") setOzData(settings.ozSum);
+        if (settings.msCfg && typeof settings.msCfg === "object") { setMsCfg(settings.msCfg); syncedRef.current.settings.msCfg = JSON.stringify(settings.msCfg); }
+        if (settings.msStock && typeof settings.msStock === "object") setMsData(settings.msStock);
         if (settings.ozAd && typeof settings.ozAd === "object") setOzAd(settings.ozAd);
         if (settings.wbAdKey) { setWbAdKey(settings.wbAdKey); syncedRef.current.settings.wbAdKey = JSON.stringify(settings.wbAdKey); }
         if (settings.wbAdSpend && typeof settings.wbAdSpend === "object") { setWbAdSpend(settings.wbAdSpend); syncedRef.current.settings.wbAdSpend = JSON.stringify(settings.wbAdSpend); }
@@ -1495,7 +1516,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, msCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1538,7 +1559,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, msCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
 
   // Построчное сохранение задач (таблица jobs). Пишем только изменённые строки,
   // удаляем только исчезнувшие — чужая старая копия массива больше не затирает соседние задачи.
@@ -1683,6 +1704,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         else if (key === "wbAdKey") setWbAdKey(value);
         else if (key === "ozCfg") setOzCfg(value && typeof value === "object" ? value : {});
         else if (key === "ozSum") setOzData(value && typeof value === "object" ? value : null);
+        else if (key === "msCfg") setMsCfg(value && typeof value === "object" ? value : {});
+        else if (key === "msStock") setMsData(value && typeof value === "object" ? value : null);
         else if (key === "ozAd") setOzAd(value && typeof value === "object" ? value : null);
         else if (key === "wbAdSpend") setWbAdSpend(value || {});
         else if (key === "wbAdMeta") setWbAdMeta(value || {});
@@ -3123,7 +3146,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           wbApiKey={wbApiKey}
           setWbApiKey={setWbApiKey}
           wbAdKey={wbAdKey} setWbAdKey={setWbAdKey} onFetchAd={fetchWbAd} adLoading={wbAdLoading} adMsg={wbAdMsg}
-          ozCfg={ozCfg} setOzCfg={setOzCfg} onFetchOz={() => { fetchOz(); }} ozLoading={ozLoading} ozMsg={ozMsg}
+          ozCfg={ozCfg} setOzCfg={setOzCfg} onFetchOz={() => { fetchOz(); }} ozLoading={ozLoading} ozMsg={ozMsg} msCfg={msCfg} setMsCfg={setMsCfg} onFetchMs={() => { fetchMs(); }} msLoading={msLoading} msMsg={msMsg} msData={msData}
           onFetchWb={() => { setSettingsOpen(false); fetchWbOrders(); }}
           onClose={() => setSettingsOpen(false)}
         />
@@ -11043,7 +11066,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null, statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, ozCfg = {}, setOzCfg, onFetchOz, ozLoading = false, ozMsg = "", onClose }) {
+function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null, statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, ozCfg = {}, setOzCfg, onFetchOz, ozLoading = false, ozMsg = "", msCfg = {}, setMsCfg, onFetchMs, msLoading = false, msMsg = "", msData = null, onClose }) {
   const [tab, setTab] = useState(() => (initialTab === "wbapi" || initialTab === "oz" || initialTab === "tg" ? "integr" : initialTab || "statuses"));
   const [intg, setIntg] = useState(() => (initialTab === "oz" ? "oz" : initialTab === "tg" ? "tg" : "wb")); // раздел «Интеграции»: wb | oz | tg
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
@@ -11214,6 +11237,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
             const items = [
               { id: "wb", short: "WB", name: "Wildberries", bg: "linear-gradient(135deg,#cb11ab,#481173)", badge: wbN ? wbN + " " + (wbN === 1 ? "ключ" : "ключа") : "не подключено", ok: wbN > 0 },
               { id: "oz", short: "Oz", name: "Озон", bg: "#005bff", badge: ozN ? ozN + " " + (ozN === 1 ? "ключ" : "ключа") : "не подключено", ok: ozN > 0 },
+              { id: "ms", short: "МС", name: "МойСклад", bg: "#16a34a", badge: msCfg.token ? "подключено" : "не подключено", ok: !!msCfg.token },
               { id: "tg", short: "TG", name: "Telegram", bg: "#2481cc", badge: tgN + " из " + taskPeople.length, ok: tgN > 0, warn: tgN < taskPeople.length },
             ];
             return (
@@ -11226,7 +11250,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
                     <span className={"rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (it.ok ? (it.warn ? "bg-orange-100 text-orange-700" : "bg-emerald-100 text-emerald-700") : "bg-neutral-200 text-neutral-500")}>{it.badge}</span>
                   </button>
                 ))}
-                {[["МС", "МойСклад", "#16a34a"], ["ЯМ", "Яндекс Маркет", "#f59e0b"]].map(([sh, nm, bg]) => (
+                {[["ЯМ", "Яндекс Маркет", "#f59e0b"]].map(([sh, nm, bg]) => (
                   <div key={sh} className="mb-1.5 flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-bold text-neutral-400 opacity-70">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-extrabold text-white" style={{ background: bg }}>{sh}</span>
                     <span className="min-w-0 flex-1 truncate">{nm}</span>
@@ -11238,7 +11262,7 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
           })()}
           <div className={tab === "integr" ? "min-w-0 flex-1 overflow-auto p-6" : ""}>
           {tab === "integr" && (() => {
-            const M = { wb: ["Wildberries", "Заказы, выкупы, остатки, в пути и реклама. Данные попадают в РНП и сводку.", "linear-gradient(135deg,#cb11ab,#481173)", "WB"], oz: ["Озон", "Заказы, остатки, возвраты и реклама (Performance). Данные попадают в сводку.", "#005bff", "Oz"], tg: ["Telegram-бот", "Поручения, напоминания о сроках и создание задач из чата.", "#2481cc", "TG"] }[intg];
+            const M = { wb: ["Wildberries", "Заказы, выкупы, остатки, в пути и реклама. Данные попадают в РНП и сводку.", "linear-gradient(135deg,#cb11ab,#481173)", "WB"], oz: ["Озон", "Заказы, остатки, возвраты и реклама (Performance). Данные попадают в сводку.", "#005bff", "Oz"], tg: ["Telegram-бот", "Поручения, напоминания о сроках и создание задач из чата.", "#2481cc", "TG"], ms: ["МойСклад", "Остатки по складам и размерам, себестоимость. Основа для плитки «Остатки» и агента по остаткам.", "#16a34a", "МС"] }[intg];
             return (
               <div className="mb-5 flex items-start gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold text-white" style={{ background: M[2] }}>{M[3]}</span>
@@ -11709,6 +11733,18 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
                 <button onClick={() => onFetchOz && onFetchOz()} disabled={!ozCfg.clientId || !ozCfg.apiKey || ozLoading} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">{ozLoading ? "Загрузка…" : "Сохранить и загрузить"}</button>
                 <span className="text-xs text-neutral-400">{ozMsg || (ozCfg.clientId && ozCfg.apiKey ? "✓ ключи заданы" : "ключи не заданы")}</span>
               </div>
+            </>
+          )}
+          {tab === "integr" && intg === "ms" && (
+            <>
+              <p className="mb-1 text-xs text-neutral-400">Токен: МойСклад → Настройки → Безопасность → Токены → «Создать токен» (доступ на чтение достаточно). Токен хранится в настройках сервиса и виден только команде.</p>
+              <label className="mb-1 mt-3 block text-xs font-medium text-neutral-500">Токен МойСклад</label>
+              <input value={msCfg.token || ""} onChange={(e) => setMsCfg({ ...msCfg, token: e.target.value })} type="password" placeholder="••••••••••••••••" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ fontFamily: "monospace" }} />
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <button onClick={() => onFetchMs && onFetchMs()} disabled={!msCfg.token || msLoading} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">{msLoading ? "Загрузка…" : "Сохранить и загрузить"}</button>
+                <span className="text-xs text-neutral-400">{msMsg || (msCfg.token ? (msData && msData.updatedAt ? "✓ данные от " + new Date(msData.updatedAt).toLocaleString("ru-RU") : "токен задан") : "токен не задан")}</span>
+              </div>
+              {msData && (msData.stores || []).length > 0 && <p className="mt-3 text-xs text-neutral-500">Склады: {(msData.stores || []).join(", ")}</p>}
             </>
           )}
           {tab === "integr" && intg === "wb" && (
