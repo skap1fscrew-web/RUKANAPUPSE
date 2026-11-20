@@ -172,6 +172,7 @@ const TABS = [
   { id: "purchases", label: "Закупки" },
   { id: "tasks", label: "Задачи" },
   { id: "strategy", label: "Карты" },
+  { id: "agents", label: "ИИ-агенты" },
   { id: "content", label: "Контент" },
   { id: "duties", label: "Функционал" },
   { id: "base", label: "База" },
@@ -1161,6 +1162,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
   const [strategy, setStrategy] = useState(() => normStrategy(null)); // блок «Стратегия» — карты холстов
   const [duties, setDuties] = useState(() => normDuties(null)); // блок «Обязанности» — области/функции/подфункции/исполнители (СПРАВОЧНИК, не связан с назначением задач)
+  const [agents, setAgents] = useState(() => defaultAgents()); // реестр ИИ-агентов
   const [profiles, setProfiles] = useState([]); // профили пользователей — исполнители задач, привязанные к логину
   const [myProfileOpen, setMyProfileOpen] = useState(false); // окно личных настроек профиля
   const [profileMenuOpen, setProfileMenuOpen] = useState(false); // меню профиля в верхней шапке
@@ -1366,6 +1368,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (settings.dbColumns && typeof settings.dbColumns === "object") { setDbColumns(settings.dbColumns); syncedRef.current.settings.dbColumns = JSON.stringify(settings.dbColumns); }
         if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
         if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
+        if (Array.isArray(settings.agents)) { setAgents(settings.agents); syncedRef.current.settings.agents = JSON.stringify(settings.agents); }
         if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
         if (settings.wbWay && typeof settings.wbWay === "object") setWbWay(settings.wbWay);
         if (settings.wbRating && typeof settings.wbRating === "object") setWbRating(settings.wbRating);
@@ -1523,7 +1526,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // сохранение общих настроек
   useEffect(() => {
     if (!loaded) return;
-    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, msCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
+    const items = { statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, agents, profiles, prodCycle, unitConst, wbApiKey, ozCfg, msCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnp: { startDate: rnpStartDate, days: rnpDays } };
 
     // Сразу (синхронно) помечаем изменённые ключи «грязными», чтобы входящее
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
@@ -1566,7 +1569,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, profiles, prodCycle, unitConst, wbApiKey, ozCfg, msCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
+  }, [statuses, warehouses, purchases, purchaseBatches, bloggerDB, razdachDB, defaultTasks, taskLabels, taskTags, taskTriggers, cycleTriggers, analyticsCriteria, kanbanCols, opTypes, opDone, subjects, customDBs, dbColumns, focusLine, focusLines, strategy, duties, agents, profiles, prodCycle, unitConst, wbApiKey, ozCfg, msCfg, wbOrders, wbOrdersMeta, wbAdKey, wbAdSpend, wbAdMeta, wbSales, wbSalesMeta, wbOrdSum, wbOrdSumMeta, rnpStartDate, rnpDays, loaded]);
 
   // Построчное сохранение задач (таблица jobs). Пишем только изменённые строки,
   // удаляем только исчезнувшие — чужая старая копия массива больше не затирает соседние задачи.
@@ -1672,6 +1675,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         // Иначе (норм. ≠ сырое) каждая вкладка пере-сохраняет только что полученное,
         // начинается шторм эха между вкладками — правки лагают и затираются.
         if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = JSON.stringify(ns); setStrategy(ns); } return; }
+        if (key === "agents") { if (Array.isArray(value)) { syncedRef.current.settings.agents = JSON.stringify(value); setAgents(value); } return; }
         if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = JSON.stringify(nd); setDuties(nd); } return; }
         if (key === "wbWay") { if (value && typeof value === "object") setWbWay(value); return; }
         if (key === "wbRating") { if (value && typeof value === "object") setWbRating(value); return; }
@@ -3099,6 +3103,22 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             }}
           />
         )}
+
+        {activeTab === "agents" && (
+          <AgentsBoard
+            agents={agents}
+            onChange={setAgents}
+            people={profiles}
+            onCreateTask={(payload) => {
+              const p = payload || {};
+              const id = uid();
+              const job = { id, title: (p.title || "Задача").slice(0, 200), date: null, start: null, done: false, labelId: null, productId: null, priority: "med", tags: [], stage: "wait", note: p.note || "", createdAt: isoYMD(new Date()), checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
+              upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
+              return id;
+            }}
+            onOpenTask={(id) => { const job = liveJobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
+          />
+        )}
       </div>
 
       {jobEditor && (
@@ -3474,6 +3494,173 @@ function normDuties(v) {
   const normSub = (s) => ({ id: s.id || uid(), name: s.name || "", assignee: s.assignee || null, recur: normRecur(s.recur) });
   const functions = Array.isArray(v.functions) ? v.functions.filter((f) => f && typeof f === "object").map((f) => ({ id: f.id || uid(), areaId: f.areaId || null, name: f.name || "", assignee: f.assignee || null, recur: normRecur(f.recur), subs: Array.isArray(f.subs) ? f.subs.map(normSub) : [], ...(f.deletedAt ? { deletedAt: f.deletedAt, deletedBy: f.deletedBy || null } : {}) })) : [];
   return { areas, people, functions };
+}
+
+// ===== ИИ-агенты: реестр всех агентов в разных видах (карточки / таблица / по этапам) =====
+const AGENT_TYPES = { alert: { n: "Алерт", c: "bg-red-100 text-red-600" }, func: { n: "Функция", c: "bg-blue-100 text-blue-700" }, acct: { n: "Учёт", c: "bg-green-100 text-green-700" } };
+const AGENT_STAGES = [["idea", "Идея", "#a3a3a3"], ["data", "Проверка данных", "#f59e0b"], ["dev", "Разработка", "#3b82f6"], ["live", "Работает", "#16a34a"]];
+function defaultAgents() {
+  const A = (name, type, stage, desc, extra) => ({ id: uid(), name, type, stage, desc, schedule: "", assignees: [], data: [], steps: [], taskId: null, ...(extra || {}) });
+  const D = (name, ok) => ({ id: uid(), name, ok });
+  const S = (text, done) => ({ id: uid(), text, done: !!done });
+  return [
+    A("Заканчивается остаток", "alert", "data", "Считает запас в днях по WB, Озон и складу, пишет в Telegram, что срочно заказать.", { schedule: "Ежедневно 10:00", data: [D("Остатки WB", true), D("Остатки Озон", true), D("Склад (МойСклад)", true), D("История продаж", false)], steps: [S("Проверка данных: что есть и чего не хватает"), S("Свести остатки WB + Озон + склад по коду товара"), S("Заполнить справочники: срок пополнения, страховой запас"), S("Собрать агента и сверить расчёт по 5 товарам")] }),
+    A("Реклама тратит деньги без заказов", "alert", "idea", "За 7 дней расход выше порога при нуле заказов: сообщение и предложение поставить на паузу."),
+    A("Выросла доля отмен по товару", "alert", "idea", "Следит за долей отмен по каждому товару и пишет, если она резко выросла."),
+    A("Цена ушла ниже минимальной", "alert", "idea", "Сравнивает цену на площадках с минимальной по товару и сообщает о выходе за порог."),
+    A("Распределение поставок по кластерам", "func", "data", "Предлагает, сколько и каких размеров отправить в каждый кластер Озон, учитывая остатки и продажи категории.", { data: [D("Остатки", true), D("Продажи Озон по кластерам", false)] }),
+    A("Ответы на отзывы и вопросы", "func", "idea", "Готовит ответы, человек одобряет. Нужен доступ к отзывам и вопросам WB и Озон."),
+    A("Поиск товара на 1688", "func", "idea", "Ищет поставщиков и аналоги товара на 1688."),
+    A("Изменение цен после приёмки", "func", "idea", "Предлагает новые цены, когда меняется себестоимость или остаток."),
+    A("Себестоимость и автозагрузка в МС", "acct", "dev", "Делит карго и расходы на единицы, загружает приёмку в МойСклад с полной себестоимостью.", { schedule: "При каждой поставке", data: [D("МойСклад (токен)", true), D("Инвойсы 1688", false), D("Счета карго", false)], steps: [S("Данные: инвойс, карго, курс", true), S("Правило распределения", true), S("Проверка человеком"), S("Загрузка приёмки в МС"), S("Сверка на 3 поставках")] }),
+    A("Сверка заказов и движения товара", "acct", "idea", "Сверяет заказы, приёмки, отгрузки и списания между кабинетами и складом."),
+    A("Финотчёт и PnL", "acct", "idea", "Финансовый отчёт по каждому товару и по всему кабинету."),
+    A("Остатки по всем складам и капитализация", "acct", "idea", "Сводит остатки по всем складам и считает, сколько денег лежит в товаре."),
+  ];
+}
+function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }) {
+  const list = Array.isArray(agents) ? agents : [];
+  const [view, setViewRaw] = useState(() => { const v = lsGet("rnp.agentsView", "cards"); return ["cards", "table", "stages"].includes(v) ? v : "cards"; });
+  const setView = (v) => { setViewRaw(v); lsSet("rnp.agentsView", v); };
+  const [fType, setFType] = useState("all");
+  const [fPerson, setFPerson] = useState("all");
+  const [selId, setSelId] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const listRef = useRef(list); listRef.current = list;
+  const personName = (id) => { const p = people.find((x) => x.id === id); return p ? profileLabel(p) : ""; };
+  const initials = (id) => (personName(id) || "?").slice(0, 1).toUpperCase();
+  const patch = (id, p) => onChange(listRef.current.map((a) => (a.id === id ? { ...a, ...p } : a)));
+  const add = () => { const a = { id: uid(), name: "Новый агент", type: "func", stage: "idea", desc: "", schedule: "", assignees: [], data: [], steps: [], taskId: null }; onChange([...listRef.current, a]); setSelId(a.id); };
+  const del = (id) => { onChange(listRef.current.filter((a) => a.id !== id)); setSelId(null); setConfirmDel(false); };
+  const shown = list.filter((a) => (fType === "all" || a.type === fType) && (fPerson === "all" || (a.assignees || []).includes(fPerson)));
+  const stageOf = (a) => AGENT_STAGES.find((s) => s[0] === a.stage) || AGENT_STAGES[0];
+  const prog = (a) => { const st = a.steps || []; return st.length ? Math.round((st.filter((s) => s.done).length / st.length) * 100) : 0; };
+  const sel = list.find((a) => a.id === selId) || null;
+  const cnt = (t) => list.filter((a) => t === "all" || a.type === t).length;
+  const live = list.filter((a) => a.stage === "live").length, dev = list.filter((a) => a.stage === "dev").length;
+  const Pill = ({ a }) => <span className={"inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (AGENT_TYPES[a.type] || AGENT_TYPES.func).c}>{(AGENT_TYPES[a.type] || AGENT_TYPES.func).n}</span>;
+  const Stage = ({ a }) => { const s = stageOf(a); return <span className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-600"><i className="inline-block h-2 w-2 rounded-full" style={{ background: s[2] }} />{s[1]}</span>; };
+  const Avs = ({ a }) => <span className="ml-auto flex -space-x-1">{(a.assignees || []).map((id) => <span key={id} title={personName(id)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white bg-orange-100 text-[10px] font-extrabold text-orange-700">{initials(id)}</span>)}</span>;
+  const dataTxt = (a) => (a.data || []).length ? (a.data || []).map((d) => d.name + (d.ok ? " ✓" : " ✗")).join(" · ") : "—";
+  return (
+    <div className="mx-auto max-w-[1200px] p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="text-2xl font-extrabold text-neutral-900">ИИ-агенты</div>
+        <span className="text-sm text-neutral-400">{list.length} агентов · {live} работают · {dev} в разработке</span>
+        <div className="ml-auto flex rounded-xl bg-neutral-100 p-0.5">
+          {[["cards", "Карточки"], ["table", "Таблица"], ["stages", "По этапам"]].map(([k, n]) => <button key={k} onClick={() => setView(k)} className={"rounded-lg px-3 py-1.5 text-sm font-bold transition " + (view === k ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{n}</button>)}
+        </div>
+        <button onClick={add} className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-extrabold text-white hover:bg-orange-600">+ Агент</button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {[["all", "Все"], ["alert", "Алерты"], ["func", "Функции"], ["acct", "Учёт"]].map(([k, n]) => <button key={k} onClick={() => setFType(k)} className={"rounded-full border px-3 py-1 text-xs font-bold " + (fType === k ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50")}>{n} {cnt(k)}</button>)}
+        <select value={fPerson} onChange={(e) => setFPerson(e.target.value)} className="ml-auto rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold text-neutral-600">
+          <option value="all">Исполнитель: все</option>
+          {people.map((p) => <option key={p.id} value={p.id}>{profileLabel(p)}</option>)}
+        </select>
+      </div>
+
+      {view === "cards" && (
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {shown.map((a) => (
+            <button key={a.id} onClick={() => { setSelId(a.id); setConfirmDel(false); }} className={"rounded-2xl border bg-white p-4 text-left transition hover:shadow-md " + (a.stage === "dev" ? "border-orange-200 bg-gradient-to-b from-white to-orange-50/50" : "border-neutral-200")}>
+              <Pill a={a} />
+              <div className="mt-2 text-[15px] font-extrabold text-neutral-900">{a.name}</div>
+              <div className="mt-1 line-clamp-3 text-[12.5px] leading-snug text-neutral-500">{a.desc || "Описание не заполнено"}</div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-200"><div className="h-full rounded-full bg-orange-500" style={{ width: prog(a) + "%" }} /></div>
+              <div className="mt-3 flex items-center"><Stage a={a} /><Avs a={a} /></div>
+            </button>
+          ))}
+          <button onClick={add} className="flex min-h-[120px] items-center justify-center rounded-2xl border border-dashed border-neutral-300 text-sm font-extrabold text-neutral-400 hover:bg-neutral-50">+ Добавить агента</button>
+        </div>
+      )}
+
+      {view === "table" && (
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white">
+          <table className="w-full min-w-[900px] border-collapse text-sm">
+            <thead><tr className="text-left text-[10.5px] font-extrabold tracking-wide text-neutral-400">{["АГЕНТ", "ТИП", "ЭТАП", "ДАННЫЕ", "ЗАПУСК", "ИСПОЛНИТЕЛЬ"].map((h) => <th key={h} className="px-3.5 py-2.5">{h}</th>)}</tr></thead>
+            <tbody>{shown.map((a) => (
+              <tr key={a.id} onClick={() => { setSelId(a.id); setConfirmDel(false); }} className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50">
+                <td className="px-3.5 py-3 font-bold text-neutral-900">{a.name}</td>
+                <td className="px-3.5 py-3"><Pill a={a} /></td>
+                <td className="px-3.5 py-3"><Stage a={a} /></td>
+                <td className="px-3.5 py-3 text-xs text-neutral-600">{dataTxt(a)}</td>
+                <td className="px-3.5 py-3 text-xs text-neutral-600">{a.schedule || "—"}</td>
+                <td className="px-3.5 py-3 text-xs text-neutral-600">{(a.assignees || []).map(personName).filter(Boolean).join(", ") || "—"}</td>
+              </tr>))}</tbody>
+          </table>
+        </div>
+      )}
+
+      {view === "stages" && (
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+          {AGENT_STAGES.map(([k, n, col]) => { const items = shown.filter((a) => a.stage === k); return (
+            <div key={k} className="rounded-2xl bg-neutral-100 p-3">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-extrabold text-neutral-500"><i className="inline-block h-2 w-2 rounded-full" style={{ background: col }} />{n.toUpperCase()} · {items.length}</div>
+              {items.map((a) => (
+                <button key={a.id} onClick={() => { setSelId(a.id); setConfirmDel(false); }} className="mb-2 block w-full rounded-xl border border-neutral-200 bg-white p-3 text-left hover:shadow-md">
+                  <Pill a={a} />
+                  <div className="mt-1 text-sm font-extrabold text-neutral-900">{a.name}</div>
+                  <div className="mt-2 flex items-center"><Avs a={a} /></div>
+                </button>))}
+              {!items.length && <div className="p-1.5 text-xs text-neutral-400">пока пусто</div>}
+            </div>); })}
+        </div>
+      )}
+
+      {sel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setSelId(null)}>
+          <div className="max-h-[88vh] w-full max-w-3xl overflow-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <input value={sel.name} onChange={(e) => patch(sel.id, { name: e.target.value })} className="min-w-0 flex-1 rounded-lg border border-transparent px-2 py-1 text-xl font-extrabold text-neutral-900 hover:border-neutral-200 focus:border-orange-400 focus:outline-none" />
+              <button onClick={() => setSelId(null)} className="rounded-lg px-2 py-1 text-neutral-400 hover:bg-neutral-100">✕</button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <select value={sel.type} onChange={(e) => patch(sel.id, { type: e.target.value })} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm font-semibold">{Object.entries(AGENT_TYPES).map(([k, v]) => <option key={k} value={k}>{v.n}</option>)}</select>
+              <select value={sel.stage} onChange={(e) => patch(sel.id, { stage: e.target.value })} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm font-semibold">{AGENT_STAGES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>
+              <input value={sel.schedule || ""} onChange={(e) => patch(sel.id, { schedule: e.target.value })} placeholder="Когда запускается" className="min-w-[160px] flex-1 rounded-lg border border-neutral-200 px-2 py-1 text-sm" />
+            </div>
+            <textarea value={sel.desc || ""} onChange={(e) => patch(sel.id, { desc: e.target.value })} rows={3} placeholder="Что делает агент" className="mt-3 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none" />
+            <div className="mt-3">
+              <div className="text-[10.5px] font-extrabold tracking-wide text-neutral-400">ИСПОЛНИТЕЛИ</div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">{people.map((p) => { const on = (sel.assignees || []).includes(p.id); return <button key={p.id} onClick={() => patch(sel.id, { assignees: on ? sel.assignees.filter((x) => x !== p.id) : [...(sel.assignees || []), p.id] })} className={"rounded-full border px-2.5 py-1 text-xs font-bold " + (on ? "border-orange-300 bg-orange-100 text-orange-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{profileLabel(p)}</button>; })}</div>
+            </div>
+            <div className="mt-4 grid gap-5 md:grid-cols-2">
+              <div>
+                <div className="text-[10.5px] font-extrabold tracking-wide text-neutral-400">ШАГИ · {prog(sel)}%</div>
+                <div className="mt-1.5 space-y-1">{(sel.steps || []).map((s) => (
+                  <div key={s.id} className="flex items-center gap-2">
+                    <input type="checkbox" checked={!!s.done} onChange={() => patch(sel.id, { steps: sel.steps.map((x) => (x.id === s.id ? { ...x, done: !x.done } : x)) })} />
+                    <input value={s.text} onChange={(e) => patch(sel.id, { steps: sel.steps.map((x) => (x.id === s.id ? { ...x, text: e.target.value } : x)) })} className={"min-w-0 flex-1 rounded border border-transparent px-1 py-0.5 text-sm hover:border-neutral-200 focus:border-orange-400 focus:outline-none " + (s.done ? "text-neutral-400 line-through" : "")} />
+                    <button onClick={() => patch(sel.id, { steps: sel.steps.filter((x) => x.id !== s.id) })} className="text-neutral-300 hover:text-red-500">✕</button>
+                  </div>))}
+                  <button onClick={() => patch(sel.id, { steps: [...(sel.steps || []), { id: uid(), text: "Новый шаг", done: false }] })} className="text-xs font-bold text-orange-600 hover:underline">+ шаг</button>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10.5px] font-extrabold tracking-wide text-neutral-400">ДАННЫЕ И ДОСТУПЫ</div>
+                <div className="mt-1.5 space-y-1">{(sel.data || []).map((d) => (
+                  <div key={d.id} className="flex items-center gap-2">
+                    <button onClick={() => patch(sel.id, { data: sel.data.map((x) => (x.id === d.id ? { ...x, ok: !x.ok } : x)) })} className={"w-12 shrink-0 rounded-md px-1.5 py-0.5 text-xs font-extrabold " + (d.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600")}>{d.ok ? "есть" : "нет"}</button>
+                    <input value={d.name} onChange={(e) => patch(sel.id, { data: sel.data.map((x) => (x.id === d.id ? { ...x, name: e.target.value } : x)) })} className="min-w-0 flex-1 rounded border border-transparent px-1 py-0.5 text-sm hover:border-neutral-200 focus:border-orange-400 focus:outline-none" />
+                    <button onClick={() => patch(sel.id, { data: sel.data.filter((x) => x.id !== d.id) })} className="text-neutral-300 hover:text-red-500">✕</button>
+                  </div>))}
+                  <button onClick={() => patch(sel.id, { data: [...(sel.data || []), { id: uid(), name: "Источник данных", ok: false }] })} className="text-xs font-bold text-orange-600 hover:underline">+ источник</button>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-4">
+              {sel.taskId && onOpenTask && <button onClick={() => { if (onOpenTask(sel.taskId)) setSelId(null); else patch(sel.id, { taskId: null }); }} className="rounded-xl border border-neutral-200 px-3 py-1.5 text-sm font-bold text-neutral-700 hover:bg-neutral-50">Открыть задачу</button>}
+              {!sel.taskId && onCreateTask && <button onClick={() => { const id = onCreateTask({ title: "ИИ-агент: " + sel.name, note: sel.desc || "", checklist: (sel.steps || []).map((s) => ({ text: s.text, done: s.done })) }); patch(sel.id, { taskId: id }); setSelId(null); }} className="rounded-xl border border-neutral-200 px-3 py-1.5 text-sm font-bold text-neutral-700 hover:bg-neutral-50">Создать задачу</button>}
+              <span className="ml-auto" />
+              {!confirmDel ? <button onClick={() => setConfirmDel(true)} className="text-sm font-bold text-neutral-400 hover:text-red-500">Удалить агента</button>
+                : <button onClick={() => del(sel.id)} className="rounded-xl bg-red-500 px-3 py-1.5 text-sm font-extrabold text-white">Точно удалить</button>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DutiesBoard({ duties, onChange, onAddOp, opNames, deletedBy = null, onTrashed }) {
