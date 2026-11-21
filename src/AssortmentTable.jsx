@@ -3581,7 +3581,8 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
   const personName = (id) => { const p = people.find((x) => x.id === id); return p ? profileLabel(p) : ""; };
   const initials = (id) => (personName(id) || "?").slice(0, 1).toUpperCase();
   const patch = (id, p) => onChange(listRef.current.map((a) => (a.id === id ? { ...a, ...p } : a)));
-  const add = () => { const a = { id: uid(), name: "Новый агент", type: "func", stage: "idea", desc: "", schedule: "", assignees: [], data: [], steps: [], taskId: null }; onChange([...listRef.current, a]); setSelId(a.id); };
+  const [collapsed, setCollapsed] = useState({});
+  const add = (stage = "idea") => { const a = { id: uid(), name: "Новый агент", type: "func", stage, desc: "", schedule: "", assignees: [], data: [], steps: [], taskId: null }; onChange([...listRef.current, a]); setConfirmDel(false); setSelId(a.id); };
   const del = (id) => { onChange(listRef.current.filter((a) => a.id !== id)); setSelId(null); setConfirmDel(false); };
   const shown = list.filter((a) => (fType === "all" || a.type === fType) && (fPerson === "all" || (a.assignees || []).includes(fPerson)));
   const stageOf = (a) => AGENT_STAGES.find((s) => s[0] === a.stage) || AGENT_STAGES[0];
@@ -3596,17 +3597,17 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
   const Avs = ({ a }) => <span className="ml-auto flex -space-x-1">{(a.assignees || []).map((id) => <span key={id} title={personName(id)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white bg-orange-100 text-[10px] font-extrabold text-orange-700">{initials(id)}</span>)}</span>;
   const dataTxt = (a) => (a.data || []).length ? (a.data || []).map((d) => d.name + (d.ok ? " ✓" : " ✗")).join(" · ") : "—";
   return (
-    <div className="mx-auto max-w-[1200px] p-4">
+    <div className="mx-auto max-w-[1600px] rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-3">
         <div className="text-2xl font-extrabold text-neutral-900">ИИ-агенты</div>
         <span className="text-sm text-neutral-400">{list.length} агентов · {live} работают · {dev} в разработке</span>
         <div className="ml-auto flex rounded-xl bg-neutral-100 p-0.5">
           {[["cards", "Карточки"], ["table", "Таблица"], ["stages", "По этапам"]].map(([k, n]) => <button key={k} onClick={() => setView(k)} className={"rounded-lg px-3 py-1.5 text-sm font-bold transition " + (view === k ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{n}</button>)}
         </div>
-        <button onClick={add} className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-extrabold text-white hover:bg-orange-600">+ Агент</button>
+        <button onClick={() => add()} className="inline-flex h-8 items-center gap-1 rounded-lg bg-neutral-900 px-2.5 text-sm font-semibold text-white hover:bg-neutral-800">+ Агент</button>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {[["all", "Все"], ["alert", "Алерты"], ["func", "Функции"], ["acct", "Учёт"], ["report", "Отчёты"], ["rule", "Автоправила"], ["query", "Быстрые запросы"]].map(([k, n]) => <button key={k} onClick={() => setFType(k)} className={"rounded-full border px-3 py-1 text-xs font-bold " + (fType === k ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50")}>{n} {cnt(k)}</button>)}
+        {[["all", "Все"], ["alert", "Алерты"], ["func", "Функции"], ["acct", "Учёт"], ["report", "Отчёты"], ["rule", "Автоправила"], ["query", "Быстрые запросы"]].map(([k, n]) => <button key={k} onClick={() => setFType(k)} className={"rounded-full border px-3 py-1 text-xs font-bold " + (fType === k ? "border-neutral-900 bg-white text-neutral-900" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50")}>{n} {cnt(k)}</button>)}
         <select value={fPerson} onChange={(e) => setFPerson(e.target.value)} className="ml-auto rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold text-neutral-600">
           <option value="all">Исполнитель: все</option>
           {people.map((p) => <option key={p.id} value={p.id}>{profileLabel(p)}</option>)}
@@ -3624,7 +3625,7 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
               <div className="mt-3 flex items-center"><Stage a={a} /><Avs a={a} /></div>
             </button>
           ))}
-          <button onClick={add} className="flex min-h-[120px] items-center justify-center rounded-2xl border border-dashed border-neutral-300 text-sm font-extrabold text-neutral-400 hover:bg-neutral-50">+ Добавить агента</button>
+          <button onClick={() => add()} className="flex min-h-[120px] items-center justify-center rounded-2xl border border-dashed border-neutral-300 text-sm font-extrabold text-neutral-400 hover:bg-neutral-50">+ Добавить агента</button>
         </div>
       )}
 
@@ -3646,18 +3647,32 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
       )}
 
       {view === "stages" && (
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-          {AGENT_STAGES.map(([k, n, col]) => { const items = shown.filter((a) => a.stage === k); return (
-            <div key={k} className="rounded-2xl bg-neutral-100 p-3">
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-extrabold text-neutral-500"><i className="inline-block h-2 w-2 rounded-full" style={{ background: col }} />{n.toUpperCase()} · {items.length}</div>
-              {items.map((a) => (
-                <button key={a.id} onClick={() => { setSelId(a.id); setConfirmDel(false); }} className="mb-2 block w-full rounded-xl border border-neutral-200 bg-white p-3 text-left hover:shadow-md">
-                  <Pill a={a} />
-                  <div className="mt-1 text-sm font-extrabold text-neutral-900">{a.name}</div>
-                  <div className="mt-2 flex items-center"><Avs a={a} /></div>
-                </button>))}
-              {!items.length && <div className="p-1.5 text-xs text-neutral-400">пока пусто</div>}
-            </div>); })}
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {AGENT_STAGES.map(([key, name, color]) => {
+            const items = shown.filter((agent) => agent.stage === key);
+            return (
+              <section key={key} className="min-w-0 rounded-2xl border border-[#ececef] bg-[#fafafa] p-2.5">
+                <div className="flex items-center gap-2 px-1">
+                  <button aria-expanded={!collapsed[key]} onClick={() => setCollapsed((old) => ({ ...old, [key]: !old[key] }))} className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase tracking-wide text-neutral-600">
+                    <ChevronRight size={15} className={collapsed[key] ? "" : "rotate-90"} />
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} />
+                    {name}
+                    <span className="rounded-full bg-neutral-200/70 px-1.5 text-[11px] text-neutral-500">{items.length}</span>
+                  </button>
+                  <button aria-label={"Добавить агента на этап «" + name + "»"} onClick={() => add(key)} className="ml-auto grid h-6 w-6 place-items-center rounded-lg text-neutral-400 hover:bg-neutral-200"><Plus size={15} /></button>
+                </div>
+                {!collapsed[key] && <div className="mt-2 grid gap-2">
+                  {items.map((agent) => (
+                    <button key={agent.id} onClick={() => { setSelId(agent.id); setConfirmDel(false); }} className="w-full rounded-xl border border-neutral-200 bg-white p-2.5 text-left transition hover:shadow-sm">
+                      <div className="mb-2 break-words text-sm font-semibold leading-snug text-neutral-800">{agent.name}</div>
+                      <div className="flex min-h-[22px] items-center gap-2"><Pill a={agent} /><Avs a={agent} /></div>
+                    </button>
+                  ))}
+                  {!items.length && <div className="p-1.5 text-xs text-neutral-400">Пока пусто</div>}
+                </div>}
+              </section>
+            );
+          })}
         </div>
       )}
 
