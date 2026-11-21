@@ -2,11 +2,23 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment }
 import rnpLogo from "./logo.png";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow, deleteJobRow, subscribe } from "./lib/cloud";
 import {
-  SlidersHorizontal,
+  Bot, SlidersHorizontal,
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
   Target, Focus, ChevronLeft, Flag, AlertTriangle, GitBranch, ArrowUpRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
 } from "lucide-react";
+
+function AiMarker() {
+  return <span title="Используется ИИ" aria-label="Используется ИИ" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-500"><Bot size={15} /></span>;
+}
+function AiToggle({ value, onChange }) {
+  return <div className="flex items-center gap-2 border-t border-neutral-100 pt-4">
+    <Bot size={17} className="text-violet-500" /><span className="text-sm font-semibold text-neutral-700">ИИ</span>
+    <button type="button" role="switch" aria-label="Используется ИИ" aria-checked={!!value} onClick={() => onChange(!value)} className={"ml-auto inline-flex h-6 w-10 items-center rounded-full p-0.5 transition " + (value ? "bg-violet-500" : "bg-neutral-200")}>
+      <span className={"h-5 w-5 rounded-full bg-white shadow-sm transition-transform " + (value ? "translate-x-4" : "")} />
+    </button>
+  </div>;
+}
 
 /* ----------------------------------------------------------------------------
    Конфигурация
@@ -3104,7 +3116,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             opTypes={opTypes}
             opDone={opDone}
             onToggleDone={toggleOpDone}
-            onEditOp={(op) => setJobEditor({ id: op.id, type: "op", title: op.name, recur: op.recur, assignee: op.assignee || null, tags: [], checklist: [], note: "", date: null, start: null, stage: "wait", done: false })}
+            onEditOp={(op) => setJobEditor({ id: op.id, type: "op", title: op.name, ai: !!op.ai, recur: op.recur, assignee: op.assignee || null, tags: [], checklist: [], note: "", date: null, start: null, stage: "wait", done: false })}
             onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()), _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
@@ -3148,7 +3160,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             const { _new, ...rest } = j;
             if (!rest.title.trim()) return;
             if (rest.type === "op") {
-              upsertOpType({ id: rest.id, name: rest.title, recur: normRecur(rest.recur), assignee: rest.assignee || null });
+              upsertOpType({ id: rest.id, name: rest.title, ai: !!rest.ai, recur: normRecur(rest.recur), assignee: rest.assignee || null });
               removeJob(rest.id);
             } else {
               upsertJob(rest);
@@ -7906,6 +7918,7 @@ function OpTypeModal({ opType, onSave, onDelete, onClose }) {
         <div className="space-y-4">
           <input value={o.name} onChange={(e) => setO({ ...o, name: e.target.value })} placeholder="Название…" autoFocus className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
           <RecurEditor recur={o.recur} onChange={(r) => setO({ ...o, recur: r })} />
+          <AiToggle value={o.ai} onChange={(ai) => setO({ ...o, ai })} />
         </div>
         <div className="mt-5 flex items-center gap-2">
           <button onClick={() => o.name.trim() && onSave(o)} disabled={!o.name.trim()} className="rounded-lg flex-1 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Сохранить</button>
@@ -8725,7 +8738,7 @@ function FocusView({ jobs = [], opTypes = [], opDone = {}, onToggleDone, onEditO
               return (
                 <div key={op.id} className="flex items-center gap-2.5 border-b border-neutral-100 py-2 text-[13px] last:border-b-0">
                   <button onClick={() => onToggleDone(op.id, todayStr)} title={done ? "Снять отметку" : "Отметить выполнено"} className="flex h-[19px] w-[19px] shrink-0 items-center justify-center rounded-md border-2 transition hover:scale-110" style={done ? { background: "#16a34a", borderColor: "#16a34a", color: "#fff" } : { background: "#fff", borderColor: "#c9c9cf" }}>{done && <Check size={12} strokeWidth={3.5} />}</button>
-                  <button onClick={() => onEditOp && onEditOp(op)} className={"min-w-0 flex-1 truncate text-left " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{op.name}</button>
+                  <button onClick={() => onEditOp && onEditOp(op)} className={"min-w-0 flex-1 truncate text-left " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}> {op.name}</button>{op.ai && <AiMarker />}
                 </div>
               );
             })}
@@ -8836,8 +8849,8 @@ function OpTodayView({ opTypes = [], opDone = {}, onToggleDone, people = [], now
                   className="flex shrink-0 items-center justify-center transition hover:scale-110"
                   style={{ width: 22, height: 22, borderRadius: 7, background: done ? "#16a34a" : "#fff7f0", border: done ? "2px solid #16a34a" : "2px solid #f6b98a", color: "#fff" }}
                 >{done && <Check size={13} strokeWidth={3} />}</button>
-                <button onClick={() => onEditOp && onEditOp(op)} className="min-w-0 flex-1 text-left" title="Настроить график">
-                  <span className={"block truncate text-[13.5px] font-medium " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{op.name}</span>
+                <button onClick={() => onEditOp && onEditOp(op)} className="flex min-w-0 flex-1 items-center gap-2 text-left" title="Настроить график">
+                  <span className={"block truncate text-[13.5px] font-medium " + (done ? "text-neutral-400 line-through" : "text-neutral-800")}>{op.name}</span>{op.ai && <AiMarker />}
                 </button>
                 <span className="shrink-0">{avatar(op)}</span>
               </div>
@@ -9399,7 +9412,7 @@ function GanttBoard({ onPrevM, onNextM, jobs, products, batches = [], people = [
           style={{ width: LW }}
           title="Настроить график"
         >
-          <span className="w-full truncate text-[12px] text-neutral-700 group-hover:text-neutral-900">{op.name}</span>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-neutral-700 group-hover:text-neutral-900">{op.name}</span>{op.ai && <AiMarker />}
         </button>
         <div className="relative flex shrink-0 items-center" style={{ width: timelineW, height: TRACK_H + 6 }}>
           {Array.from({ length: daysInMonth }, (_, i) => {
@@ -10091,6 +10104,7 @@ function JobEditor({ job, maps = [], onOpenWork, onCreateMap, liveLog = [], task
             <textarea value={j.title} rows={1} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="Название операционной задачи…" autoFocus
               className="w-full resize-none break-words border-none bg-transparent text-lg font-bold leading-snug text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
             <RecurEditor recur={normRecur(j.recur)} onChange={(r) => set("recur", r)} />
+            <AiToggle value={j.ai} onChange={(value) => set("ai", value)} />
             <div className="flex flex-col gap-1.5">
               <span className={fieldL}>Исполнитель</span>
               <AssigneePicker people={people || []} max={1} value={jobAssignees(j)} onChange={(arr) => setJ((o) => ({ ...o, assignees: arr, assignee: arr[0] || null }))} />
