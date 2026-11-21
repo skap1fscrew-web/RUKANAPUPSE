@@ -10094,7 +10094,6 @@ function JobEditor({ job, maps = [], onOpenWork, onCreateMap, liveLog = [], task
                     <button onClick={() => removeFile(f.id)} className="shrink-0 text-neutral-300 hover:text-red-500" title="Удалить"><X size={14} /></button>
                   </div>
                 )))}
-                {files.length === 0 && <span className="text-[12px] text-neutral-300">Перетащите файлы сюда · до 10 МБ</span>}
               </div>
               {(dragOver || fileMsg) && (
                 <div className={"mt-2 rounded-xl border-[1.5px] border-dashed px-3 py-2 text-center text-[12px] transition " + (fileMsg ? "border-amber-200 text-amber-600" : "border-cyan-400 bg-cyan-50/50 text-cyan-700")}>
