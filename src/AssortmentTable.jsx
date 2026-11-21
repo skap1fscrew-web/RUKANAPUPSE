@@ -3597,7 +3597,7 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
   const Avs = ({ a }) => <span className="ml-auto flex -space-x-1">{(a.assignees || []).map((id) => <span key={id} title={personName(id)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white bg-orange-100 text-[10px] font-extrabold text-orange-700">{initials(id)}</span>)}</span>;
   const dataTxt = (a) => (a.data || []).length ? (a.data || []).map((d) => d.name + (d.ok ? " ✓" : " ✗")).join(" · ") : "—";
   return (
-    <div className="mx-auto max-w-[1600px] rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
+    <div className="w-full min-w-0 rounded-2xl border border-neutral-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-3">
         <div className="text-2xl font-extrabold text-neutral-900">ИИ-агенты</div>
         <span className="text-sm text-neutral-400">{list.length} агентов · {live} работают · {dev} в разработке</span>
@@ -3647,7 +3647,7 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
       )}
 
       {view === "stages" && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {AGENT_STAGES.map(([key, name, color]) => {
             const items = shown.filter((agent) => agent.stage === key);
             return (
