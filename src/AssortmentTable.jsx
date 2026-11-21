@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment }
 import rnpLogo from "./logo.png";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow, deleteJobRow, subscribe } from "./lib/cloud";
 import {
+  SlidersHorizontal,
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
   ChevronRight, ChevronDown, ChevronUp, Minus, ArrowRight, ArrowLeftRight, Copy, ExternalLink, Paperclip, Pencil,
   Target, Focus, ChevronLeft, Flag, AlertTriangle, GitBranch, ArrowUpRight, ZoomIn, ZoomOut, Maximize2, Minimize2, Undo2, Redo2, Square, CalendarPlus, Wand2, ListChecks, LayoutTemplate, Repeat, Users, Star, Filter, GripVertical, Columns3, List as ListIcon, Calendar as CalendarIcon, GanttChart, ClipboardCheck, PackagePlus, Megaphone, ShoppingCart, Box, FileText, Eye, EyeOff, History, Search, CalendarCheck, Camera, LogOut, User,
@@ -3522,14 +3523,14 @@ function normDuties(v) {
 
 // ===== ИИ-агенты: реестр всех агентов в разных видах (карточки / таблица / по этапам) =====
 const AGENT_TYPES = { alert: { n: "Алерт", c: "bg-red-100 text-red-600" }, func: { n: "Функция", c: "bg-blue-100 text-blue-700" }, acct: { n: "Учёт", c: "bg-green-100 text-green-700" }, report: { n: "Отчёт", c: "bg-purple-100 text-purple-700" }, rule: { n: "Автоправило", c: "bg-amber-100 text-amber-700" }, query: { n: "Быстрый запрос", c: "bg-neutral-200 text-neutral-700" } };
-const AGENT_STAGES = [["idea", "Идея", "#a3a3a3"], ["data", "Проверка данных", "#f59e0b"], ["dev", "Разработка", "#3b82f6"], ["live", "Работает", "#16a34a"]];
+const AGENT_STAGES = [["idea", "Идея", "#a3a3a3"], ["dev", "Разработка", "#3b82f6"], ["live", "Работает", "#16a34a"]];
 function defaultAgents() {
   const A = (name, type, stage, desc, extra) => ({ id: uid(), name, type, stage, desc: desc || "", schedule: "", assignees: [], data: [], steps: [], taskId: null, ...(extra || {}) });
   const D = (name, ok) => ({ id: uid(), name, ok });
   const S = (text, done) => ({ id: uid(), text, done: !!done });
   return [
     // — Алерты —
-    A("Заканчивается остаток + срочно заказать", "alert", "data", "Считает запас в днях по WB, Озон и складу, пишет в Telegram, что срочно заказать.", { schedule: "Ежедневно 10:00", data: [D("Остатки WB", true), D("Остатки Озон", true), D("Склад (МойСклад)", true), D("История продаж", false)], steps: [S("Проверка данных: что есть и чего не хватает"), S("Свести остатки WB + Озон + склад по коду товара"), S("Заполнить справочники: срок пополнения, страховой запас"), S("Собрать агента и сверить расчёт по 5 товарам")] }),
+    A("Заканчивается остаток + срочно заказать", "alert", "idea", "Считает запас в днях по WB, Озон и складу, пишет в Telegram, что срочно заказать.", { schedule: "Ежедневно 10:00", data: [D("Остатки WB", true), D("Остатки Озон", true), D("Склад (МойСклад)", true), D("История продаж", false)], steps: [S("Проверка данных: что есть и чего не хватает"), S("Свести остатки WB + Озон + склад по коду товара"), S("Заполнить справочники: срок пополнения, страховой запас"), S("Собрать агента и сверить расчёт по 5 товарам")] }),
     A("Рекламная кампания тратит деньги без заказов", "alert", "idea", "За 7 дней расход выше порога при нуле заказов: сообщение и предложение поставить на паузу."),
     A("Подключены ненужные инструменты продвижения", "alert", "idea", "Например, сбор видеоотзывов. Находит включённые инструменты, которые не нужны."),
     A("Выросла доля отмен по товару", "alert", "idea", "Следит за долей отмен по каждому товару и пишет, если она резко выросла."),
@@ -3542,7 +3543,7 @@ function defaultAgents() {
     A("Эластичность цены по каждому товару", "alert", "idea", "По истории видно, как продажи реагировали на изменение цены. С бритвой минус 18% к цене дали ×3 к продажам. Находит товары, где цену можно поднять без потери заказов, и товары, где небольшая скидка резко добавит продаж."),
     // — Функции —
     A("Ответы на отзывы и вопросы", "func", "idea", "Готовит ответы, человек одобряет. Нужен доступ к отзывам и вопросам WB и Озон."),
-    A("Распределение поставок / план закупок", "func", "data", "Предлагает, сколько и каких размеров отправить в каждый кластер Озон, учитывая остатки, продажи и динамику роста категории.", { data: [D("Остатки", true), D("Продажи Озон по кластерам", false)] }),
+    A("Распределение поставок / план закупок", "func", "idea", "Предлагает, сколько и каких размеров отправить в каждый кластер Озон, учитывая остатки, продажи и динамику роста категории.", { data: [D("Остатки", true), D("Продажи Озон по кластерам", false)] }),
     A("Понять, что делать", "func", "idea", "Скилл в Claude, который анализирует задачи и подсказывает, что делать дальше."),
     A("Поиск товара на 1688", "func", "idea", "Ищет поставщиков и аналоги товара на 1688."),
     A("Изменение цен (в том числе после приёмки)", "func", "idea", "Предлагает новые цены, когда меняется себестоимость или остаток."),
@@ -3570,9 +3571,19 @@ function defaultAgents() {
   ];
 }
 function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }) {
-  const list = Array.isArray(agents) ? agents : [];
+  const list = useMemo(() => (Array.isArray(agents) ? agents : []).map((agent) => agent.stage === "data" ? { ...agent, stage: "idea" } : agent), [agents]);
   const [view, setViewRaw] = useState(() => { const v = lsGet("rnp.agentsView", "cards"); return ["cards", "table", "stages"].includes(v) ? v : "cards"; });
   const setView = (v) => { setViewRaw(v); lsSet("rnp.agentsView", v); };
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterRef = useRef(null);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const close = (event) => { if (!filterRef.current?.contains(event.target)) setFiltersOpen(false); };
+    const escape = (event) => { if (event.key === "Escape") setFiltersOpen(false); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
+  }, [filtersOpen]);
   const [fType, setFType] = useState("all");
   const [fPerson, setFPerson] = useState("all");
   const [selId, setSelId] = useState(null);
@@ -3590,28 +3601,33 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
   const sel = list.find((a) => a.id === selId) || null;
   const steps = sel?.steps || [];
   const sources = sel?.data || [];
-  const cnt = (t) => list.filter((a) => t === "all" || a.type === t).length;
-  const live = list.filter((a) => a.stage === "live").length, dev = list.filter((a) => a.stage === "dev").length;
   const Pill = ({ a }) => <span className={"inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (AGENT_TYPES[a.type] || AGENT_TYPES.func).c}>{(AGENT_TYPES[a.type] || AGENT_TYPES.func).n}</span>;
   const Stage = ({ a }) => { const s = stageOf(a); return <span className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-600"><i className="inline-block h-2 w-2 rounded-full" style={{ background: s[2] }} />{s[1]}</span>; };
   const Avs = ({ a }) => <span className="ml-auto flex -space-x-1">{(a.assignees || []).map((id) => <span key={id} title={personName(id)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white bg-orange-100 text-[10px] font-extrabold text-orange-700">{initials(id)}</span>)}</span>;
   const dataTxt = (a) => (a.data || []).length ? (a.data || []).map((d) => d.name + (d.ok ? " ✓" : " ✗")).join(" · ") : "—";
   return (
     <div className="w-full min-w-0 rounded-2xl border border-neutral-200 bg-white p-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="text-2xl font-extrabold text-neutral-900">ИИ-агенты</div>
-        <span className="text-sm text-neutral-400">{list.length} агентов · {live} работают · {dev} в разработке</span>
-        <div className="ml-auto flex rounded-xl bg-neutral-100 p-0.5">
-          {[["cards", "Карточки"], ["table", "Таблица"], ["stages", "По этапам"]].map(([k, n]) => <button key={k} onClick={() => setView(k)} className={"rounded-lg px-3 py-1.5 text-sm font-bold transition " + (view === k ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{n}</button>)}
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="mr-auto text-lg font-bold text-neutral-900">ИИ-агенты</h2>
+        <div className="relative" ref={filterRef}>
+          <button aria-label="Фильтры агентов" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (fType !== "all" || fPerson !== "all" ? "border-neutral-900 text-neutral-900" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}><SlidersHorizontal size={15} /></button>
+          {filtersOpen && <div className="absolute right-0 top-full z-30 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-neutral-200 bg-white p-3 shadow-lg">
+            <div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold">Фильтры</span><button onClick={() => { setFType("all"); setFPerson("all"); }} className="text-xs text-neutral-500 hover:text-neutral-900">Сбросить</button></div>
+            <fieldset><legend className="mb-1 text-xs text-neutral-500">Тип агента</legend>
+              {[["all", "Все типы"], ...Object.entries(AGENT_TYPES).map(([key, type]) => [key, type.n])].map(([key, name]) => <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1.5 text-xs hover:bg-neutral-50"><input type="radio" name="agent-type" value={key} checked={fType === key} onChange={() => setFType(key)} className="accent-neutral-900" />{name}</label>)}
+            </fieldset>
+            <label className="mt-3 block text-xs text-neutral-500">Исполнитель
+              <select value={fPerson} onChange={(event) => setFPerson(event.target.value)} className="mt-1 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-700">
+                <option value="all">Все исполнители</option>
+                {people.map((person) => <option key={person.id} value={person.id}>{profileLabel(person)}</option>)}
+              </select>
+            </label>
+          </div>}
         </div>
-        <button onClick={() => add()} className="inline-flex h-8 items-center gap-1 rounded-lg bg-neutral-900 px-2.5 text-sm font-semibold text-white hover:bg-neutral-800">+ Агент</button>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {[["all", "Все"], ["alert", "Алерты"], ["func", "Функции"], ["acct", "Учёт"], ["report", "Отчёты"], ["rule", "Автоправила"], ["query", "Быстрые запросы"]].map(([k, n]) => <button key={k} onClick={() => setFType(k)} className={"rounded-full border px-3 py-1 text-xs font-bold " + (fType === k ? "border-neutral-900 bg-white text-neutral-900" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50")}>{n} {cnt(k)}</button>)}
-        <select value={fPerson} onChange={(e) => setFPerson(e.target.value)} className="ml-auto rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold text-neutral-600">
-          <option value="all">Исполнитель: все</option>
-          {people.map((p) => <option key={p.id} value={p.id}>{profileLabel(p)}</option>)}
-        </select>
+        <div className="flex rounded-lg bg-neutral-100 p-0.5">
+          {[["cards", "Карточки"], ["table", "Таблица"], ["stages", "По этапам"]].map(([key, name]) => <button key={key} onClick={() => setView(key)} className={"rounded-md px-2.5 py-1.5 text-xs font-semibold " + (view === key ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}>{name}</button>)}
+        </div>
+        <button onClick={() => add()} className="inline-flex h-8 items-center gap-1 rounded-lg bg-neutral-900 px-2.5 text-sm font-semibold text-white hover:bg-neutral-800"><Plus size={15} />Агент</button>
       </div>
 
       {view === "cards" && (
