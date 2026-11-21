@@ -1825,6 +1825,56 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const restoreProduct = (id) => setProducts((p) => p.map((x) => { if (x.id !== id) return x; const { deletedAt, deletedBy, ...rest } = x; return rest; }));
   const purgeProducts = (ids) => setProducts((p) => p.filter((x) => !ids.includes(x.id)));
   // Корзина функций (лежат внутри справочника обязанностей)
+  // Блоки сервиса: рисуются и во вкладке, и в окне из «Рабочей среды» задачи
+  const blockEl = (id) => {
+    if (id === "agents") return (
+          <AgentsBoard
+            agents={agents}
+            onChange={setAgents}
+            people={profiles}
+            onCreateTask={(payload) => {
+              const p = payload || {};
+              const id = uid();
+              const job = { id, title: (p.title || "Задача").slice(0, 200), date: null, start: null, done: false, labelId: null, productId: null, priority: "med", tags: [], stage: "wait", note: p.note || "", createdAt: isoYMD(new Date()), checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
+              upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
+              return id;
+            }}
+            onOpenTask={(id) => { const job = liveJobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
+          />
+    );
+    if (id === "duties") return (
+          <DutiesBoard
+            duties={duties}
+            onChange={setDuties}
+            deletedBy={(myProfile && myProfile.id) || userEmail || null}
+            onTrashed={(f) => setUndoDel({ id: f.id, title: f.name || "Функция", kind: "function" })}
+            opNames={(opTypes || []).map((o) => o.name)}
+            onAddOp={(name, recur) => {
+              const t = (name || "").trim();
+              if (!t) return "empty";
+              if ((opTypes || []).some((o) => o.name === t)) return "exists";
+              setOpTypes((list) => [...(list || []), { id: uid(), name: t, recur: normRecur(recur) }]);
+              return "added";
+            }}
+          />
+    );
+    if (id === "strategy") return (
+          <StrategySection
+            strategy={strategy}
+            onChange={setStrategy}
+            onCreateTask={(payload) => {
+              const p = payload || {};
+              const id = uid();
+              const job = { id, title: (p.title || "Задача").slice(0, 200), date: p.date || null, start: null, done: false, labelId: null, productId: null, priority: "low", tags: [], stage: "wait", note: p.note || "", createdAt: isoYMD(new Date()), checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
+              upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
+              return id;
+            }}
+            onOpenTask={(id) => { const job = liveJobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
+          />
+    );
+    return null;
+  };
+  const [workWin, setWorkWin] = useState(null); // окно блока/карты, открытое из задачи
   const trashFunctions = useMemo(() => ((duties && duties.functions) || []).filter((f) => f && f.deletedAt).sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt))), [duties]);
   const restoreFunction = (id) => setDuties((d0) => ({ ...d0, functions: d0.functions.map((f) => { if (f.id !== id) return f; const { deletedAt, deletedBy, ...rest } = f; return { ...rest, areaId: d0.areas.some((a) => a.id === rest.areaId) ? rest.areaId : null }; }) }));
   const purgeFunctions = (ids) => setDuties((d0) => ({ ...d0, functions: d0.functions.filter((f) => !ids.includes(f.id)) }));
@@ -3062,20 +3112,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         {activeTab === "summary" && <SummaryTab products={products} wbOrders={wbOrders} way={wbWay} wayLoading={wayLoading} wayMsg={wayMsg} onRefreshWay={fetchWbWay} oz={ozData} ozAd={ozAd} ozReady={!!(ozCfg && ozCfg.clientId && ozCfg.apiKey)} ozLoading={ozLoading} ozMsg={ozMsg} onRefreshOz={fetchOz} />}
         {activeTab === "rnp" && <RnpOverview products={products} statuses={statuses} wbOrders={wbOrders} purchaseBatches={purchaseBatches} onOpen={(id) => setCardModal(id)} onOpenPopup={(pid, task, dateKey) => setGanttModal({ productId: pid, mode: "popup", task, dateKey })} onOpenDB={(pid, task) => setGanttModal({ productId: pid, mode: "db", task })} onSetCell={(pid, k, v) => setRnpCell(pid, k, v)} onSetFlag={(pid, f, v) => setRnpFlag(pid, f, v)} onSetBudget={(pid, v) => setRnpBudget(pid, v)} onSetFunds={(pid, f) => setRnpFunds(pid, f)} />}
 
-        {activeTab === "strategy" && (
-          <StrategySection
-            strategy={strategy}
-            onChange={setStrategy}
-            onCreateTask={(payload) => {
-              const p = payload || {};
-              const id = uid();
-              const job = { id, title: (p.title || "Задача").slice(0, 200), date: p.date || null, start: null, done: false, labelId: null, productId: null, priority: "low", tags: [], stage: "wait", note: p.note || "", createdAt: isoYMD(new Date()), checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
-              upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
-              return id;
-            }}
-            onOpenTask={(id) => { const job = liveJobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
-          />
-        )}
+        {activeTab === "strategy" && blockEl("strategy")}
 
         {activeTab === "content" && (
           <ContentBoard
@@ -3087,43 +3124,17 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           />
         )}
 
-        {activeTab === "duties" && (
-          <DutiesBoard
-            duties={duties}
-            onChange={setDuties}
-            deletedBy={(myProfile && myProfile.id) || userEmail || null}
-            onTrashed={(f) => setUndoDel({ id: f.id, title: f.name || "Функция", kind: "function" })}
-            opNames={(opTypes || []).map((o) => o.name)}
-            onAddOp={(name, recur) => {
-              const t = (name || "").trim();
-              if (!t) return "empty";
-              if ((opTypes || []).some((o) => o.name === t)) return "exists";
-              setOpTypes((list) => [...(list || []), { id: uid(), name: t, recur: normRecur(recur) }]);
-              return "added";
-            }}
-          />
-        )}
+        {activeTab === "duties" && blockEl("duties")}
 
-        {activeTab === "agents" && (
-          <AgentsBoard
-            agents={agents}
-            onChange={setAgents}
-            people={profiles}
-            onCreateTask={(payload) => {
-              const p = payload || {};
-              const id = uid();
-              const job = { id, title: (p.title || "Задача").slice(0, 200), date: null, start: null, done: false, labelId: null, productId: null, priority: "med", tags: [], stage: "wait", note: p.note || "", createdAt: isoYMD(new Date()), checklist: Array.isArray(p.checklist) ? p.checklist.map((c) => ({ id: uid(), text: (c && c.text) || "", done: !!(c && c.done) })).filter((c) => c.text) : [] };
-              upsertJob(job); setActiveTab("tasks"); setJobEditor({ ...job });
-              return id;
-            }}
-            onOpenTask={(id) => { const job = liveJobs.find((j) => j.id === id); if (!job) return false; setActiveTab("tasks"); setJobEditor({ ...job }); return true; }}
-          />
-        )}
+        {activeTab === "agents" && blockEl("agents")}
       </div>
 
       {jobEditor && (
         <JobEditor
           job={jobEditor}
+          maps={(strategy && strategy.maps) || []}
+          onOpenWork={(w) => { if (w.kind === "map") { if (!((strategy && strategy.maps) || []).some((m) => m.id === w.ref)) return; setStrategy((cur) => ({ ...cur, activeId: w.ref })); } setWorkWin(w); }}
+          onCreateMap={(name) => { const m = makeTemplatedMap("mind", name); setStrategy((cur) => ({ ...cur, maps: [...((cur && cur.maps) || []), m], activeId: m.id })); return m.id; }}
           liveLog={(jobs.find((x) => x.id === jobEditor.id) || {}).log || jobEditor.log || []}
           taskLabels={taskLabels}
           taskTags={taskTags}
@@ -3147,6 +3158,19 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
           onOpenProduct={(pid) => { if (pid) { setJobEditor(null); setCardModal(pid); } }}
           onClose={() => setJobEditor(null)}
         />
+      )}
+
+      {workWin && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3" onClick={() => setWorkWin(null)}>
+          <div className="flex h-[92vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 border-b border-neutral-100 bg-neutral-50 px-5 py-3">
+              <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-extrabold text-violet-700">{workWin.kind === "map" ? "Карта" : "Блок"}</span>
+              <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold text-neutral-900">{workWin.title}</div>
+              <button onClick={() => setWorkWin(null)} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-bold text-neutral-500 hover:bg-neutral-200">Вернуться в задачу <X size={14} /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto bg-neutral-50">{blockEl(workWin.kind === "map" ? "strategy" : workWin.ref)}</div>
+          </div>
+        </div>
       )}
 
       {opEditor && (
@@ -9737,7 +9761,8 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
 const TASK_SIZES_MEM = {}; // размер окна запоминается отдельно для каждой задачи (в большом виде открывается только та, что была в нём)
 const taskSizeGet = (id) => { if (!id) return 0; const m = TASK_SIZES_MEM[id]; if (m === 1 || m === 2) return m; const o = lsGet("rnp.taskSizes", {}); const v = o && o[id]; return v === 1 || v === 2 ? v : 0; };
 const taskSizeSet = (id, v) => { if (!id) return; TASK_SIZES_MEM[id] = v; const o = { ...(lsGet("rnp.taskSizes", {}) || {}) }; if (v) o[id] = v; else delete o[id]; const k = Object.keys(o); if (k.length > 300) k.slice(0, k.length - 300).forEach((x) => delete o[x]); lsSet("rnp.taskSizes", o); };
-function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onOpenProduct, onClose }) {
+const WS_BLOCKS = [["agents", "ИИ-агенты"], ["duties", "Функционал"], ["strategy", "Карты"]]; // блоки сервиса, доступные в «Рабочей среде» задачи
+function JobEditor({ job, maps = [], onOpenWork, onCreateMap, liveLog = [], taskLabels, taskTags = [], people = [], products, opTypes, batches = [], onChange, onDelete, onDuplicate, onOpenProduct, onClose }) {
   const [j, setJ] = useState(job);
   const [size, setSize] = useState(() => taskSizeGet(job && job.id)); // размер окна задачи: 0 обычный · 1 широкий · 2 на весь экран
   const expanded = size >= 1, big = size === 2;
@@ -9748,6 +9773,8 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
   const [subDoneOpen, setSubDoneOpen] = useState(false); // раскрыт ли список выполненных подзадач
   const noteRef = useRef(null);
   const [tblOpen, setTblOpen] = useState(null); // id открытой таблицы-материала
+  const [wsMenu, setWsMenu] = useState(false); // меню «+ Добавить» в рабочей среде
+  const [wsPick, setWsPick] = useState(null); // null | "map" | "block"
   // авто-высота полей считается ТОЛЬКО при изменении контента/раскрытия,
   // а не на каждом ре-рендере — иначе layout дёргается и скролл прыгает наверх
   const sizeNote = () => { const el = noteRef.current; if (!el) return; el.style.height = "auto"; const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; const max = lh * 12; el.style.height = Math.min(Math.max(el.scrollHeight, lh + 18), max) + "px"; el.style.overflowY = el.scrollHeight > max + 1 ? "auto" : "hidden"; };
@@ -9779,12 +9806,62 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
   const openTable = tables.find((x) => x.id === tblOpen) || null;
   const fieldL = "text-[11px] font-bold uppercase tracking-wide text-neutral-400";
   const addTable = () => { const nt = ttNewTable(); set("tables", [...tables, nt]); setTblOpen(nt.id); };
+  const work = Array.isArray(j.work) ? j.work : [];
+  const addWork = (it) => { set("work", [...work, { id: uid(), ...it }]); setWsMenu(false); setWsPick(null); };
+  const delWork = (id) => set("work", work.filter((x) => x.id !== id));
+  const wsItem = "block w-full rounded-lg px-3 py-2 text-left text-[13px] font-bold text-neutral-700 hover:bg-violet-50";
+  const addMenu = (
+    <div className="relative">
+      <button onClick={() => { setWsMenu((v) => !v); setWsPick(null); }} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Добавить <ChevronDown size={12} /></button>
+      {wsMenu && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => { setWsMenu(false); setWsPick(null); }} />
+          <div className="absolute right-0 top-9 z-[61] max-h-80 w-72 overflow-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
+            {!wsPick && (
+              <>
+                <button onClick={() => { addTable(); setWsMenu(false); }} className={wsItem}>▦ Таблицу<span className="block text-[11.5px] font-medium text-neutral-400">строки и столбцы внутри задачи</span></button>
+                <button onClick={() => setWsPick("map")} className={wsItem}>◇ Карту<span className="block text-[11.5px] font-medium text-neutral-400">новую или из раздела «Карты»</span></button>
+                <button onClick={() => setWsPick("block")} className={wsItem}>⧉ Блок сервиса<span className="block text-[11.5px] font-medium text-neutral-400">откроется окном прямо из задачи</span></button>
+              </>
+            )}
+            {wsPick === "map" && (
+              <>
+                <button onClick={() => setWsPick(null)} className="px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 hover:text-neutral-600">← Карта</button>
+                {maps.map((m) => <button key={m.id} onClick={() => addWork({ kind: "map", ref: m.id, title: m.name || "Карта" })} className={wsItem}>◇ {m.name || "Карта"}</button>)}
+                <button onClick={() => { const nm = "Карта: " + ((j.title || "Задача").slice(0, 60)); const id = onCreateMap ? onCreateMap(nm) : null; if (id) addWork({ kind: "map", ref: id, title: nm }); }} className={wsItem + " text-violet-700"}>+ Новая карта для задачи</button>
+              </>
+            )}
+            {wsPick === "block" && (
+              <>
+                <button onClick={() => setWsPick(null)} className="px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 hover:text-neutral-600">← Блок сервиса</button>
+                {WS_BLOCKS.map(([id, nm]) => <button key={id} onClick={() => addWork({ kind: "block", ref: id, title: nm })} className={wsItem}>⧉ {nm}</button>)}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+  const workChips = work.length > 0 ? (
+    <div className="mb-3">
+      <div className={fieldL + " mb-1.5"}>Быстрый доступ</div>
+      <div className="flex flex-wrap gap-2">
+        {work.map((w) => (
+          <span key={w.id} className="group inline-flex items-center overflow-hidden rounded-xl border border-neutral-200 bg-white text-[13px] font-bold text-neutral-700">
+            <button onClick={() => onOpenWork && onOpenWork(w)} className="inline-flex items-center gap-1.5 px-3 py-2 hover:bg-violet-50">{w.kind === "map" ? "◇" : "⧉"} {w.title}<span className="text-violet-500">⤢</span></button>
+            <button onClick={() => delWork(w.id)} title="Убрать из задачи" className="px-2 py-2 text-neutral-300 hover:bg-red-50 hover:text-red-500">×</button>
+          </span>
+        ))}
+      </div>
+    </div>
+  ) : null;
   const matBlock = big ? (
     <div>
               <div className="mb-3 flex items-center gap-2">
-                <div className={fieldL + " flex-1"}>Материалы</div>
-                <button onClick={addTable} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Таблица</button>
+                <div className={fieldL + " flex-1"}>Рабочая среда</div>
+                {addMenu}
               </div>
+              {workChips}
               {tables.length === 0 && <button onClick={addTable} className="w-full rounded-[14px] border-[1.5px] border-dashed border-neutral-200 py-8 text-[13px] font-semibold text-neutral-400 hover:border-violet-300 hover:text-violet-600">＋ Добавить таблицу</button>}
               <div className="flex flex-col gap-4">
                 {tables.map((tb) => (
@@ -9803,9 +9880,10 @@ function JobEditor({ job, liveLog = [], taskLabels, taskTags = [], people = [], 
   ) : (
             <div>
               <div className="mb-2 flex items-center gap-2">
-                <div className={fieldL + " flex-1"}>Материалы</div>
-                <button onClick={addTable} className="inline-flex h-7 items-center gap-1 rounded-lg border border-neutral-200 px-2.5 text-[12px] font-bold text-neutral-600 hover:bg-neutral-50"><Plus size={12} /> Таблица</button>
+                <div className={fieldL + " flex-1"}>Рабочая среда</div>
+                {addMenu}
               </div>
+              {workChips}
               {tables.length > 0 && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {tables.map((tb) => (
