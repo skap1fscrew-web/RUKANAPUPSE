@@ -3693,37 +3693,26 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
       )}
 
       {sel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setSelId(null)}>
-          <div className="max-h-[88vh] w-full max-w-5xl flex flex-col rounded-2xl bg-white shadow-xl" role="dialog" aria-modal="true" aria-label="Настройки агента" style={{ fontFamily: '"Manrope", "Inter", sans-serif' }} onClick={(e) => e.stopPropagation()}>
-            <header className="flex items-start gap-3 border-b border-neutral-100 px-5 py-4 sm:px-6">
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex flex-wrap items-center gap-2"><Pill a={sel} /><Stage a={sel} /></div>
-                <input value={sel.name} onChange={(e) => patch(sel.id, { name: e.target.value })} aria-label="Название агента" className="w-full min-w-0 rounded-lg border border-transparent px-2 py-1 text-xl font-extrabold text-neutral-900 hover:border-neutral-200 focus:border-orange-400 focus:outline-none" />
-              </div>
-              <button aria-label="Закрыть окно" onClick={() => setSelId(null)} className="rounded-lg px-2 py-1 text-neutral-400 hover:bg-neutral-100">✕</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onClick={() => setSelId(null)}>
+          <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" role="dialog" aria-modal="true" aria-label="Настройки агента" onClick={(event) => event.stopPropagation()}>
+            <header className="flex shrink-0 items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
+              <Pill a={sel} />
+              <span className="text-xs text-neutral-400">Агент</span>
+              <button aria-label="Закрыть окно" onClick={() => setSelId(null)} className="ml-auto grid h-7 w-7 place-items-center rounded-lg text-neutral-400 hover:bg-neutral-100"><X size={16} /></button>
             </header>
-            <div className="min-h-0 overflow-y-auto bg-neutral-50 px-5 py-4 sm:px-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <section className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
-                  <h3 className="text-sm font-extrabold text-neutral-900">Настройки</h3>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <select aria-label="Тип агента" value={sel.type} onChange={(e) => patch(sel.id, { type: e.target.value })} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm font-semibold">{Object.entries(AGENT_TYPES).map(([k, v]) => <option key={k} value={k}>{v.n}</option>)}</select>
-                    <select aria-label="Этап агента" value={sel.stage} onChange={(e) => patch(sel.id, { stage: e.target.value })} className="rounded-lg border border-neutral-200 px-2 py-1 text-sm font-semibold">{AGENT_STAGES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>
-                    <input aria-label="Расписание" value={sel.schedule || ""} onChange={(e) => patch(sel.id, { schedule: e.target.value })} placeholder="Когда запускается" className="min-w-[160px] flex-1 rounded-lg border border-neutral-200 px-2 py-1 text-sm" />
-                  </div>
-                  <textarea aria-label="Описание агента" value={sel.desc || ""} onChange={(e) => patch(sel.id, { desc: e.target.value })} rows={3} placeholder="Что делает агент" className="mt-3 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none" />
-                </section>
-                <section className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
-                  <h3 className="text-sm font-extrabold text-neutral-900">Ответственные</h3>
-                  {!people.length && <p className="mt-2 text-sm text-neutral-500">Нет доступных исполнителей</p>}
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">{people.map((p) => { const on = (sel.assignees || []).includes(p.id); return <button key={p.id} onClick={() => patch(sel.id, { assignees: on ? sel.assignees.filter((x) => x !== p.id) : [...(sel.assignees || []), p.id] })} className={"rounded-full border px-2.5 py-1 text-xs font-bold " + (on ? "border-orange-300 bg-orange-100 text-orange-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{profileLabel(p)}</button>; })}</div>
-                </section>
-              </div>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <section className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
+            <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-[1fr_280px]">
+              <div className="flex min-w-0 flex-col gap-5 p-5 sm:border-r sm:border-neutral-100">
+                <input value={sel.name} onChange={(e) => patch(sel.id, { name: e.target.value })} aria-label="Название агента" className="w-full min-w-0 border-0 bg-transparent p-0 text-lg font-bold leading-snug text-neutral-900 focus:outline-none" />
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Что делает агент
+                    <textarea aria-label="Описание агента" value={sel.desc || ""} onChange={(e) => patch(sel.id, { desc: e.target.value })} rows={6} placeholder="Что делает агент" className="mt-1.5 w-full resize-y rounded-xl border border-neutral-200 px-3 py-2 text-sm leading-relaxed text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none" />
+                  </label>
+                </div>
+                <div className="grid gap-5 border-t border-neutral-100 pt-5 md:grid-cols-2">
+                  <section className="min-w-0">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-extrabold text-neutral-900">План запуска</h3>
-                    <span className="text-xs font-bold text-neutral-600">{steps.filter((step) => step.done).length} из {steps.length} выполнено</span>
+                    <h3 className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">План запуска</h3>
+                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-500">{steps.filter((step) => step.done).length} из {steps.length} выполнено</span>
                   </div>
                   <div role="progressbar" aria-label="Выполнение плана запуска" aria-valuenow={prog(sel)} className="my-3 h-1.5 overflow-hidden rounded-full bg-neutral-100">
                     <div className="h-full rounded-full bg-orange-500" style={{ width: prog(sel) + "%" }} />
@@ -3731,31 +3720,42 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
                   <div className="mt-1.5 space-y-1">{steps.map((s) => (
                     <div key={s.id} className="flex items-center gap-2">
                       <input type="checkbox" checked={!!s.done} onChange={() => patch(sel.id, { steps: sel.steps.map((x) => (x.id === s.id ? { ...x, done: !x.done } : x)) })} />
-                      <input value={s.text} onChange={(e) => patch(sel.id, { steps: sel.steps.map((x) => (x.id === s.id ? { ...x, text: e.target.value } : x)) })} className={"min-w-0 flex-1 rounded border border-transparent px-1 py-0.5 text-sm hover:border-neutral-200 focus:border-orange-400 focus:outline-none " + (s.done ? "text-neutral-400 line-through" : "")} />
+                      <input value={s.text} onChange={(e) => patch(sel.id, { steps: sel.steps.map((x) => (x.id === s.id ? { ...x, text: e.target.value } : x)) })} className={"min-w-0 flex-1 rounded border border-transparent px-1 py-0.5 text-sm hover:border-neutral-200 focus:border-neutral-400 focus:outline-none " + (s.done ? "text-neutral-400 line-through" : "")} />
                       <button onClick={() => patch(sel.id, { steps: sel.steps.filter((x) => x.id !== s.id) })} className="text-neutral-300 hover:text-red-500">✕</button>
                     </div>))}
-                    <button onClick={() => patch(sel.id, { steps: [...(sel.steps || []), { id: uid(), text: "Новый шаг", done: false }] })} className="text-xs font-bold text-orange-600 hover:underline">+ шаг</button>
+                    <button onClick={() => patch(sel.id, { steps: [...(sel.steps || []), { id: uid(), text: "Новый шаг", done: false }] })} className="inline-flex items-center rounded-lg py-1 text-xs font-semibold text-neutral-500 hover:text-neutral-900">+ шаг</button>
                   </div>
                 </section>
-                <section className="min-w-0 rounded-xl border border-neutral-200 bg-white p-4">
+                <section className="min-w-0">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-extrabold text-neutral-900">Данные и доступы</h3>
-                    <span className="text-xs font-bold text-neutral-600">{sources.filter((source) => source.ok).length} из {sources.length} готово</span>
+                    <h3 className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Данные и доступы</h3>
+                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-500">{sources.filter((source) => source.ok).length} из {sources.length} готово</span>
                   </div>
                   <div className="mt-1.5 space-y-1">{sources.map((d) => (
                     <div key={d.id} className="flex items-center gap-2">
                       <button onClick={() => patch(sel.id, { data: sel.data.map((x) => (x.id === d.id ? { ...x, ok: !x.ok } : x)) })} className={"w-12 shrink-0 rounded-md px-1.5 py-0.5 text-xs font-extrabold " + (d.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600")}>{d.ok ? "есть" : "нет"}</button>
-                      <input value={d.name} onChange={(e) => patch(sel.id, { data: sel.data.map((x) => (x.id === d.id ? { ...x, name: e.target.value } : x)) })} className="min-w-0 flex-1 rounded border border-transparent px-1 py-0.5 text-sm hover:border-neutral-200 focus:border-orange-400 focus:outline-none" />
+                      <input value={d.name} onChange={(e) => patch(sel.id, { data: sel.data.map((x) => (x.id === d.id ? { ...x, name: e.target.value } : x)) })} className="min-w-0 flex-1 rounded border border-transparent px-1 py-0.5 text-sm hover:border-neutral-200 focus:border-neutral-400 focus:outline-none" />
                       <button onClick={() => patch(sel.id, { data: sel.data.filter((x) => x.id !== d.id) })} className="text-neutral-300 hover:text-red-500">✕</button>
                     </div>))}
-                    <button onClick={() => patch(sel.id, { data: [...(sel.data || []), { id: uid(), name: "Источник данных", ok: false }] })} className="text-xs font-bold text-orange-600 hover:underline">+ источник</button>
+                    <button onClick={() => patch(sel.id, { data: [...(sel.data || []), { id: uid(), name: "Источник данных", ok: false }] })} className="inline-flex items-center rounded-lg py-1 text-xs font-semibold text-neutral-500 hover:text-neutral-900">+ источник</button>
                   </div>
                 </section>
+                </div>
               </div>
+              <aside className="flex min-w-0 flex-col gap-5 border-t border-neutral-100 p-5 sm:border-t-0">
+                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Этап<select aria-label="Этап агента" value={sel.stage} onChange={(e) => patch(sel.id, { stage: e.target.value })} className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700">{AGENT_STAGES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Тип агента<select aria-label="Тип агента" value={sel.type} onChange={(e) => patch(sel.id, { type: e.target.value })} className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700">{Object.entries(AGENT_TYPES).map(([k, v]) => <option key={k} value={k}>{v.n}</option>)}</select></label>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Запуск<input aria-label="Расписание" value={sel.schedule || ""} onChange={(e) => patch(sel.id, { schedule: e.target.value })} placeholder="Когда запускается" className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700" /></label>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Ответственные</div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">{people.map((p) => { const on = (sel.assignees || []).includes(p.id); return <button key={p.id} onClick={() => patch(sel.id, { assignees: on ? sel.assignees.filter((x) => x !== p.id) : [...(sel.assignees || []), p.id] })} className={"rounded-full border px-2.5 py-1 text-xs font-bold " + (on ? "border-orange-300 bg-orange-100 text-orange-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{profileLabel(p)}</button>; })}</div>
+                  {!people.length && <p className="mt-1.5 text-xs text-neutral-400">Нет доступных исполнителей</p>}
+                </div>
+              </aside>
             </div>
-            <footer className="flex flex-wrap items-center gap-2 border-t border-neutral-100 px-5 py-4 sm:px-6">
+            <footer className="flex flex-wrap items-center gap-2 border-t border-neutral-100 px-5 py-3">
               {sel.taskId && onOpenTask && <button onClick={() => { if (onOpenTask(sel.taskId)) setSelId(null); else patch(sel.id, { taskId: null }); }} className="rounded-xl border border-neutral-200 px-3 py-1.5 text-sm font-bold text-neutral-700 hover:bg-neutral-50">Открыть задачу</button>}
-              {!sel.taskId && onCreateTask && <button onClick={() => { const id = onCreateTask({ title: "ИИ-агент: " + sel.name, note: sel.desc || "", checklist: (sel.steps || []).map((s) => ({ text: s.text, done: s.done })) }); patch(sel.id, { taskId: id }); setSelId(null); }} className="rounded-xl bg-orange-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-orange-700">Создать задачу</button>}
+              {!sel.taskId && onCreateTask && <button onClick={() => { const id = onCreateTask({ title: "ИИ-агент: " + sel.name, note: sel.desc || "", checklist: (sel.steps || []).map((s) => ({ text: s.text, done: s.done })) }); patch(sel.id, { taskId: id }); setSelId(null); }} className="inline-flex h-8 items-center rounded-lg bg-neutral-900 px-3 text-sm font-semibold text-white hover:bg-neutral-800">Создать задачу</button>}
               <span className="ml-auto" />
               {!confirmDel ? <button onClick={() => setConfirmDel(true)} className="text-sm font-bold text-neutral-400 hover:text-red-500">Удалить агента</button>
                 : <button onClick={() => del(sel.id)} className="rounded-xl bg-red-500 px-3 py-1.5 text-sm font-extrabold text-white">Точно удалить</button>}
