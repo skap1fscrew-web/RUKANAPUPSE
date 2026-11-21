@@ -10066,7 +10066,7 @@ function JobEditor({ job, maps = [], onOpenWork, onCreateMap, liveLog = [], task
               {checklist.some((c) => c.done) && (() => { const doneSubs = checklist.filter((c) => c.done); return (
                 <div className="mt-3 border-t border-neutral-100 pt-2">
                   <button onClick={() => setSubDoneOpen((v) => !v)} className="flex w-full items-center gap-1.5 rounded-lg px-1 py-1 text-[11px] font-bold uppercase tracking-wide text-neutral-400 transition hover:text-neutral-600">
-                    <ChevronRight size={13} className={"transition " + (subDoneOpen ? "rotate-90" : "")} /> Выполненные <span className="rounded-full bg-neutral-100 px-1.5 text-[11px] font-bold text-neutral-500">{doneSubs.length}</span>
+                    <ChevronRight size={13} className={"transition " + (subDoneOpen ? "rotate-90" : "")} /> Выполненные
                   </button>
                   {subDoneOpen && <div className="mt-1 flex flex-col">{doneSubs.map((c) => renderSubRow(c))}</div>}
                 </div>
