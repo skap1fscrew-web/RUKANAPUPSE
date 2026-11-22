@@ -45,3 +45,44 @@ create policy "settings_write"  on public.settings for all using (public.is_allo
 
 alter publication supabase_realtime add table public.products;
 alter publication supabase_realtime add table public.settings;
+
+-- Droprise: отдельные данные электроники в той же базе.
+-- Профили пользователей остаются общими в settings.profiles.
+create table if not exists public.droprise_products (
+  id uuid primary key,
+  data jsonb not null,
+  updated_at timestamptz default now()
+);
+create table if not exists public.droprise_jobs (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz default now()
+);
+create table if not exists public.droprise_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz default now()
+);
+alter table public.droprise_products enable row level security;
+alter table public.droprise_jobs enable row level security;
+alter table public.droprise_settings enable row level security;
+drop policy if exists droprise_products_allowed on public.droprise_products;
+drop policy if exists droprise_jobs_allowed on public.droprise_jobs;
+drop policy if exists droprise_settings_allowed on public.droprise_settings;
+create policy droprise_products_allowed on public.droprise_products for all to authenticated using(public.is_allowed()) with check(public.is_allowed());
+create policy droprise_jobs_allowed on public.droprise_jobs for all to authenticated using(public.is_allowed()) with check(public.is_allowed());
+create policy droprise_settings_allowed on public.droprise_settings for all to authenticated using(public.is_allowed()) with check(public.is_allowed());
+grant select,insert,update,delete on public.droprise_products, public.droprise_jobs, public.droprise_settings to authenticated;
+insert into public.droprise_settings(key,value) values
+  ('agents','[]'), ('duties','{"areas":[],"people":[],"functions":[]}'),
+  ('strategy','{"maps":[],"activeId":null}')
+on conflict(key) do nothing;
+do $$
+declare table_name text;
+begin
+  foreach table_name in array array['droprise_products','droprise_jobs','droprise_settings'] loop
+    if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename=table_name) then
+      execute format('alter publication supabase_realtime add table public.%I',table_name);
+    end if;
+  end loop;
+end $$;

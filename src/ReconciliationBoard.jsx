@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, SlidersHorizontal, X } from "lucide-react";
+import { projectTables } from "./lib/cloud";
 import { supabase } from "./lib/supabase";
 
 const prefix = "reconciliation:";
@@ -10,7 +11,8 @@ const stamp = (date) => new Date(date).toLocaleString("ru-RU");
 const problemKey = (row) => prefix + "problem:" + row.reconciliation_id + ":" + row.posting_number;
 const runKey = (row) => prefix + "run:" + row.id;
 
-export default function ReconciliationBoard({ people = [], userEmail }) {
+export default function ReconciliationBoard({ people = [], userEmail, project = "melori" }) {
+  const table = projectTables(project).settings;
   const [records, setRecords] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -31,14 +33,14 @@ export default function ReconciliationBoard({ people = [], userEmail }) {
   async function refresh() {
     setLoading(true);
     setError("");
-    const { data, error: failure } = await supabase.from("settings").select("key,value,updated_at").like("key", prefix + "%");
+    const { data, error: failure } = await supabase.from(table).select("key,value,updated_at").like("key", prefix + "%");
     if (failure) setError("Не удалось загрузить сверки: " + failure.message);
     else setRecords(Object.fromEntries((data || []).map((row) => [row.key, row])));
     setLoading(false);
   }
   useEffect(() => {
     refresh();
-    const channel = supabase.channel("reconciliation-board").on("postgres_changes", { event: "*", schema: "public", table: "settings" }, ({ new: row, old, eventType }) => {
+    const channel = supabase.channel("reconciliation-board-" + project).on("postgres_changes", { event: "*", schema: "public", table }, ({ new: row, old, eventType }) => {
       const key = row?.key || old?.key;
       if (!key?.startsWith(prefix)) return;
       setRecords((current) => {
@@ -57,8 +59,8 @@ export default function ReconciliationBoard({ people = [], userEmail }) {
     setError("");
     const row = { key, value, updated_at: new Date().toISOString() };
     const request = previous
-      ? supabase.from("settings").update(row).eq("key", key).eq("updated_at", previous.updated_at).select()
-      : supabase.from("settings").insert(row).select();
+      ? supabase.from(table).update(row).eq("key", key).eq("updated_at", previous.updated_at).select()
+      : supabase.from(table).insert(row).select();
     const { data, error: failure } = await request;
     setSaving(false);
     if (failure || !data?.length) {

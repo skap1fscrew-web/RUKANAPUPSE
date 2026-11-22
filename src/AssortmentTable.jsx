@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment } from "react";
 import ReconciliationBoard from "./ReconciliationBoard";
-import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow, deleteJobRow, subscribe } from "./lib/cloud";
+import { createProjectCloud } from "./lib/cloud";
+import ProjectSwitch from "./ProjectSwitch";
 import {
   Bot, SlidersHorizontal,
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
@@ -1082,7 +1083,12 @@ const SubjectsDatalist = memo(function SubjectsDatalist({ subjects }) {
   );
 });
 
-export default function AssortmentTable({ userEmail = null, onSignOut }) {
+export default function AssortmentTable({ userEmail = null, onSignOut, project = "melori", onProjectChange, initialTab = null }) {
+  const { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow, deleteJobRow, subscribe } = useMemo(() => createProjectCloud(project), [project]);
+  const [projectLoadError, setProjectLoadError] = useState("");
+  const [switchingProject, setSwitchingProject] = useState(false);
+  const projectStorageKey = (key) => project === "melori" ? key : project + ":" + key;
+
   const [allProducts, setProducts] = useState([]); // все товары, включая лежащие в корзине (для синхронизации)
   const products = useMemo(() => allProducts.filter((p) => p && !p.deletedAt), [allProducts]); // без корзины
   const trashProducts = useMemo(() => allProducts.filter((p) => p && p.deletedAt).sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt))), [allProducts]);
@@ -1110,7 +1116,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [unitConst, setUnitConst] = useState({ tax: "8", acqWb: "2.5", acqOz: "1.5", whCoeffWb: "170", cny: "", usd: "", cargo: "", commission: "", insurance: "" }); // единые для всех товаров
   const [subjects, setSubjects] = useState([]); // предметы с комиссией ВБ — [{id, name, commission}]
   const [enabled, setEnabled] = useState({ unit: true, unitoz: true, external: true, razdachi: true, vykupy: true, shipment: true });
-  const [activeTab, setActiveTab] = useState("assortment");
+  const [activeTab, setActiveTab] = useState(initialTab || "assortment");
   const [purchFocusId, setPurchFocusId] = useState(null); // партия, на которую перешли из Фокуса
   useEffect(() => { if (activeTab !== "purchases") setPurchFocusId(null); }, [activeTab]);
   const [productsView, setProductsView] = useState("list"); // list | tiles
@@ -1175,8 +1181,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   const [dbColumns, setDbColumns] = useState({}); // свои колонки базы: {typeId: [...]}
   const [customDBs, setCustomDBs] = useState([]); // пользовательские виды базы — [{id, name, rows:[]}]
   const [strategy, setStrategy] = useState(() => normStrategy(null)); // блок «Стратегия» — карты холстов
-  const [duties, setDuties] = useState(() => normDuties(null)); // блок «Обязанности» — области/функции/подфункции/исполнители (СПРАВОЧНИК, не связан с назначением задач)
-  const [agents, setAgents] = useState(() => defaultAgents()); // реестр ИИ-агентов
+  const [duties, setDuties] = useState(() => project === "melori" ? normDuties(null) : { areas: [], people: [], functions: [] }); // блок «Обязанности» — области/функции/подфункции/исполнители (СПРАВОЧНИК, не связан с назначением задач)
+  const [agents, setAgents] = useState(() => project === "melori" ? defaultAgents() : []); // реестр ИИ-агентов
   const [profiles, setProfiles] = useState([]); // профили пользователей — исполнители задач, привязанные к логину
   const [myProfileOpen, setMyProfileOpen] = useState(false); // окно личных настроек профиля
   const [profileMenuOpen, setProfileMenuOpen] = useState(false); // меню профиля в верхней шапке
@@ -1335,8 +1341,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   // UI-настройки (личные) — localStorage
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("rnp-ui");
-      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (Array.isArray(ui.rnpOrder)) setRnpOrder(ui.rnpOrder); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); if (ui.productsView) setProductsView(ui.productsView); if (["xs", "s", "m"].includes(ui.tileSize)) setTileSize(ui.tileSize); }
+      const raw = localStorage.getItem(projectStorageKey("rnp-ui"));
+      if (raw) { const ui = JSON.parse(raw); if (ui.enabled) setEnabled((e) => ({ ...e, ...ui.enabled })); if (!initialTab && ui.activeTab && TABS.some((t) => t.id === ui.activeTab)) setActiveTab(ui.activeTab); if (ui.hiddenTasks) setHiddenTasks(ui.hiddenTasks); if (Array.isArray(ui.rnpOrder)) setRnpOrder(ui.rnpOrder); if (ui.hiddenCols) setHiddenCols(ui.hiddenCols); if (ui.productsView) setProductsView(ui.productsView); if (["xs", "s", "m"].includes(ui.tileSize)) setTileSize(ui.tileSize); }
       // Разовая установка строк РНП по умолчанию: показаны только Кол-во заказов / Блогеры / Раздачи
       if (!localStorage.getItem("rnp-rows-v2")) {
         const def = {}; RNP_TASKS.forEach((t) => { if (!["orders", "bloggers", "razdachi"].includes(t.id)) def[t.id] = true; });
@@ -1346,7 +1352,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
     } catch {}
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("rnp-ui", JSON.stringify({ enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView, tileSize })); } catch {}
+    try { localStorage.setItem(projectStorageKey("rnp-ui"), JSON.stringify({ enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView, tileSize })); } catch {}
   }, [enabled, activeTab, hiddenTasks, rnpOrder, hiddenCols, productsView, tileSize]);
 
   // загрузка из Supabase
@@ -1435,6 +1441,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         if (settings.wbOrdersMeta && typeof settings.wbOrdersMeta === "object") { setWbOrdersMeta(settings.wbOrdersMeta); syncedRef.current.settings.wbOrdersMeta = JSON.stringify(settings.wbOrdersMeta); }
         setLoaded(true); // включаем сохранение ТОЛЬКО после успешной загрузки
       } catch (e) {
+        setProjectLoadError(e.message || "Не удалось загрузить проект");
         console.error("Ошибка загрузки — сохранение отключено, чтобы не затереть базу:", e);
         // намеренно НЕ ставим loaded=true: пустой стартовый стейт не должен перезаписать БД
       }
@@ -2503,6 +2510,29 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
   /* ---------------------------------------------------------------------- */
 
   // Профиль текущего вошедшего пользователя (для личных настроек имени/фото)
+  async function switchProject(next) {
+    if (next === project || switchingProject) return;
+    if (!loaded || wayLoading || ozLoading || msLoading || wbAdLoading || wbLoading) {
+      setToast({ text: "Дождитесь завершения загрузки данных проекта" });
+      return;
+    }
+    setSwitchingProject(true);
+    try {
+      const results = await Promise.all([
+        ...allProducts.filter((row) => syncedRef.current.products.get(row.id) !== JSON.stringify(row)).map(upsertProduct),
+        ...jobs.filter((row) => syncedJobsRef.current[row.id] !== JSON.stringify(row)).map(upsertJobRow),
+        ...Object.entries(desiredRef.current.settings).filter(([key, value]) => syncedRef.current.settings[key] !== value).map(([key, value]) => upsertSetting(key, JSON.parse(value))),
+        ...Array.from(syncedRef.current.products.keys()).filter((id) => !allProducts.some((row) => row.id === id)).map(deleteProductRow),
+        ...Object.keys(syncedJobsRef.current).filter((id) => !jobs.some((row) => row.id === id)).map(deleteJobRow),
+      ]);
+      const failed = results.find((result) => result?.error);
+      if (failed) throw failed.error;
+      onProjectChange(next, activeTab);
+    } catch (error) {
+      setToast({ text: "Не удалось сохранить проект: " + error.message });
+      setSwitchingProject(false);
+    }
+  }
   const myProfile = (profiles || []).find((p) => (p.email || "").toLowerCase() === String(userEmail || "").toLowerCase()) || null;
   const patchMyProfile = (patch) => { if (!myProfile) return; setProfiles((list) => list.map((p) => (p.id === myProfile.id ? { ...p, ...patch } : p))); };
 
@@ -2512,6 +2542,12 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
       className="w-full bg-neutral-100 text-neutral-900"
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');`}</style>
+      {(!loaded || switchingProject) && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-white/95">
+        <div className="max-w-md p-5 text-center">
+          <div className="text-sm font-semibold text-neutral-700">{switchingProject ? "Сохраняем изменения перед переключением…" : projectLoadError || "Загружаем проект…"}</div>
+          {projectLoadError && <button onClick={() => window.location.reload()} className="mt-3 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold">Повторить загрузку</button>}
+        </div>
+      </div>}
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
 
       <div className="mx-auto max-w-full px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-3">
@@ -2583,6 +2619,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
             <button onClick={() => { setSettingsTab("statuses"); setSettingsOpen(true); }} title="Настройки" className="rounded-xl inline-flex h-[42px] items-center gap-1.5 border border-neutral-200 bg-white px-3.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
               <Settings2 size={15} /> Настройки
             </button>
+            <ProjectSwitch project={project} onChange={switchProject} disabled={switchingProject || !loaded} />
         <div className="relative">
           <button onClick={() => setProfileMenuOpen((v) => !v)} className="inline-flex h-[42px] items-center gap-2 rounded-xl border border-neutral-200 bg-white pl-1.5 pr-3 hover:bg-neutral-50">
             <PersonAvatar p={myProfile} size={28} />
@@ -3141,7 +3178,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         {activeTab === "duties" && blockEl("duties")}
 
         {activeTab === "agents" && blockEl("agents")}
-        {activeTab === "reconciliation" && <ReconciliationBoard people={profiles} userEmail={userEmail} />}
+        {activeTab === "reconciliation" && <ReconciliationBoard project={project} people={profiles} userEmail={userEmail} />}
       </div>
 
       {jobEditor && (
@@ -3199,6 +3236,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
 
       {settingsOpen && (
         <SettingsModal
+          upsertSetting={upsertSetting}
+          project={project}
           tgLinks={tgLinks}
           tgBot={tgBot}
           saveTgBot={saveTgBot}
@@ -11550,7 +11589,7 @@ function StrategyBoard({ strategy, onChange, onCreateTask, onOpenTask, template,
   );
 }
 
-function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null, statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, ozCfg = {}, setOzCfg, onFetchOz, ozLoading = false, ozMsg = "", msCfg = {}, setMsCfg, onFetchMs, msLoading = false, msMsg = "", msData = null, onClose }) {
+function SettingsModal({ upsertSetting, project = "melori", tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null, statuses, setStatuses, defaultTasks, setDefaultTasks, taskLabels, setTaskLabels, taskTags, setTaskTags, taskTriggers = [], setTaskTriggers, cycleTriggers = [], setCycleTriggers, opTypes, setOpTypes, subjects, setSubjects, prodCycle, setProdCycle, taskPeople = [], unitConst, setUnitConst, initialTab, navCfg, setNavCfg, mq, setMq, uiZoom, setUiZoom, wbApiKey, setWbApiKey, onFetchWb, wbAdKey, setWbAdKey, onFetchAd, adLoading, adMsg, ozCfg = {}, setOzCfg, onFetchOz, ozLoading = false, ozMsg = "", msCfg = {}, setMsCfg, onFetchMs, msLoading = false, msMsg = "", msData = null, onClose }) {
   const [tab, setTab] = useState(() => (initialTab === "wbapi" || initialTab === "oz" || initialTab === "tg" ? "integr" : initialTab || "statuses"));
   const [intg, setIntg] = useState(() => (initialTab === "oz" ? "oz" : initialTab === "tg" ? "tg" : "wb")); // раздел «Интеграции»: wb | oz | tg
   const [trgOpen, setTrgOpen] = useState({}); // какие правила триггеров раскрыты
@@ -12159,7 +12198,8 @@ function SettingsModal({ tgLinks = {}, tgBot = "", saveTgBot, myProfileId = null
             </>
           )}
 
-          {tab === "integr" && intg === "tg" && (() => {
+          {tab === "integr" && intg === "tg" && project !== "melori" && <p className="text-sm text-neutral-500">Telegram-бот пока подключён к проекту «Мелори». Подключение Droprise настраивается отдельно.</p>}
+          {tab === "integr" && intg === "tg" && project === "melori" && (() => {
             const me = taskPeople.find((p) => p.id === myProfileId) || null;
             const linked = (id) => !!tgLinks[id];
             const connect = async () => {

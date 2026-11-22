@@ -3,6 +3,15 @@ import { supabase } from "./lib/supabase";
 import AssortmentTable from "./AssortmentTable";
 
 export default function App() {
+  const [project, setProject] = useState(() => {
+    try { return localStorage.getItem("allplugs.project") === "droprise" ? "droprise" : "melori"; } catch { return "melori"; }
+  });
+  const [projectTab, setProjectTab] = useState(null);
+  function changeProject(next, tab) {
+    setProjectTab(tab);
+    try { localStorage.setItem("allplugs.project", next); } catch {}
+    setProject(next);
+  }
   const [session, setSession] = useState(undefined);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -11,7 +20,7 @@ export default function App() {
   }, []);
   if (session === undefined) return <div className="flex min-h-screen items-center justify-center text-neutral-400">Загрузка…</div>;
   if (!session) return <Login />;
-  return <AssortmentTable userEmail={session.user.email} onSignOut={() => supabase.auth.signOut()} />;
+  return <AssortmentTable key={project} initialTab={projectTab} project={project} onProjectChange={changeProject} userEmail={session.user.email} onSignOut={() => supabase.auth.signOut()} />;
 }
 
 function Login() {
