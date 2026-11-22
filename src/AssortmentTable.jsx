@@ -3154,7 +3154,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
             opTypes={opTypes}
             opDone={opDone}
             onToggleDone={toggleOpDone}
-            onEditOp={(op) => setJobEditor({ id: op.id, type: "op", title: op.name, ai: !!op.ai, recur: op.recur, assignee: op.assignee || null, tags: [], checklist: [], note: "", date: null, start: null, stage: "wait", done: false })}
+            onEditOp={(op) => setJobEditor({ id: op.id, type: "op", title: op.name, ai: !!op.ai, recur: op.recur, assignee: op.assignee || null, tags: [], checklist: [], note: op.note || "", date: null, start: null, stage: "wait", done: false })}
             onAddJob={(preset) => setJobEditor({ id: uid(), title: "", date: null, start: null, done: false, labelId: null, productId: null, priority: "low", assignee: null, tags: [], stage: "wait", note: "", checklist: [], createdAt: isoYMD(new Date()), _new: true, ...preset })}
             onOpen={(job) => setJobEditor({ ...job })}
           />
@@ -3199,7 +3199,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
             const { _new, ...rest } = j;
             if (!rest.title.trim()) return;
             if (rest.type === "op") {
-              upsertOpType({ id: rest.id, name: rest.title, ai: !!rest.ai, recur: normRecur(rest.recur), assignee: rest.assignee || null });
+              upsertOpType({ id: rest.id, name: rest.title, note: rest.note || "", ai: !!rest.ai, recur: normRecur(rest.recur), assignee: rest.assignee || null });
               removeJob(rest.id);
             } else {
               upsertJob(rest);
@@ -7910,30 +7910,30 @@ function describeRecur(recur) {
   return WD_ORDER.filter((w) => wds.includes(w)).map((w) => WD_LABEL[w]).join(" · ");
 }
 
-function RecurEditor({ recur, onChange }) {
+function RecurEditor({ recur, onChange, compact = false }) {
   const r = normRecur(recur);
   const toggleWd = (w) => { const s = new Set(r.weekdays); s.has(w) ? s.delete(w) : s.add(w); onChange({ ...r, weekdays: WD_ORDER.filter((x) => s.has(x)) }); };
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="w-24 shrink-0 text-sm text-neutral-500">Повтор</span>
-        <div className="inline-flex rounded-lg bg-neutral-100 p-0.5 text-xs font-semibold">
-          <button onClick={() => onChange({ ...r, mode: "weekly" })} className={"rounded-md px-3 py-1 transition " + (r.mode === "weekly" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>По дням недели</button>
-          <button onClick={() => onChange({ ...r, mode: "monthly" })} className={"rounded-md px-3 py-1 transition " + (r.mode === "monthly" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>По числу месяца</button>
+      <div className={compact ? "flex flex-wrap items-center gap-2" : "flex items-center gap-2"}>
+        <span className={compact ? "w-full text-[11px] font-bold uppercase tracking-wide text-neutral-400" : "w-24 shrink-0 text-sm text-neutral-500"}>Повтор</span>
+        <div className="inline-flex max-w-full rounded-lg bg-neutral-100 p-0.5 text-xs font-semibold">
+          <button onClick={() => onChange({ ...r, mode: "weekly" })} className={"rounded-md py-1 transition " + (compact ? "px-2 " : "px-3 ") + (r.mode === "weekly" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>По дням недели</button>
+          <button onClick={() => onChange({ ...r, mode: "monthly" })} className={"rounded-md py-1 transition " + (compact ? "px-2 " : "px-3 ") + (r.mode === "monthly" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500")}>По числу месяца</button>
         </div>
       </div>
       {r.mode === "weekly" ? (
-        <div className="flex items-start gap-2">
-          <span className="w-24 shrink-0 pt-1.5 text-sm text-neutral-500">Дни недели</span>
+        <div className={compact ? "flex flex-col gap-2" : "flex items-start gap-2"}>
+          <span className={compact ? "text-[11px] font-bold uppercase tracking-wide text-neutral-400" : "w-24 shrink-0 pt-1.5 text-sm text-neutral-500"}>Дни недели</span>
           <div className="flex flex-wrap gap-1">
             {WD_ORDER.map((w) => (
-              <button key={w} onClick={() => toggleWd(w)} className={"flex h-8 w-9 items-center justify-center rounded-lg text-xs font-semibold transition " + (r.weekdays.includes(w) ? "bg-neutral-900 text-white" : "border border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{WD_LABEL[w]}</button>
+              <button key={w} onClick={() => toggleWd(w)} className={"flex h-8 items-center justify-center rounded-lg text-xs font-semibold transition " + (compact ? "w-8 " : "w-9 ") + (r.weekdays.includes(w) ? "bg-neutral-900 text-white" : "border border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{WD_LABEL[w]}</button>
             ))}
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
-          <span className="w-24 shrink-0 text-sm text-neutral-500">Когда</span>
+        <div className={compact ? "flex flex-wrap items-center gap-2" : "flex items-center gap-2"}>
+          <span className={compact ? "w-full text-[11px] font-bold uppercase tracking-wide text-neutral-400" : "w-24 shrink-0 text-sm text-neutral-500"}>Когда</span>
           <select value={r.ordinal} onChange={(e) => onChange({ ...r, ordinal: Number(e.target.value) })} className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none">
             {[1, 2, 3, 4, -1].map((o) => (<option key={o} value={o}>{ORD_LABEL[o]}</option>))}
           </select>
@@ -10140,17 +10140,24 @@ function JobEditor({ job, maps = [], onOpenWork, onCreateMap, liveLog = [], task
         </div>
 
         {showLog ? renderLog() : curType === "op" ? (
-          /* ОПЕРАЦИОННАЯ: название · повтор/дни недели · исполнитель */
-          <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
-            <textarea value={j.title} rows={1} onChange={(e) => set("title", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="Название операционной задачи…" autoFocus
-              className="w-full resize-none break-words border-none bg-transparent text-lg font-bold leading-snug text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
-            <RecurEditor recur={normRecur(j.recur)} onChange={(r) => set("recur", r)} />
-            <AiToggle value={j.ai} onChange={(value) => set("ai", value)} />
-            <div className="flex flex-col gap-1.5">
-              <span className={fieldL}>Исполнитель</span>
-              <AssigneePicker people={people || []} max={1} value={jobAssignees(j)} onChange={(arr) => setJ((o) => ({ ...o, assignees: arr, assignee: arr[0] || null }))} />
-              {(people || []).length === 0 && <span className="text-[11px] text-neutral-400">Профили появляются после входа пользователей.</span>}
+          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto sm:grid-cols-[1fr_300px]">
+            <div className="flex min-w-0 flex-col gap-5 border-b border-neutral-100 p-5 sm:border-b-0 sm:border-r">
+              <textarea aria-label="Название операционной задачи" value={j.title} rows={2} onChange={(event) => set("title", event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} placeholder="Название операционной задачи…" autoFocus
+                className="w-full resize-none break-words border-none bg-transparent text-lg font-bold leading-snug text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
+              <label className={fieldL}>Заметка
+                <textarea aria-label="Заметка операционной задачи" value={j.note || ""} onChange={(event) => set("note", event.target.value)} placeholder="Добавьте описание, контекст, ссылки…" rows={6}
+                  className="mt-1.5 w-full resize-y rounded-xl border border-neutral-200 px-3 py-2 text-sm font-normal normal-case leading-relaxed tracking-normal text-neutral-700 placeholder:text-neutral-300 focus:border-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+              </label>
             </div>
+            <aside className="flex min-w-0 flex-col gap-5 p-5">
+              <RecurEditor compact recur={normRecur(j.recur)} onChange={(recur) => set("recur", recur)} />
+              <div className="flex flex-col gap-1.5">
+                <span className={fieldL}>Исполнитель</span>
+                <AssigneePicker people={people || []} max={1} value={jobAssignees(j)} onChange={(arr) => setJ((old) => ({ ...old, assignees: arr, assignee: arr[0] || null }))} />
+                {!people.length && <span className="text-[11px] text-neutral-400">Профили появляются после входа пользователей.</span>}
+              </div>
+              <AiToggle value={j.ai} onChange={(value) => set("ai", value)} />
+            </aside>
           </div>
         ) : (
         <div className={"grid flex-1 grid-cols-1 overflow-y-auto " + (big ? "sm:grid-cols-[442px_1fr_300px]" : "sm:grid-cols-[1fr_300px]")}>
