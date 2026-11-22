@@ -1,6 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment } from "react";
 import ReconciliationBoard from "./ReconciliationBoard";
-import rnpLogo from "./logo.png";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow, deleteJobRow, subscribe } from "./lib/cloud";
 import {
   Bot, SlidersHorizontal,
@@ -2519,7 +2518,6 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         {/* Шапка */}
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-3">
-            <img src={rnpLogo} alt="AllPlugs" className="h-8 w-8 shrink-0 object-contain" />
             <div className="rounded-xl inline-flex border border-neutral-200 bg-white p-1">
               {navShown.map((t) => {
                 const on = activeTab === t.id;
