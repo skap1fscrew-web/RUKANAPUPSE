@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment } from "react";
+import ReconciliationBoard from "./ReconciliationBoard";
 import rnpLogo from "./logo.png";
 import { fetchAll, upsertProduct, deleteProductRow, upsertSetting, upsertJobRow, deleteJobRow, subscribe } from "./lib/cloud";
 import {
@@ -186,6 +187,7 @@ const TABS = [
   { id: "tasks", label: "Задачи" },
   { id: "strategy", label: "Карты" },
   { id: "agents", label: "ИИ-агенты" },
+  { id: "reconciliation", label: "Сверка" },
   { id: "content", label: "Контент" },
   { id: "duties", label: "Функционал" },
   { id: "base", label: "База" },
@@ -3140,6 +3142,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut }) {
         {activeTab === "duties" && blockEl("duties")}
 
         {activeTab === "agents" && blockEl("agents")}
+        {activeTab === "reconciliation" && <ReconciliationBoard people={profiles} userEmail={userEmail} />}
       </div>
 
       {jobEditor && (
