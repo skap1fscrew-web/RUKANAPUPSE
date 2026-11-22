@@ -8327,7 +8327,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
             <button onClick={() => toggleSecDone(sid)} title={on ? "Скрыть выполненные" : "Показать выполненные"} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (on ? "border-neutral-300 bg-neutral-100 text-neutral-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{on ? <Eye size={15} /> : <EyeOff size={15} />}</button>
           ); })()}
           {myId && (
-            <button onClick={() => setFltAssignee(iAmOnly ? [] : [myId])} title="Только мои задачи" aria-pressed={iAmOnly} className={"inline-flex h-8 items-center gap-1.5 rounded-lg border-2 border-neutral-100 px-2.5 text-xs font-semibold transition " + (iAmOnly ? "bg-white text-neutral-800 shadow-sm" : "bg-neutral-100 text-neutral-500 hover:text-neutral-700")}><User size={14} className={iAmOnly ? "" : "text-neutral-400"} />Свои</button>
+            <button onClick={() => setFltAssignee(iAmOnly ? [] : [myId])} title="Только мои задачи" aria-pressed={iAmOnly} className={"inline-flex h-8 items-center gap-1.5 rounded-lg border-2 border-neutral-100 px-2.5 text-sm font-semibold transition " + (iAmOnly ? "bg-white text-neutral-800 shadow-sm" : "bg-neutral-100 text-neutral-500 hover:text-neutral-700")}><User size={14} className={iAmOnly ? "" : "text-neutral-400"} />Свои</button>
           )}
           {view === "kanban" && (
             <div className="relative">
