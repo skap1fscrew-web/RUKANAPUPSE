@@ -8307,7 +8307,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
         {reportsOpen && <DaySummary jobs={jobs} opTypes={opTypes} opDone={opDone} people={people} products={products} batches={batches} onClose={() => setReportsOpen(false)} />}
         {!focusMode && <div className="ml-auto flex flex-wrap items-center gap-2">
           {searchOpen || fltSearch ? (
-            <div className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-900 bg-white px-2.5 py-1.5" style={{ width: 210 }}>
+            <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border-2 border-neutral-100 bg-white px-2.5" style={{ width: 210 }}>
               <Search size={14} className="shrink-0 text-neutral-400" />
               <input
                 autoFocus
@@ -8321,17 +8321,17 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
               <button onClick={() => { setFltSearch(""); setSearchOpen(false); }} className="shrink-0 text-neutral-300 hover:text-neutral-600" title="Очистить"><X size={14} /></button>
             </div>
           ) : (
-            <button onClick={() => setSearchOpen(true)} title="Поиск по названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"><Search size={15} /></button>
+            <button onClick={() => setSearchOpen(true)} title="Поиск по названию" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-neutral-400 transition hover:text-neutral-600"><Search size={15} /></button>
           )}
           {!focusMode && view !== "kanban" && view !== "prod" && view !== "today" && (fltType === "project" || fltType === "purchase") && (() => { const sid = fltType === "project" ? "gen" : "pur"; const on = !!secDone[sid]; return (
             <button onClick={() => toggleSecDone(sid)} title={on ? "Скрыть выполненные" : "Показать выполненные"} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (on ? "border-neutral-300 bg-neutral-100 text-neutral-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{on ? <Eye size={15} /> : <EyeOff size={15} />}</button>
           ); })()}
           {myId && (
-            <button onClick={() => setFltAssignee(iAmOnly ? [] : [myId])} title="Только мои задачи" className={"inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold " + (iAmOnly ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50")}><User size={14} className={iAmOnly ? "" : "text-neutral-400"} />Свои</button>
+            <button onClick={() => setFltAssignee(iAmOnly ? [] : [myId])} title="Только мои задачи" aria-pressed={iAmOnly} className={"inline-flex h-8 items-center gap-1.5 rounded-lg border-2 border-neutral-100 px-2.5 text-xs font-semibold transition " + (iAmOnly ? "bg-white text-neutral-800 shadow-sm" : "bg-neutral-100 text-neutral-500 hover:text-neutral-700")}><User size={14} className={iAmOnly ? "" : "text-neutral-400"} />Свои</button>
           )}
           {view === "kanban" && (
             <div className="relative">
-              <button onClick={() => setFltOpen(fltOpen === "group" ? null : "group")} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50" title={"Колонки по: " + (GROUP_LABELS[groupBy] || "")}><Columns3 size={15} /></button>
+              <button onClick={() => setFltOpen(fltOpen === "group" ? null : "group")} aria-expanded={fltOpen === "group"} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border-2 border-neutral-100 transition " + (fltOpen === "group" || kanbanWide || groupBy !== "status" || kanbanSort !== "created" ? "bg-white text-neutral-700 shadow-sm" : "bg-neutral-100 text-neutral-400 hover:text-neutral-600")} title={"Колонки по: " + (GROUP_LABELS[groupBy] || "")}><Columns3 size={15} /></button>
               {fltOpen === "group" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
                 <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-400">Колонки по</div>
                 {[["status", "Статусу"], ["priority", "Приоритету"]].map(([k, lbl]) => <button key={k} onClick={() => { setGroupBy(k); }} className={"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-neutral-50 " + (groupBy === k ? "font-semibold text-neutral-900" : "text-neutral-600")}>{groupBy === k ? <Check size={14} className="text-orange-600" /> : <span className="w-3.5" />}{lbl}</button>)}
@@ -8348,7 +8348,7 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
           )}
           {(isBoard || view === "gantt" || view === "today") && (
             <div className="relative">
-              <button onClick={() => setFltOpen(fltOpen === "filter" ? null : "filter")} title="Фильтр" className={"relative inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (activeFilters ? "border-orange-300 bg-orange-50 text-orange-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}><Filter size={15} />{activeFilters > 0 && <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">{activeFilters}</span>}</button>
+              <button onClick={() => setFltOpen(fltOpen === "filter" ? null : "filter")} title="Фильтр" aria-expanded={fltOpen === "filter"} className={"relative inline-flex h-8 w-8 items-center justify-center rounded-lg border-2 border-neutral-100 transition " + (activeFilters || fltOpen === "filter" ? "bg-white text-neutral-700 shadow-sm" : "bg-neutral-100 text-neutral-400 hover:text-neutral-600")}><Filter size={15} />{activeFilters > 0 && <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-500 px-1 text-[10px] font-bold text-white">{activeFilters}</span>}</button>
               {fltOpen === "filter" && (<><div className="fixed inset-0 z-10" onClick={() => setFltOpen(null)} /><div className="absolute right-0 z-20 mt-1 w-[340px] rounded-2xl border border-neutral-200 bg-white p-3.5 shadow-xl">
                 <div className="mb-2.5 flex items-center"><b className="text-[14px] text-neutral-900">Фильтры</b>{activeFilters > 0 && <button onClick={resetFilters} className="ml-auto text-[12px] font-bold text-blue-600 hover:underline">Сбросить всё</button>}</div>
                 <div className="mb-3">
