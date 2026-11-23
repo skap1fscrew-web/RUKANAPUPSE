@@ -50,7 +50,7 @@ serve(async (req) => {
     if (!SECRET || url.searchParams.get("setup") !== SECRET) return json({ error: "forbidden" }, 403);
     const hook = `${SB_URL}/functions/v1/tg-webhook`;
     const a = await tg("setWebhook", { url: hook, secret_token: SECRET, allowed_updates: ["message", "callback_query"] });
-    const b = await tg("setMyCommands", { commands: [{ command: "tasks", description: "Мои открытые задачи" }, { command: "start", description: "Привязать аккаунт" }] });
+    const b = await tg("setMyCommands", { commands: [{ command: "blogger", description: "Добавить блогера в РНП Мелори" }, { command: "tasks", description: "Мои открытые задачи" }, { command: "start", description: "Привязать аккаунт" }] });
     const me = await tg("getMe", {});
     return json({ webhook: a, commands: b, bot: me?.result?.username });
   }
@@ -101,6 +101,13 @@ serve(async (req) => {
     const pid = byChat(chat);
     if (!pid) { await say("Сначала привяжите аккаунт: приложение → Настройки → Telegram → «Привязать»."); return json({ ok: true }); }
 
+    if (/^\/blogger(?:@\w+)?(?:\s|$)/i.test(text)) {
+      if (msg.chat.type !== "private") { await say("Откройте личный чат с ботом и отправьте /blogger."); return json({ ok: true }); }
+      await tg("setMyCommands", { commands: [{command:"tasks",description:"Мои открытые задачи"},{command:"blogger",description:"Добавить блогера в РНП Мелори"},{command:"start",description:"Привязать аккаунт"}] });
+      await say("Добавьте интеграцию блогера в РНП проекта «Мелори».", { reply_markup: { inline_keyboard: [[{ text: "Добавить блогера", web_app: { url: "https://skap1fscrew-web-rukanapupse-09ae.twc1.net/?miniapp=blogger" } }]] } });
+      return json({ ok: true });
+    }
+
     if (/^\/tasks/i.test(text)) {
       const jobs = (await loadJobs()).filter((j: Any) => !j.deletedAt && j.stage !== "done" && !j.done && jobAssignees(j).includes(pid));
       jobs.sort((a: Any, b: Any) => String(a.date || "9999").localeCompare(String(b.date || "9999")));
@@ -110,7 +117,7 @@ serve(async (req) => {
       await say(`<b>Ваши задачи (${jobs.length})</b>\n` + lines.join("\n") + (jobs.length > 20 ? `\n… и ещё ${jobs.length - 20}` : ""));
       return json({ ok: true });
     }
-    if (text.startsWith("/")) { await say("Напишите текст — создам задачу, или /tasks."); return json({ ok: true }); }
+    if (text.startsWith("/")) { await say("Напишите текст — создам задачу, /tasks — задачи, /blogger — блогеры."); return json({ ok: true }); }
 
     const t = parseTask(text, profiles, pid);
     if (t.unknown) { await say(`Не нашёл «@${esc(t.unknown)}». Исполнители: ${profiles.map((x) => esc(profLabel(x))).join(", ")}. Напишите задачу ещё раз.`); return json({ ok: true }); }
