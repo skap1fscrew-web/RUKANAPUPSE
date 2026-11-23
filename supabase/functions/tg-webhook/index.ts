@@ -8,6 +8,19 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { SECRET, SB_URL, rest, getSetting, setSetting, tg, esc, jobAssignees, mskNow, addDays, fmtDM, profLabel, loadJobs } from "../_shared/tg.ts";
 
+const commands = [
+  { command: "tasks", description: "Мои открытые задачи" },
+  { command: "blogger", description: "Добавить блогера в РНП Мелори" },
+  { command: "start", description: "Привязать аккаунт" },
+];
+// Идемпотентно обновляем меню при запуске новой версии, без сообщений в чаты.
+try {
+  const installed = await tg("setMyCommands", { commands });
+  console.info("telegram_commands_registered", installed?.ok === true);
+} catch {
+  console.error("telegram_commands_registration_failed");
+}
+
 const json = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json" } });
 
 // deno-lint-ignore no-explicit-any
@@ -50,7 +63,7 @@ serve(async (req) => {
     if (!SECRET || url.searchParams.get("setup") !== SECRET) return json({ error: "forbidden" }, 403);
     const hook = `${SB_URL}/functions/v1/tg-webhook`;
     const a = await tg("setWebhook", { url: hook, secret_token: SECRET, allowed_updates: ["message", "callback_query"] });
-    const b = await tg("setMyCommands", { commands: [{ command: "blogger", description: "Добавить блогера в РНП Мелори" }, { command: "tasks", description: "Мои открытые задачи" }, { command: "start", description: "Привязать аккаунт" }] });
+    const b = await tg("setMyCommands", { commands });
     const me = await tg("getMe", {});
     return json({ webhook: a, commands: b, bot: me?.result?.username });
   }
@@ -89,9 +102,9 @@ serve(async (req) => {
         links[c.pid] = chat; delete codes[code];
         await setSetting("tgLinks", links); await setSetting("tgCodes", codes);
         const p = profiles.find((x) => x.id === c.pid);
-        await say(`✅ Готово, ${esc(profLabel(p))}! Теперь я присылаю сюда поручения и напоминания о дедлайнах.\n\nЧтобы создать задачу, просто напишите её текстом, например:\n<i>Позвонить в Китай завтра</i>\n<i>Проверить приёмку до 25.11 @Анна</i>\n\n/tasks — ваши открытые задачи.`);
+        await say(`✅ Готово, ${esc(profLabel(p))}! Теперь я присылаю сюда поручения и напоминания о дедлайнах.\n\nЧтобы создать задачу, просто напишите её текстом, например:\n<i>Позвонить в Китай завтра</i>\n<i>Проверить приёмку до 25.11 @Анна</i>\n\n/tasks — ваши открытые задачи.\n/blogger — добавить блогера в РНП Мелори.`);
       } else if (byChat(chat)) {
-        await say("Аккаунт уже привязан. Напишите текст — создам задачу, /tasks — список ваших задач.");
+        await say("Аккаунт уже привязан. Напишите текст — создам задачу, /tasks — список ваших задач. /blogger — добавить блогера в РНП Мелори.");
       } else {
         await say("Чтобы привязать аккаунт: откройте приложение → Настройки → Telegram → «Привязать» и перейдите по ссылке.");
       }
@@ -103,7 +116,7 @@ serve(async (req) => {
 
     if (/^\/blogger(?:@\w+)?(?:\s|$)/i.test(text)) {
       if (msg.chat.type !== "private") { await say("Откройте личный чат с ботом и отправьте /blogger."); return json({ ok: true }); }
-      await tg("setMyCommands", { commands: [{command:"tasks",description:"Мои открытые задачи"},{command:"blogger",description:"Добавить блогера в РНП Мелори"},{command:"start",description:"Привязать аккаунт"}] });
+      await tg("setMyCommands", { commands });
       await say("Добавьте интеграцию блогера в РНП проекта «Мелори».", { reply_markup: { inline_keyboard: [[{ text: "Добавить блогера", web_app: { url: "https://skap1fscrew-web-rukanapupse-09ae.twc1.net/?miniapp=blogger" } }]] } });
       return json({ ok: true });
     }
