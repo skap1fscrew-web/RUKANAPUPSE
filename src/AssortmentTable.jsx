@@ -9725,7 +9725,7 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete, inli
     const key = r.id + ":" + c.id;
     const typeBtn = (
       <button type="button" onClick={(e) => { const p = posOf(e.currentTarget.closest("td")); setPop({ kind: "type", rid: r.id, cid: c.id, x: p.x, y: p.y }); }}
-        className="absolute right-1 top-[9px] hidden h-5 w-5 items-center justify-center rounded text-[13px] font-bold leading-none text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600 group-hover:flex" title="Сменить тип ячейки">⋯</button>
+        className="absolute right-1 top-[9px] flex h-5 w-5 opacity-0 focus:opacity-100 group-hover:opacity-100 items-center justify-center rounded text-[13px] font-bold leading-none text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600 group-hover:flex" aria-label={inline ? "Меню ячейки" : "Сменить тип ячейки"} title={inline ? "Меню ячейки" : "Сменить тип ячейки"}>⋯</button>
     );
     const tdp = (e) => posOf(e.currentTarget.closest("td"));
     let body;
@@ -9780,12 +9780,12 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete, inli
         </div>
       );
     } else {
-      body = <textarea aria-label={c.name + ", строка " + (ri + 1)} data-cell={key} rows={1} value={cell.v || ""} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onChange={(e) => onTextChange(e, r.id, c.id)} onKeyDown={(e) => onTextKey(e, ri, r.id, c.id, ci)} onPaste={(e) => onPaste(e, ri, ci)} onBlur={() => setPop((p) => (p && p.kind === "slash" ? null : p))} className={inCls.replace("h-[38px]", "block min-h-[38px] resize-none overflow-hidden py-[9px] leading-[20px]")} />;
+      body = <textarea aria-label={c.name + ", строка " + (ri + 1)} data-cell={key} rows={1} value={cell.v || ""} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onChange={(e) => onTextChange(e, r.id, c.id)} onKeyDown={(e) => onTextKey(e, ri, r.id, c.id, ci)} onPaste={(e) => onPaste(e, ri, ci)} onBlur={() => setPop((p) => (p && p.kind === "slash" ? null : p))} className={inCls.replace("h-[38px]", "block min-h-[38px] resize-none overflow-hidden py-[9px] leading-[20px]") + (inline ? " pr-7" : "")} />;
     }
     return (
-      <td key={c.id} className="group relative min-w-[170px] border border-neutral-200 p-0 align-top">
+      <td key={c.id} onContextMenu={inline ? (e) => { e.preventDefault(); const p = posOf(e.currentTarget); setPop({ kind: "type", rid: r.id, cid: c.id, x: p.x, y: p.y }); } : undefined} className={"group relative p-0 align-top " + (inline ? "border-b border-r border-neutral-200 last:border-r-0" : "min-w-[170px] border border-neutral-200")}>
         {body}
-        {cell.k !== "text" && typeBtn}
+        {(inline || cell.k !== "text") && typeBtn}
       </td>
     );
   };
@@ -9805,15 +9805,15 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete, inli
           : <button onClick={() => setDelAsk(true)} className="inline-flex h-8 w-8 items-center justify-center rounded-[9px] border border-neutral-200 text-neutral-400 hover:text-red-500" title="Удалить таблицу"><Trash2 size={14} /></button>}
         <button onClick={onClose} className="inline-flex h-8 items-center rounded-[9px] bg-neutral-900 px-4 text-[12.5px] font-bold text-white hover:bg-neutral-700">Готово</button>
       </div>}
-      <div className={inline ? "max-h-[420px] overflow-auto p-2" : "flex-1 overflow-auto p-5"}>
-        <table className="w-full border-collapse">
+      <div className={inline ? "max-h-[420px] overflow-auto" : "flex-1 overflow-auto p-5"}>
+        <table className={inline ? "w-full table-fixed border-collapse" : "w-full border-collapse"}>
           <thead>
             <tr>
-              <th className="w-7 border border-transparent" />
+              {!inline && <th className="w-7 border border-transparent" />}
               {t.cols.map((c) => (
-                <th key={c.id} className="group relative border border-neutral-200 bg-neutral-50 p-0 text-left">
+                <th key={c.id} className={"group relative bg-neutral-50 p-0 text-left " + (inline ? "border-b border-r border-neutral-200 last:border-r-0" : "border border-neutral-200")}>
                   <input aria-label={"Название столбца «" + c.name + "»"} value={c.name} onChange={(e) => upd({ cols: t.cols.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)) })} className="h-[36px] w-full bg-transparent px-3 pr-7 text-[12px] font-extrabold uppercase tracking-wide text-neutral-500 focus:bg-violet-50 focus:outline-none" />
-                  {t.cols.length > 1 && <button onClick={() => delCol(c.id)} className="absolute right-1.5 top-[9px] hidden h-[18px] w-[18px] items-center justify-center rounded text-neutral-300 hover:bg-neutral-200 hover:text-red-500 group-hover:flex" title="Удалить столбец"><X size={12} /></button>}
+                  {t.cols.length > 1 && <button onClick={() => delCol(c.id)} className="absolute right-1.5 top-[9px] hidden h-[18px] w-[18px] items-center justify-center rounded text-neutral-300 hover:bg-neutral-200 hover:text-red-500 group-hover:flex focus:flex" title="Удалить столбец"><X size={12} /></button>}
                 </th>
               ))}
             </tr>
@@ -9821,14 +9821,16 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete, inli
           <tbody>
             {t.rows.map((r, ri) => (
               <tr key={r.id} className="group/row">
-                <td className="w-7 border border-transparent p-0 text-center align-top"><button onClick={() => delRow(r.id)} className="mt-[10px] hidden h-[18px] w-[18px] items-center justify-center rounded text-neutral-300 hover:bg-neutral-100 hover:text-red-500 group-hover/row:inline-flex" title="Удалить строку"><X size={12} /></button></td>
+                {!inline && <td className="w-7 border border-transparent p-0 text-center align-top"><button onClick={() => delRow(r.id)} className="mt-[10px] hidden h-[18px] w-[18px] items-center justify-center rounded text-neutral-300 hover:bg-neutral-100 hover:text-red-500 group-hover/row:inline-flex" title="Удалить строку"><X size={12} /></button></td>}
                 {t.cols.map((c, ci) => renderCell(r, ri, c, ci))}
               </tr>
             ))}
           </tbody>
         </table>
-        <button onClick={() => { const id = addRow(); focusCell(id + ":" + t.cols[0].id); }} className="ml-7 mt-1 inline-flex items-center gap-1 px-1 py-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> строка</button>
-        {inline && <button type="button" onClick={addCol} className="ml-3 inline-flex items-center gap-1 px-1 py-1.5 text-xs font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> столбец</button>}
+        <div className={inline ? "flex items-center gap-4 px-3 py-2" : ""}>
+        <button type="button" aria-label="Добавить строку" onClick={() => { const id = addRow(); focusCell(id + ":" + t.cols[0].id); }} className={(inline ? "" : "ml-7 mt-1 ") + "inline-flex items-center gap-1 py-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"}><Plus size={13} /> строка</button>
+        {inline && <button type="button" aria-label="Добавить столбец" onClick={addCol} className="inline-flex items-center gap-1 px-1 py-1.5 text-xs font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> столбец</button>}
+        </div>
         {!inline && <p className="ml-7 mt-3 text-[12px] text-neutral-400">«/» в ячейке — выбрать тип (чекбокс, статус, дата…). Enter — вниз, Shift+Enter — перенос строки, Tab — вправо. Cmd+V — вставка таблицы из Excel или Google Таблиц. Сохраняется автоматически.</p>}
       </div>
       {pop && (
@@ -9842,6 +9844,10 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete, inli
                   <span className="flex h-5 w-5 items-center justify-center rounded-md bg-neutral-100 text-[11px] font-bold text-neutral-500">{k.ic}</span>{k.label}
                 </button>
               )))}
+            {inline && pop.kind === "type" && <div className="mt-1 border-t border-neutral-100 pt-1">
+              <button type="button" onClick={() => { delRow(pop.rid); setPop(null); }} className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-red-500 hover:bg-red-50">Удалить строку</button>
+              {t.cols.length > 1 && <button type="button" onClick={() => { delCol(pop.cid); setPop(null); }} className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-red-500 hover:bg-red-50">Удалить столбец</button>}
+            </div>}
             {pop.kind === "status" && (
               <>
                 {TT_STATUSES.map((s) => <button key={s.id} type="button" onClick={() => { setCell(pop.rid, pop.cid, { k: "status", v: s.id }); setPop(null); }} className="flex h-7 w-full items-center rounded-[7px] px-2 hover:bg-neutral-50"><span className="rounded-md px-2 py-[2px] text-[12.5px] font-bold" style={{ background: s.bg, color: s.fg }}>{s.label}</span></button>)}
