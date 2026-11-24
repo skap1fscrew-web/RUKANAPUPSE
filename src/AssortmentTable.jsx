@@ -3656,8 +3656,6 @@ function AgentsBoard({ agents, onChange, onCreateTask, onOpenTask }) {
   const Pill = ({ a }) => <span className={"inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (AGENT_TYPES[a.type] || AGENT_TYPES.func).c}>{(AGENT_TYPES[a.type] || AGENT_TYPES.func).n}</span>;
   const Stage = ({ a }) => { const s = stageOf(a); return <span className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-600"><i className="inline-block h-2 w-2 rounded-full" style={{ background: s[2] }} />{s[1]}</span>; };
   const Priority = ({ a }) => { const p = AGENT_PRIORITIES[a.priority] || AGENT_PRIORITIES.med; return <span className={"inline-block rounded-full px-2 py-0.5 text-[11px] font-bold " + p.c}>{p.n}</span>; };
-  const readiness = (items, flag) => `${(items || []).filter((item) => item[flag]).length} / ${(items || []).length}`;
-  const Summary = ({ a }) => <div className="mt-2 space-y-1 text-[11px] text-neutral-500"><div className="flex justify-between gap-2"><span>План запуска</span><span>{readiness(a.steps, "done")}</span></div><div className="flex justify-between gap-2"><span>Данные и доступы</span><span>{readiness(a.data, "ok")}</span></div></div>;
   return (
     <div className="w-full min-w-0 rounded-2xl border border-neutral-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -3687,11 +3685,8 @@ function AgentsBoard({ agents, onChange, onCreateTask, onOpenTask }) {
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((a) => (
             <button key={a.id} onClick={() => { setSelId(a.id); setConfirmDel(false); }} className={"rounded-2xl border bg-white p-4 text-left transition hover:shadow-md " + (a.stage === "dev" ? "border-orange-200 bg-gradient-to-b from-white to-orange-50/50" : "border-neutral-200")}>
+              <div className="mb-2 break-words text-[15px] font-extrabold text-neutral-900">{a.name}</div>
               <div className="flex flex-wrap items-center gap-2"><Pill a={a} /><Priority a={a} /></div>
-              <div className="mt-2 text-[15px] font-extrabold text-neutral-900">{a.name}</div>
-              <div className="mt-1 line-clamp-3 text-[12.5px] leading-snug text-neutral-500">{a.desc || "Описание не заполнено"}</div>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-200"><div className="h-full rounded-full bg-orange-500" style={{ width: prog(a) + "%" }} /></div>
-              <Summary a={a} /><div className="mt-3 flex items-center"><Stage a={a} /></div>
             </button>
           ))}
           <button onClick={() => add()} className="flex min-h-[120px] items-center justify-center rounded-2xl border border-dashed border-neutral-300 text-sm font-extrabold text-neutral-400 hover:bg-neutral-50">+ Добавить агента</button>
@@ -3701,16 +3696,13 @@ function AgentsBoard({ agents, onChange, onCreateTask, onOpenTask }) {
       {view === "table" && (
         <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white">
           <table className="w-full min-w-[900px] border-collapse text-sm">
-            <thead><tr className="text-left text-[10.5px] font-extrabold tracking-wide text-neutral-400">{["АГЕНТ", "ТИП", "ПРИОРИТЕТ", "СТАТУС", "ЧТО ДЕЛАЕТ АГЕНТ", "ПЛАН ЗАПУСКА", "ДАННЫЕ И ДОСТУПЫ"].map((h) => <th key={h} className="px-3.5 py-2.5">{h}</th>)}</tr></thead>
+            <thead><tr className="text-left text-[10.5px] font-extrabold tracking-wide text-neutral-400">{["АГЕНТ", "ТИП", "ПРИОРИТЕТ", "СТАТУС"].map((h) => <th key={h} className="px-3.5 py-2.5">{h}</th>)}</tr></thead>
             <tbody>{shown.map((a) => (
               <tr key={a.id} onClick={() => { setSelId(a.id); setConfirmDel(false); }} className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50">
                 <td className="px-3.5 py-3 font-bold text-neutral-900">{a.name}</td>
                 <td className="px-3.5 py-3"><Pill a={a} /></td>
                 <td className="px-3.5 py-3"><Priority a={a} /></td>
                 <td className="px-3.5 py-3"><Stage a={a} /></td>
-                <td className="px-3.5 py-3 text-xs text-neutral-600">{a.desc || "Описание не заполнено"}</td>
-                <td className="px-3.5 py-3 text-xs text-neutral-600">{readiness(a.steps, "done")}</td>
-                <td className="px-3.5 py-3 text-xs text-neutral-600">{readiness(a.data, "ok")}</td>
               </tr>))}</tbody>
           </table>
         </div>
@@ -3736,8 +3728,6 @@ function AgentsBoard({ agents, onChange, onCreateTask, onOpenTask }) {
                     <button key={agent.id} onClick={() => { setSelId(agent.id); setConfirmDel(false); }} className="w-full rounded-xl border border-neutral-200 bg-white p-2.5 text-left transition hover:shadow-sm">
                       <div className="mb-2 break-words text-sm font-semibold leading-snug text-neutral-800">{agent.name}</div>
                       <div className="flex min-h-[22px] flex-wrap items-center gap-2"><Pill a={agent} /><Priority a={agent} /></div>
-                      <div className="mt-2 line-clamp-2 text-xs leading-relaxed text-neutral-500">{agent.desc || "Описание не заполнено"}</div>
-                      <Summary a={agent} />
                     </button>
                   ))}
                   {!items.length && <div className="p-1.5 text-xs text-neutral-400">Пока пусто</div>}
