@@ -3577,8 +3577,9 @@ function normDuties(v) {
 // ===== ИИ-агенты: реестр всех агентов в разных видах (карточки / таблица / по этапам) =====
 const AGENT_TYPES = { alert: { n: "Алерт", c: "bg-red-100 text-red-600" }, func: { n: "Функция", c: "bg-blue-100 text-blue-700" }, acct: { n: "Учёт", c: "bg-green-100 text-green-700" }, report: { n: "Отчёт", c: "bg-purple-100 text-purple-700" }, rule: { n: "Автоправило", c: "bg-amber-100 text-amber-700" }, query: { n: "Быстрый запрос", c: "bg-neutral-200 text-neutral-700" } };
 const AGENT_STAGES = [["idea", "Идея", "#a3a3a3"], ["dev", "Разработка", "#3b82f6"], ["live", "Работает", "#16a34a"]];
+const AGENT_PRIORITIES = { high: { n: "Высокий", c: "bg-red-50 text-red-600" }, med: { n: "Средний", c: "bg-neutral-100 text-neutral-600" }, low: { n: "Низкий", c: "bg-neutral-50 text-neutral-400" } };
 function defaultAgents() {
-  const A = (name, type, stage, desc, extra) => ({ id: uid(), name, type, stage, desc: desc || "", schedule: "", assignees: [], data: [], steps: [], taskId: null, ...(extra || {}) });
+  const A = (name, type, stage, desc, extra) => ({ id: uid(), name, type, stage, desc: desc || "", schedule: "", priority: "med", data: [], steps: [], taskId: null, ...(extra || {}) });
   const D = (name, ok) => ({ id: uid(), name, ok });
   const S = (text, done) => ({ id: uid(), text, done: !!done });
   return [
@@ -3623,7 +3624,7 @@ function defaultAgents() {
     A("Какой товар неликвидный", "query", "idea", "Быстрый вопрос агенту: список неликвидных товаров."),
   ];
 }
-function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }) {
+function AgentsBoard({ agents, onChange, onCreateTask, onOpenTask }) {
   const list = useMemo(() => (Array.isArray(agents) ? agents : []).map((agent) => agent.stage === "data" ? { ...agent, stage: "idea" } : agent), [agents]);
   const [view, setViewRaw] = useState(() => { const v = lsGet("rnp.agentsView", "cards"); return ["cards", "table", "stages"].includes(v) ? v : "cards"; });
   const setView = (v) => { setViewRaw(v); lsSet("rnp.agentsView", v); };
@@ -3638,17 +3639,15 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
     return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
   }, [filtersOpen]);
   const [fType, setFType] = useState("all");
-  const [fPerson, setFPerson] = useState("all");
+  const [fPriority, setFPriority] = useState("all");
   const [selId, setSelId] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
   const listRef = useRef(list); listRef.current = list;
-  const personName = (id) => { const p = people.find((x) => x.id === id); return p ? profileLabel(p) : ""; };
-  const initials = (id) => (personName(id) || "?").slice(0, 1).toUpperCase();
   const patch = (id, p) => onChange(listRef.current.map((a) => (a.id === id ? { ...a, ...p } : a)));
   const [collapsed, setCollapsed] = useState({});
-  const add = (stage = "idea") => { const a = { id: uid(), name: "Новый агент", type: "func", stage, desc: "", schedule: "", assignees: [], data: [], steps: [], taskId: null }; onChange([...listRef.current, a]); setConfirmDel(false); setSelId(a.id); };
+  const add = (stage = "idea") => { const a = { id: uid(), name: "Новый агент", type: "func", stage, desc: "", schedule: "", priority: "med", data: [], steps: [], taskId: null }; onChange([...listRef.current, a]); setConfirmDel(false); setSelId(a.id); };
   const del = (id) => { onChange(listRef.current.filter((a) => a.id !== id)); setSelId(null); setConfirmDel(false); };
-  const shown = list.filter((a) => (fType === "all" || a.type === fType) && (fPerson === "all" || (a.assignees || []).includes(fPerson)));
+  const shown = list.filter((a) => (fType === "all" || a.type === fType) && (fPriority === "all" || (a.priority || "med") === fPriority));
   const stageOf = (a) => AGENT_STAGES.find((s) => s[0] === a.stage) || AGENT_STAGES[0];
   const prog = (a) => { const st = a.steps || []; return st.length ? Math.round((st.filter((s) => s.done).length / st.length) * 100) : 0; };
   const sel = list.find((a) => a.id === selId) || null;
@@ -3656,23 +3655,24 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
   const sources = sel?.data || [];
   const Pill = ({ a }) => <span className={"inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold " + (AGENT_TYPES[a.type] || AGENT_TYPES.func).c}>{(AGENT_TYPES[a.type] || AGENT_TYPES.func).n}</span>;
   const Stage = ({ a }) => { const s = stageOf(a); return <span className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-600"><i className="inline-block h-2 w-2 rounded-full" style={{ background: s[2] }} />{s[1]}</span>; };
-  const Avs = ({ a }) => <span className="ml-auto flex -space-x-1">{(a.assignees || []).map((id) => <span key={id} title={personName(id)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white bg-orange-100 text-[10px] font-extrabold text-orange-700">{initials(id)}</span>)}</span>;
-  const dataTxt = (a) => (a.data || []).length ? (a.data || []).map((d) => d.name + (d.ok ? " ✓" : " ✗")).join(" · ") : "—";
+  const Priority = ({ a }) => { const p = AGENT_PRIORITIES[a.priority] || AGENT_PRIORITIES.med; return <span className={"inline-block rounded-full px-2 py-0.5 text-[11px] font-bold " + p.c}>{p.n}</span>; };
+  const readiness = (items, flag) => `${(items || []).filter((item) => item[flag]).length} / ${(items || []).length}`;
+  const Summary = ({ a }) => <div className="mt-2 space-y-1 text-[11px] text-neutral-500"><div className="flex justify-between gap-2"><span>План запуска</span><span>{readiness(a.steps, "done")}</span></div><div className="flex justify-between gap-2"><span>Данные и доступы</span><span>{readiness(a.data, "ok")}</span></div></div>;
   return (
     <div className="w-full min-w-0 rounded-2xl border border-neutral-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mr-auto text-lg font-bold text-neutral-900">ИИ-агенты</h2>
         <div className="relative" ref={filterRef}>
-          <button aria-label="Фильтры агентов" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (fType !== "all" || fPerson !== "all" ? "border-neutral-900 text-neutral-900" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}><SlidersHorizontal size={15} /></button>
+          <button aria-label="Фильтры агентов" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)} className={"inline-flex h-8 w-8 items-center justify-center rounded-lg border " + (fType !== "all" || fPriority !== "all" ? "border-neutral-900 text-neutral-900" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}><SlidersHorizontal size={15} /></button>
           {filtersOpen && <div className="absolute right-0 top-full z-30 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-neutral-200 bg-white p-3 shadow-lg">
-            <div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold">Фильтры</span><button onClick={() => { setFType("all"); setFPerson("all"); }} className="text-xs text-neutral-500 hover:text-neutral-900">Сбросить</button></div>
+            <div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold">Фильтры</span><button onClick={() => { setFType("all"); setFPriority("all"); }} className="text-xs text-neutral-500 hover:text-neutral-900">Сбросить</button></div>
             <fieldset><legend className="mb-1 text-xs text-neutral-500">Тип агента</legend>
               {[["all", "Все типы"], ...Object.entries(AGENT_TYPES).map(([key, type]) => [key, type.n])].map(([key, name]) => <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1.5 text-xs hover:bg-neutral-50"><input type="radio" name="agent-type" value={key} checked={fType === key} onChange={() => setFType(key)} className="accent-neutral-900" />{name}</label>)}
             </fieldset>
-            <label className="mt-3 block text-xs text-neutral-500">Исполнитель
-              <select value={fPerson} onChange={(event) => setFPerson(event.target.value)} className="mt-1 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-700">
-                <option value="all">Все исполнители</option>
-                {people.map((person) => <option key={person.id} value={person.id}>{profileLabel(person)}</option>)}
+            <label className="mt-3 block text-xs text-neutral-500">Приоритет
+              <select aria-label="Фильтр по приоритету агента" value={fPriority} onChange={(event) => setFPriority(event.target.value)} className="mt-1 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-700">
+                <option value="all">Все приоритеты</option>
+                {Object.entries(AGENT_PRIORITIES).map(([key, priority]) => <option key={key} value={key}>{priority.n}</option>)}
               </select>
             </label>
           </div>}
@@ -3687,11 +3687,11 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((a) => (
             <button key={a.id} onClick={() => { setSelId(a.id); setConfirmDel(false); }} className={"rounded-2xl border bg-white p-4 text-left transition hover:shadow-md " + (a.stage === "dev" ? "border-orange-200 bg-gradient-to-b from-white to-orange-50/50" : "border-neutral-200")}>
-              <Pill a={a} />
+              <div className="flex flex-wrap items-center gap-2"><Pill a={a} /><Priority a={a} /></div>
               <div className="mt-2 text-[15px] font-extrabold text-neutral-900">{a.name}</div>
               <div className="mt-1 line-clamp-3 text-[12.5px] leading-snug text-neutral-500">{a.desc || "Описание не заполнено"}</div>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-200"><div className="h-full rounded-full bg-orange-500" style={{ width: prog(a) + "%" }} /></div>
-              <div className="mt-3 flex items-center"><Stage a={a} /><Avs a={a} /></div>
+              <Summary a={a} /><div className="mt-3 flex items-center"><Stage a={a} /></div>
             </button>
           ))}
           <button onClick={() => add()} className="flex min-h-[120px] items-center justify-center rounded-2xl border border-dashed border-neutral-300 text-sm font-extrabold text-neutral-400 hover:bg-neutral-50">+ Добавить агента</button>
@@ -3701,15 +3701,16 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
       {view === "table" && (
         <div className="mt-4 overflow-x-auto rounded-2xl border border-neutral-200 bg-white">
           <table className="w-full min-w-[900px] border-collapse text-sm">
-            <thead><tr className="text-left text-[10.5px] font-extrabold tracking-wide text-neutral-400">{["АГЕНТ", "ТИП", "ЭТАП", "ДАННЫЕ", "ЗАПУСК", "ИСПОЛНИТЕЛЬ"].map((h) => <th key={h} className="px-3.5 py-2.5">{h}</th>)}</tr></thead>
+            <thead><tr className="text-left text-[10.5px] font-extrabold tracking-wide text-neutral-400">{["АГЕНТ", "ТИП", "ПРИОРИТЕТ", "СТАТУС", "ЧТО ДЕЛАЕТ АГЕНТ", "ПЛАН ЗАПУСКА", "ДАННЫЕ И ДОСТУПЫ"].map((h) => <th key={h} className="px-3.5 py-2.5">{h}</th>)}</tr></thead>
             <tbody>{shown.map((a) => (
               <tr key={a.id} onClick={() => { setSelId(a.id); setConfirmDel(false); }} className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50">
                 <td className="px-3.5 py-3 font-bold text-neutral-900">{a.name}</td>
                 <td className="px-3.5 py-3"><Pill a={a} /></td>
+                <td className="px-3.5 py-3"><Priority a={a} /></td>
                 <td className="px-3.5 py-3"><Stage a={a} /></td>
-                <td className="px-3.5 py-3 text-xs text-neutral-600">{dataTxt(a)}</td>
-                <td className="px-3.5 py-3 text-xs text-neutral-600">{a.schedule || "—"}</td>
-                <td className="px-3.5 py-3 text-xs text-neutral-600">{(a.assignees || []).map(personName).filter(Boolean).join(", ") || "—"}</td>
+                <td className="px-3.5 py-3 text-xs text-neutral-600">{a.desc || "Описание не заполнено"}</td>
+                <td className="px-3.5 py-3 text-xs text-neutral-600">{readiness(a.steps, "done")}</td>
+                <td className="px-3.5 py-3 text-xs text-neutral-600">{readiness(a.data, "ok")}</td>
               </tr>))}</tbody>
           </table>
         </div>
@@ -3734,7 +3735,9 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
                   {items.map((agent) => (
                     <button key={agent.id} onClick={() => { setSelId(agent.id); setConfirmDel(false); }} className="w-full rounded-xl border border-neutral-200 bg-white p-2.5 text-left transition hover:shadow-sm">
                       <div className="mb-2 break-words text-sm font-semibold leading-snug text-neutral-800">{agent.name}</div>
-                      <div className="flex min-h-[22px] items-center gap-2"><Pill a={agent} /><Avs a={agent} /></div>
+                      <div className="flex min-h-[22px] flex-wrap items-center gap-2"><Pill a={agent} /><Priority a={agent} /></div>
+                      <div className="mt-2 line-clamp-2 text-xs leading-relaxed text-neutral-500">{agent.desc || "Описание не заполнено"}</div>
+                      <Summary a={agent} />
                     </button>
                   ))}
                   {!items.length && <div className="p-1.5 text-xs text-neutral-400">Пока пусто</div>}
@@ -3796,14 +3799,9 @@ function AgentsBoard({ agents, onChange, people = [], onCreateTask, onOpenTask }
                 </div>
               </div>
               <aside className="flex min-w-0 flex-col gap-5 border-t border-neutral-100 p-5 sm:border-t-0">
-                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Этап<select aria-label="Этап агента" value={sel.stage} onChange={(e) => patch(sel.id, { stage: e.target.value })} className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700">{AGENT_STAGES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
-                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Тип агента<select aria-label="Тип агента" value={sel.type} onChange={(e) => patch(sel.id, { type: e.target.value })} className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700">{Object.entries(AGENT_TYPES).map(([k, v]) => <option key={k} value={k}>{v.n}</option>)}</select></label>
-                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Запуск<input aria-label="Расписание" value={sel.schedule || ""} onChange={(e) => patch(sel.id, { schedule: e.target.value })} placeholder="Когда запускается" className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700" /></label>
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Ответственные</div>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">{people.map((p) => { const on = (sel.assignees || []).includes(p.id); return <button key={p.id} onClick={() => patch(sel.id, { assignees: on ? sel.assignees.filter((x) => x !== p.id) : [...(sel.assignees || []), p.id] })} className={"rounded-full border px-2.5 py-1 text-xs font-bold " + (on ? "border-orange-300 bg-orange-100 text-orange-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50")}>{profileLabel(p)}</button>; })}</div>
-                  {!people.length && <p className="mt-1.5 text-xs text-neutral-400">Нет доступных исполнителей</p>}
-                </div>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Тип<select aria-label="Тип агента" value={sel.type} onChange={(e) => patch(sel.id, { type: e.target.value })} className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700">{Object.entries(AGENT_TYPES).map(([k, v]) => <option key={k} value={k}>{v.n}</option>)}</select></label>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Приоритет<select aria-label="Приоритет агента" value={sel.priority || "med"} onChange={(e) => patch(sel.id, { priority: e.target.value })} className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700">{Object.entries(AGENT_PRIORITIES).map(([key, priority]) => <option key={key} value={key}>{priority.n}</option>)}</select></label>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Статус<select aria-label="Статус агента" value={sel.stage} onChange={(e) => patch(sel.id, { stage: e.target.value })} className="mt-1.5 h-8 w-full rounded-lg border border-neutral-200 bg-white px-2 text-xs font-semibold text-neutral-700">{AGENT_STAGES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
               </aside>
             </div>
             <footer className="flex flex-wrap items-center gap-2 border-t border-neutral-100 px-5 py-3">
