@@ -9661,8 +9661,9 @@ function ttCellText(cell, people) {
   if (cell.k === "date") return cell.v ? String(cell.v).split("-").reverse().slice(0, 2).join(".") : "";
   return String(cell.v || "");
 }
-function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
+function TaskTableEditor({ table, people = [], onChange, onClose, onDelete, inline = false, onExpand }) {
   const t = table;
+  const editorRef = useRef(null);
   const [pop, setPop] = useState(null); // {kind:'slash'|'type'|'status'|'user', rid, cid, x, y, sel}
   const [delAsk, setDelAsk] = useState(false);
   const upd = (patch) => onChange({ ...t, ...patch });
@@ -9671,7 +9672,7 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
   const addCol = () => upd({ cols: [...t.cols, { id: uid(), name: "Столбец " + (t.cols.length + 1) }] });
   const delRow = (rid) => upd({ rows: t.rows.filter((r) => r.id !== rid) });
   const delCol = (cid) => { if (t.cols.length <= 1) return; upd({ cols: t.cols.filter((c) => c.id !== cid), rows: t.rows.map((r) => { const cells = { ...r.cells }; delete cells[cid]; return { ...r, cells }; }) }); };
-  const focusCell = (key) => setTimeout(() => { const el = document.querySelector('[data-cell="' + key + '"]'); if (el) { el.focus(); if (el.select && el.type !== "date") el.select(); } }, 40);
+  const focusCell = (key) => setTimeout(() => { const el = editorRef.current?.querySelector('[data-cell="' + key + '"]'); if (el) { el.focus(); if (el.select && el.type !== "date") el.select(); } }, 40);
   const posOf = (el) => { const r = el.getBoundingClientRect(); return { x: Math.max(8, Math.min(r.left, window.innerWidth - 236)), y: Math.min(r.bottom + 4, window.innerHeight - 290) }; };
   const slashItems = (q) => { const s = String(q || "").trim().toLowerCase(); return s ? TT_KINDS.filter((k) => k.label.toLowerCase().includes(s) || k.kw.includes(s)) : TT_KINDS; };
   const cellVal = (rid, cid) => { const r = t.rows.find((x) => x.id === rid); const c = r && r.cells[cid]; return c && c.k === "text" ? String(c.v || "") : ""; };
@@ -9779,7 +9780,7 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
         </div>
       );
     } else {
-      body = <textarea data-cell={key} rows={1} value={cell.v || ""} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onChange={(e) => onTextChange(e, r.id, c.id)} onKeyDown={(e) => onTextKey(e, ri, r.id, c.id, ci)} onPaste={(e) => onPaste(e, ri, ci)} onBlur={() => setPop((p) => (p && p.kind === "slash" ? null : p))} className={inCls.replace("h-[38px]", "block min-h-[38px] resize-none overflow-hidden py-[9px] leading-[20px]")} />;
+      body = <textarea aria-label={c.name + ", строка " + (ri + 1)} data-cell={key} rows={1} value={cell.v || ""} ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }} onChange={(e) => onTextChange(e, r.id, c.id)} onKeyDown={(e) => onTextKey(e, ri, r.id, c.id, ci)} onPaste={(e) => onPaste(e, ri, ci)} onBlur={() => setPop((p) => (p && p.kind === "slash" ? null : p))} className={inCls.replace("h-[38px]", "block min-h-[38px] resize-none overflow-hidden py-[9px] leading-[20px]")} />;
     }
     return (
       <td key={c.id} className="group relative min-w-[170px] border border-neutral-200 p-0 align-top">
@@ -9790,8 +9791,11 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
   };
   const popItems = pop && (pop.kind === "slash" ? slashItems(cellVal(pop.rid, pop.cid).slice(1)) : TT_KINDS);
   return (
-    <div className="fixed inset-0 z-[85] flex flex-col bg-white" onClick={(e) => e.stopPropagation()}>
-      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
+    <div ref={editorRef} className={inline ? "min-w-0 bg-white" : "fixed inset-0 z-[85] flex flex-col bg-white"} onClick={(e) => e.stopPropagation()}>
+      {inline ? <div className="flex items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
+        <input aria-label="Название таблицы" value={t.title} onChange={(e) => upd({ title: e.target.value })} placeholder="Название таблицы" className="min-w-0 flex-1 bg-transparent text-sm font-bold text-neutral-800 focus:outline-none" />
+        <button type="button" aria-label="Развернуть таблицу" title="Развернуть таблицу" onClick={onExpand} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"><Maximize2 size={15} /></button>
+      </div> : <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3">
         <button onClick={onClose} className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] font-bold text-violet-600 hover:bg-violet-50"><ChevronLeft size={15} /> К задаче</button>
         <input value={t.title} onChange={(e) => upd({ title: e.target.value })} placeholder="Название таблицы" className="min-w-[160px] flex-1 border-none bg-transparent text-[17px] font-extrabold text-neutral-900 placeholder:text-neutral-300 focus:outline-none" />
         <button onClick={addRow} className="inline-flex h-8 items-center gap-1 rounded-[9px] border border-neutral-200 px-3 text-[12.5px] font-bold text-neutral-700 hover:bg-neutral-50"><Plus size={13} /> Строка</button>
@@ -9800,15 +9804,15 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
           ? <button onClick={onDelete} onMouseLeave={() => setDelAsk(false)} className="inline-flex h-8 items-center rounded-[9px] bg-red-600 px-3 text-[12.5px] font-bold text-white">Точно удалить?</button>
           : <button onClick={() => setDelAsk(true)} className="inline-flex h-8 w-8 items-center justify-center rounded-[9px] border border-neutral-200 text-neutral-400 hover:text-red-500" title="Удалить таблицу"><Trash2 size={14} /></button>}
         <button onClick={onClose} className="inline-flex h-8 items-center rounded-[9px] bg-neutral-900 px-4 text-[12.5px] font-bold text-white hover:bg-neutral-700">Готово</button>
-      </div>
-      <div className="flex-1 overflow-auto p-5">
+      </div>}
+      <div className={inline ? "max-h-[420px] overflow-auto p-2" : "flex-1 overflow-auto p-5"}>
         <table className="w-full border-collapse">
           <thead>
             <tr>
               <th className="w-7 border border-transparent" />
               {t.cols.map((c) => (
                 <th key={c.id} className="group relative border border-neutral-200 bg-neutral-50 p-0 text-left">
-                  <input value={c.name} onChange={(e) => upd({ cols: t.cols.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)) })} className="h-[36px] w-full bg-transparent px-3 pr-7 text-[12px] font-extrabold uppercase tracking-wide text-neutral-500 focus:bg-violet-50 focus:outline-none" />
+                  <input aria-label={"Название столбца «" + c.name + "»"} value={c.name} onChange={(e) => upd({ cols: t.cols.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)) })} className="h-[36px] w-full bg-transparent px-3 pr-7 text-[12px] font-extrabold uppercase tracking-wide text-neutral-500 focus:bg-violet-50 focus:outline-none" />
                   {t.cols.length > 1 && <button onClick={() => delCol(c.id)} className="absolute right-1.5 top-[9px] hidden h-[18px] w-[18px] items-center justify-center rounded text-neutral-300 hover:bg-neutral-200 hover:text-red-500 group-hover:flex" title="Удалить столбец"><X size={12} /></button>}
                 </th>
               ))}
@@ -9824,12 +9828,13 @@ function TaskTableEditor({ table, people = [], onChange, onClose, onDelete }) {
           </tbody>
         </table>
         <button onClick={() => { const id = addRow(); focusCell(id + ":" + t.cols[0].id); }} className="ml-7 mt-1 inline-flex items-center gap-1 px-1 py-1.5 text-[13px] font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> строка</button>
-        <p className="ml-7 mt-3 text-[12px] text-neutral-400">«/» в ячейке — выбрать тип (чекбокс, статус, дата…). Enter — вниз, Shift+Enter — перенос строки, Tab — вправо. Cmd+V — вставка таблицы из Excel или Google Таблиц. Сохраняется автоматически.</p>
+        {inline && <button type="button" onClick={addCol} className="ml-3 inline-flex items-center gap-1 px-1 py-1.5 text-xs font-semibold text-neutral-400 hover:text-neutral-600"><Plus size={13} /> столбец</button>}
+        {!inline && <p className="ml-7 mt-3 text-[12px] text-neutral-400">«/» в ячейке — выбрать тип (чекбокс, статус, дата…). Enter — вниз, Shift+Enter — перенос строки, Tab — вправо. Cmd+V — вставка таблицы из Excel или Google Таблиц. Сохраняется автоматически.</p>}
       </div>
       {pop && (
         <>
-          {pop.kind !== "slash" && <div className="fixed inset-0 z-[1]" onClick={() => setPop(null)} />}
-          <div className="fixed z-[2] w-[220px] rounded-[10px] border border-neutral-200 bg-white p-1 shadow-2xl" style={{ left: pop.x, top: pop.y }} onMouseDown={(e) => e.preventDefault()}>
+          {pop.kind !== "slash" && <div className="fixed inset-0 z-[90]" onClick={() => setPop(null)} />}
+          <div className="fixed z-[91] w-[220px] rounded-[10px] border border-neutral-200 bg-white p-1 shadow-2xl" style={{ left: pop.x, top: pop.y }} onMouseDown={(e) => e.preventDefault()}>
             {(pop.kind === "slash" || pop.kind === "type") && (popItems.length === 0
               ? <div className="px-2 py-1.5 text-[12.5px] text-neutral-400">Ничего не найдено</div>
               : popItems.map((k, i) => (
@@ -9954,50 +9959,23 @@ function JobEditor({ job, maps = [], onOpenWork, onCreateMap, liveLog = [], task
       </div>
     </div>
   ) : null;
-  const matBlock = big ? (
-    <div>
-              <div className="mb-3 flex items-center gap-2">
-                <div className={fieldL + " flex-1"}>Рабочая среда</div>
-                {addMenu}
-              </div>
-              {workChips}
-              {tables.length === 0 && <button onClick={addTable} className="w-full rounded-[14px] border-[1.5px] border-dashed border-neutral-200 py-8 text-[13px] font-semibold text-neutral-400 hover:border-violet-300 hover:text-violet-600">＋ Добавить таблицу</button>}
-              <div className="flex flex-col gap-4">
-                {tables.map((tb) => (
-                  <div key={tb.id} className="overflow-hidden rounded-[14px] border border-neutral-200 bg-white">
-                    <button onClick={() => setTblOpen(tb.id)} className="flex w-full items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5 text-left hover:bg-neutral-50"><span className="min-w-0 flex-1 truncate text-[14px] font-extrabold text-neutral-800">▦ {tb.title || "Таблица"}</span><span className="text-[12px] font-bold text-violet-600">развернуть ⤢</span></button>
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-[13px]">
-                        <thead><tr>{tb.cols.map((c) => <th key={c.id} className="border border-neutral-100 bg-neutral-50 px-3 py-2 text-left text-[11.5px] font-extrabold uppercase tracking-wide text-neutral-500">{c.name}</th>)}</tr></thead>
-                        <tbody>{tb.rows.map((r) => <tr key={r.id}>{tb.cols.map((c) => { const cl = r.cells[c.id]; const st = cl && cl.k === "status" ? TT_STATUSES.find((x) => x.id === cl.v) : null; return <td key={c.id} onClick={() => setTblOpen(tb.id)} className="h-[34px] cursor-pointer border border-neutral-100 px-3 text-neutral-700">{st ? <span className="rounded-md px-2 py-[2px] text-[12px] font-bold" style={{ background: st.bg, color: st.fg }}>{st.label}</span> : cl && cl.k === "check" ? <span className={"inline-flex h-4 w-4 items-center justify-center rounded-[5px] border-[1.5px] align-middle " + (cl.v ? "border-green-500 bg-green-500 text-white" : "border-neutral-300")}>{cl.v && <Check size={11} strokeWidth={3} />}</span> : ttCellText(cl, people)}</td>; })}</tr>)}</tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-  ) : (
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                <div className={fieldL + " flex-1"}>Рабочая среда</div>
-                {addMenu}
-              </div>
-              {workChips}
-              {tables.length > 0 && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {tables.map((tb) => (
-                    <button key={tb.id} onClick={() => setTblOpen(tb.id)} className="flex min-w-0 flex-col rounded-[14px] border border-neutral-200 bg-white p-3 text-left transition hover:border-violet-300 hover:shadow-sm">
-                      <div className="mb-2 flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[14px] font-extrabold text-neutral-800">▦ {tb.title || "Таблица"}</span><span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-[11px] font-bold text-neutral-500">таблица</span></div>
-                      <table className="w-full table-fixed border-collapse text-[11.5px]">
-                        <thead><tr>{tb.cols.slice(0, 3).map((c) => <th key={c.id} className="truncate border border-neutral-100 bg-neutral-50 px-1.5 py-1 text-left font-bold text-neutral-500">{c.name}</th>)}</tr></thead>
-                        <tbody>{tb.rows.slice(0, 3).map((r) => <tr key={r.id}>{tb.cols.slice(0, 3).map((c) => <td key={c.id} className="h-[24px] truncate border border-neutral-100 px-1.5 text-neutral-700">{ttCellText(r.cells[c.id], people)}</td>)}</tr>)}</tbody>
-                      </table>
-                      <div className="mt-2 flex items-center justify-between text-[11.5px] text-neutral-400"><span>{tb.rows.length} стр. × {tb.cols.length} стлб.</span><span className="font-bold text-violet-600">Открыть →</span></div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+  const updateTable = (nt) => setJ((current) => ({ ...current, tables: (current.tables || []).map((table) => table.id === nt.id ? nt : table) }));
+  const matBlock = (
+    <div className="min-w-0">
+      <div className="mb-3 flex items-center gap-2">
+        <div className={fieldL + " flex-1"}>Рабочая среда</div>
+        {addMenu}
+      </div>
+      {workChips}
+      {tables.length === 0 && big && <button onClick={addTable} className="w-full rounded-[14px] border-[1.5px] border-dashed border-neutral-200 py-8 text-[13px] font-semibold text-neutral-400 hover:border-violet-300 hover:text-violet-600">＋ Добавить таблицу</button>}
+      <div className="flex min-w-0 flex-col gap-4">
+        {tables.map((tb) => (
+          <div key={tb.id} className="min-w-0 overflow-hidden rounded-[14px] border border-neutral-200 bg-white">
+            <TaskTableEditor inline table={tb} people={people} onChange={updateTable} onExpand={() => setTblOpen(tb.id)} />
+          </div>
+        ))}
+      </div>
+    </div>
   );
   const setCl = (cl) => set("checklist", cl);
   const addCheck = () => { const id = uid(); setCl([...checklist, { id, text: "", done: false }]); setFocusCheckId(id); };
@@ -10102,7 +10080,7 @@ function JobEditor({ job, maps = [], onOpenWork, onCreateMap, liveLog = [], task
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-900/40 p-4" onClick={onClose}>
-      {openTable && <TaskTableEditor table={openTable} people={people} onChange={(nt) => set("tables", tables.map((x) => (x.id === nt.id ? nt : x)))} onClose={() => setTblOpen(null)} onDelete={() => { set("tables", tables.filter((x) => x.id !== openTable.id)); setTblOpen(null); }} />}
+      {openTable && <TaskTableEditor table={openTable} people={people} onChange={updateTable} onClose={() => setTblOpen(null)} onDelete={() => { set("tables", tables.filter((x) => x.id !== openTable.id)); setTblOpen(null); }} />}
       <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl " + (big ? "h-full max-h-full max-w-none" : expanded ? "max-w-5xl max-h-[94vh]" : "max-w-2xl max-h-[88vh]")} onClick={(e) => e.stopPropagation()}>
         {/* Шапка: компактный переключатель типа + создано + действия */}
         <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3.5 py-2.5">
