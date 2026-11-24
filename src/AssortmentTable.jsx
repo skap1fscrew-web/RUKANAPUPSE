@@ -3214,7 +3214,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
 
       {workWin && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3" onClick={() => setWorkWin(null)}>
-          <div className="flex h-[92vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className={"flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl " + (workWin.kind === "map" ? "h-full" : "h-[92vh] max-w-[1500px]")} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 border-b border-neutral-100 bg-neutral-50 px-5 py-3">
               <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-extrabold text-violet-700">{workWin.kind === "map" ? "Карта" : "Блок"}</span>
               <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold text-neutral-900">{workWin.title}</div>
