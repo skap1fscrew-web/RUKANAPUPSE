@@ -10748,12 +10748,12 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const rub = (n) => Math.round(n).toLocaleString("ru-RU");
   const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return rnpWbFmt(t, v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
   // итого по дням (по показанным товарам)
-  const W_P = 200, W_F = 140, W_L = 160;
+  const W_P = 150, W_F = 80, W_L = 140, W_D = 44;
   const stk = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
   const chip = "rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition ";
   return (
     <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white text-[#1E2023]">
-      <div className="flex flex-wrap items-center gap-2 px-5 py-4">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3">
         <h2 className="mr-4 text-base font-semibold text-[#1E2023]">РНП</h2>
         <div className="inline-flex items-center gap-1 rounded-lg bg-[#EDF0F4] p-0.5">
           <button onClick={() => setEndOff((o) => o - 7)} title="Неделей раньше" className="flex h-7 w-8 items-center justify-center rounded-md bg-white text-[#1E2023] transition hover:bg-neutral-50"><ChevronLeft size={16} /></button>
@@ -10840,11 +10840,12 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
       </div>
       {list.length === 0 ? <div className="py-12 text-center text-sm text-neutral-400">Нет товаров с данными РНП. Выключите «Только с данными», чтобы вносить записи по любым товарам</div> : (
         <div className="overflow-auto border-t border-[#CBCFD8]" style={{ maxHeight: "calc(100vh / " + 0.8 + " - 190px)" }}>
-          <table className="border-separate text-[11.5px]" style={{ borderSpacing: 0, minWidth: "100%" }}>
+          <table className="border-separate text-xs" style={{ borderSpacing: 0, tableLayout: "fixed", width: W_P + W_F + W_L + dayList.length * W_D }}>
+            <colgroup><col style={{ width: W_P }} /><col style={{ width: W_F }} /><col style={{ width: W_L }} />{dayList.map((d) => <col key={d.key} style={{ width: W_D }} />)}</colgroup>
             <thead>
               <tr>
-                {[["ТОВАР", 0, W_P], ["ФОНД", W_P, W_F], ["МЕТРИКИ", W_P + W_F, W_L]].map(([label, left, width]) => <th key={label} style={{ ...stk(left, width, "#F6F7F9", 5), top: 0, textAlign: "left", padding: "14px 16px", color: "#646C7C", fontSize: 12, fontWeight: 600, borderBottom: "1px solid #CBCFD8" }}>{label}</th>)}
-                {dayList.map((d) => { const dt = new Date(d.key + "T00:00:00"); const tdy = d.key === todayISO; return <th key={d.key} style={{ position: "sticky", top: 0, zIndex: 4, background: tdy ? "#1E2023" : "#F6F7F9", minWidth: 60, padding: "10px 0", borderLeft: tdy ? "1px solid #1E2023" : undefined, borderRight: tdy ? "1px solid #1E2023" : undefined, textAlign: "center", borderBottom: "1px solid #CBCFD8", color: tdy ? "#CBCFD8" : "#959DAD", fontWeight: 600 }}><div style={{ fontSize: 12, fontWeight: 800, color: tdy ? "#fff" : "#1E2023" }}>{dt.getDate()}</div><div style={{ fontSize: 11 }}>{dow[dt.getDay()]}</div></th>; })}
+                {[["ТОВАР", 0, W_P], ["ФОНД", W_P, W_F], ["МЕТРИКИ", W_P + W_F, W_L]].map(([label, left, width]) => <th key={label} style={{ ...stk(left, width, "#F6F7F9", 5), top: 0, textAlign: "left", height: 40, padding: "6px 10px", color: "#646C7C", fontSize: 11, fontWeight: 600, borderBottom: "1px solid #CBCFD8" }}>{label}</th>)}
+                {dayList.map((d) => { const dt = new Date(d.key + "T00:00:00"); const tdy = d.key === todayISO; return <th key={d.key} style={{ position: "sticky", top: 0, zIndex: 4, background: tdy ? "#1E2023" : "#F6F7F9", width: W_D, minWidth: W_D, height: 40, padding: "4px 0", borderLeft: tdy ? "1px solid #1E2023" : undefined, borderRight: tdy ? "1px solid #1E2023" : undefined, textAlign: "center", borderBottom: "1px solid #CBCFD8", color: tdy ? "#CBCFD8" : "#959DAD", fontWeight: 600 }}><div style={{ fontSize: 12, fontWeight: 800, color: tdy ? "#fff" : "#1E2023" }}>{dt.getDate()}</div><div style={{ fontSize: 11 }}>{dow[dt.getDay()]}</div></th>; })}
               </tr>
             </thead>
             <tbody>
@@ -10858,12 +10859,12 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                         <td rowSpan={trs.length} style={{ ...stk(0, W_P, "#fff", 2), borderBottom: "1px solid #E0E3EA", borderRight: "1px solid #E0E3EA", verticalAlign: "middle", padding: 0 }}>
                           <div className="group/foc relative">
                           <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-center gap-2.5 px-2 py-2 text-left hover:bg-neutral-50" title="Открыть карточку">
-                            <span className="flex min-w-0 flex-col gap-1 px-2 py-3"><span className="text-xs font-semibold text-[#959DAD]">{p.code || "—"}</span><span className="line-clamp-3 text-sm font-semibold leading-tight text-[#1E2023]">{p.name || "Без названия"}</span></span>
+                            <span className="flex min-w-0 flex-col gap-1 px-0.5 py-2"><span className="text-xs font-semibold text-[#959DAD]">{p.code || "—"}</span><span className="line-clamp-3 text-[13px] font-semibold leading-tight text-[#1E2023]">{p.name || "Без названия"}</span></span>
                           </button>
                           <button onClick={() => setFocusId((f) => (f === p.id ? null : p.id))} title={focusId === p.id ? "Выйти из фокуса" : "Фокус на этом товаре"} className={"absolute right-1.5 top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] transition " + (focusId === p.id ? "bg-neutral-900 text-white opacity-100" : "text-neutral-400 opacity-0 hover:text-neutral-800 group-hover/foc:opacity-100")}><Focus size={14} /></button>
                           </div>
                         </td>
-                        <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "1px solid #E0E3EA", borderRight: "1px solid #E0E3EA", verticalAlign: "middle", padding: "0 10px" }}>
+                        <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "1px solid #E0E3EA", borderRight: "1px solid #E0E3EA", verticalAlign: "middle", padding: "0 6px" }}>
                           <div className="relative flex flex-col leading-[1.15]">
                             {b.fund ? (
                               <>
@@ -10882,7 +10883,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                         </td>
                       </>
                     )}
-                    <td style={{ ...stk(W_P + W_F, W_L, "#fff", 2), padding: 0, fontWeight: 400, color: "#1E2023", fontSize: 13, whiteSpace: "nowrap", borderRight: "1px solid #E0E3EA", borderBottom: ti === trs.length - 1 ? "1px solid #E0E3EA" : "1px solid #E0E3EA" }}>{t ? ((t.kind === "twoRow" || t.kind === "rangeTask") ? <button onClick={() => onOpenDB && onOpenDB(p.id, t)} title="Все записи по строке" className="h-full w-full px-3 text-left font-normal hover:bg-neutral-50 hover:text-neutral-900">{t.label}</button> : <span className="px-2.5">{t.label}</span>) : ""}</td>
+                    <td style={{ ...stk(W_P + W_F, W_L, "#fff", 2), padding: 0, fontWeight: 400, color: "#1E2023", fontSize: 12, whiteSpace: "nowrap", borderRight: "1px solid #E0E3EA", borderBottom: ti === trs.length - 1 ? "1px solid #E0E3EA" : "1px solid #E0E3EA" }}>{t ? ((t.kind === "twoRow" || t.kind === "rangeTask") ? <button onClick={() => onOpenDB && onOpenDB(p.id, t)} title="Все записи по строке" className="h-full w-full px-3 text-left font-normal hover:bg-neutral-50 hover:text-neutral-900">{t.label}</button> : <span className="px-2.5">{t.label}</span>) : ""}</td>
                     {t ? dayList.map((d) => {
                       const v = rnpDayActivity(t, p, d.key, wbOrders); const fill = (p.rnp.fills || {})[`${t.id}:${d.key}`]; const col = t.id === "drr" ? "#2864A2" : t.id === "bloggers" ? "#7A3B94" : RNP_COLORS[t.id] || "#64748b";
                       const isTd = d.key === todayISO;
@@ -10891,13 +10892,13 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                       const metricColor = t.id === "drr" ? "#2864A2" : t.kind === "wbOrders" ? "#007B55" : col;
                       const metricFill = t.id === "drr" ? "#DEEBFC" : t.kind === "wbOrders" ? (isTd ? "#9AF9D2" : "#D9FFF0") : t.id === "bloggers" ? "#F1DFF9" : col + "22";
                       const bg = fill || (v ? (t.kind === "twoRow" && !allDone ? "#EDF0F4" : metricFill) : "#fff");
-                      const base = { background: bg, color: metricColor, textAlign: "center", fontWeight: 600, fontSize: 13, height: 36, padding: 0, borderLeft: "1px solid " + (isTd ? "#1E2023" : "#E0E3EA"), borderRight: isTd ? "1px solid #1E2023" : undefined, borderBottom: "1px solid #E0E3EA" };
+                      const base = { background: bg, color: metricColor, textAlign: "center", fontWeight: 600, fontSize: 12, height: 27, padding: 0, borderLeft: "1px solid " + (isTd ? "#1E2023" : "#E0E3EA"), borderRight: isTd ? "1px solid #1E2023" : undefined, borderBottom: "1px solid #E0E3EA" };
                       if (t.kind === "wbOrders") return <td key={d.key} title={rnpWbTip(t, p, d.key) || t.label} style={base}>{cellTxt(t, v)}</td>;
                       if (t.kind === "singleCost") {
                         const ad = rnpAdDay(p, d.key);
                         if (t.id === "internal" && ad !== undefined) return <td key={d.key} title="Факт из WB (внутренняя реклама)" style={{ ...base, background: fill || (ad > 0 ? col + "22" : "#fff"), color: col }}>{ad > 0 ? Math.round(ad).toLocaleString("ru-RU") : ""}</td>;
                         const key = `${t.id}:cost:${d.key}`; const val = (p.rnp.cells || {})[key] ?? ""; const has = val !== "" && parseFloat(String(val).replace(",", ".")) > 0;
-                        return <td key={d.key} title={t.label} style={{ ...base, background: fill || (has ? col + "22" : "#fff") }}><input value={val} onChange={(e) => onSetCell && onSetCell(p.id, key, e.target.value)} inputMode="decimal" className="h-full w-full bg-transparent px-1 text-center text-[11.5px] font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ color: col }} /></td>;
+                        return <td key={d.key} title={t.label} style={{ ...base, background: fill || (has ? col + "22" : "#fff") }}><input value={val} onChange={(e) => onSetCell && onSetCell(p.id, key, e.target.value)} inputMode="decimal" className="h-full w-full bg-transparent px-1 text-center text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ color: col }} /></td>;
                       }
                       if (t.kind === "checkbox") {
                         const key = `${t.id}:${d.key}`; const on = !!(p.rnp.flags || {})[key];
