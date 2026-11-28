@@ -10748,7 +10748,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const rub = (n) => Math.round(n).toLocaleString("ru-RU");
   const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return rnpWbFmt(t, v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
   // итого по дням (по показанным товарам)
-  const W_P = 150, W_F = 80, W_L = 140, W_D = 44;
+  const W_P = 300, W_F = 80, W_L = 140, W_D = 75, HEADER_H = 36;
   const stk = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
   const chip = "rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition ";
   return (
@@ -10844,8 +10844,8 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
             <colgroup><col style={{ width: W_P }} /><col style={{ width: W_F }} /><col style={{ width: W_L }} />{dayList.map((d) => <col key={d.key} style={{ width: W_D }} />)}</colgroup>
             <thead>
               <tr>
-                {[["ТОВАР", 0, W_P], ["ФОНД", W_P, W_F], ["МЕТРИКИ", W_P + W_F, W_L]].map(([label, left, width]) => <th key={label} style={{ ...stk(left, width, "#F6F7F9", 5), top: 0, textAlign: "left", height: 40, padding: "6px 10px", color: "#646C7C", fontSize: 11, fontWeight: 600, borderBottom: "1px solid #CBCFD8" }}>{label}</th>)}
-                {dayList.map((d) => { const dt = new Date(d.key + "T00:00:00"); const tdy = d.key === todayISO; return <th key={d.key} style={{ position: "sticky", top: 0, zIndex: 4, background: tdy ? "#1E2023" : "#F6F7F9", width: W_D, minWidth: W_D, height: 40, padding: "4px 0", borderLeft: tdy ? "1px solid #1E2023" : undefined, borderRight: tdy ? "1px solid #1E2023" : undefined, textAlign: "center", borderBottom: "1px solid #CBCFD8", color: tdy ? "#CBCFD8" : "#959DAD", fontWeight: 600 }}><div style={{ fontSize: 12, fontWeight: 800, color: tdy ? "#fff" : "#1E2023" }}>{dt.getDate()}</div><div style={{ fontSize: 11 }}>{dow[dt.getDay()]}</div></th>; })}
+                {[["ТОВАР", 0, W_P], ["ФОНД", W_P, W_F], ["МЕТРИКИ", W_P + W_F, W_L]].map(([label, left, width]) => <th key={label} style={{ ...stk(left, width, "#F6F7F9", 5), top: 0, textAlign: "left", height: HEADER_H, padding: "4px 10px", color: "#646C7C", fontSize: 11, fontWeight: 600, borderBottom: "1px solid #CBCFD8" }}>{label}</th>)}
+                {dayList.map((d) => { const dt = new Date(d.key + "T00:00:00"); const tdy = d.key === todayISO; return <th key={d.key} style={{ position: "sticky", top: 0, zIndex: 4, background: tdy ? "#1E2023" : "#F6F7F9", width: W_D, minWidth: W_D, height: HEADER_H, padding: "3px 0", borderLeft: tdy ? "1px solid #1E2023" : undefined, borderRight: tdy ? "1px solid #1E2023" : undefined, textAlign: "center", borderBottom: "1px solid #CBCFD8", color: tdy ? "#CBCFD8" : "#959DAD", fontWeight: 600 }}><div style={{ fontSize: 12, fontWeight: 800, color: tdy ? "#fff" : "#1E2023" }}>{dt.getDate()}</div><div style={{ fontSize: 11 }}>{dow[dt.getDay()]}</div></th>; })}
               </tr>
             </thead>
             <tbody>
