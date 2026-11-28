@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment }
 import ReconciliationBoard from "./ReconciliationBoard";
 import { createProjectCloud } from "./lib/cloud";
 import ProjectSwitch from "./ProjectSwitch";
+import allplugsLogo from "./logo.png";
 import {
   Bot, SlidersHorizontal,
   Plus, Trash2, ImagePlus, Settings2, X, Check, Download,
@@ -2554,6 +2555,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
         {/* Шапка */}
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-3">
+            <img src={allplugsLogo} alt="AllPlugs" width={42} height={42} className="h-[42px] w-[42px] shrink-0 object-contain" />
             <div className="rounded-xl inline-flex border border-neutral-200 bg-white p-1">
               {navShown.map((t) => {
                 const on = activeTab === t.id;
