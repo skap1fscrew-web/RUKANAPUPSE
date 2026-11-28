@@ -20,7 +20,7 @@ export function createProjectCloud(project = "melori") {
   async function fetchAll() {
     const [{ data: prods, error: e1 }, { data: sett, error: e2 }] = await Promise.all([
       supabase.from(tables.products).select("id,data"),
-      supabase.from(tables.settings).select("key,value"),
+      supabase.from(tables.settings).select("key,value").neq("key", "jobs"),
     ]);
     if (e1) throw e1; if (e2) throw e2;
     const products = (prods || []).map((r) => r.data);
@@ -34,6 +34,11 @@ export function createProjectCloud(project = "melori") {
       if (e3 && project !== "melori") throw e3;
       if (!e3 && Array.isArray(jr)) jobs = jr.map((r) => r.data);
     } catch (error) { if (project !== "melori") throw error; /* Старые проекты поддерживают settings.jobs. */ }
+    if (jobs === null || jobs.length === 0) {
+      const { data, error } = await supabase.from(tables.settings).select("value").eq("key", "jobs").maybeSingle();
+      if (error) throw error;
+      if (data) settings.jobs = data.value;
+    }
     if (project !== "melori") {
       const { data, error } = await supabase.from("settings").select("value").eq("key", "profiles").maybeSingle();
       if (error) throw error;

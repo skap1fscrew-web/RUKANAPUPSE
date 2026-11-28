@@ -46,3 +46,31 @@ export async function loadJobs() {
   const a = await r.json();
   return Array.isArray(a) ? a.map((x: { id: string; data: Record<string, unknown> }) => x.data) : [];
 }
+
+// Для минутной проверки уведомлений не нужны вложения, таблицы и история задачи.
+export async function loadNotificationJobs() {
+  const fields = "id,title:data->title,date:data->date,stage:data->stage,done:data->done,deletedAt:data->deletedAt,assignee:data->assignee,assignees:data->assignees,createdBy:data->createdBy";
+  const result: Record<string, unknown>[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const r = await rest(`jobs?select=${encodeURIComponent(fields)}&order=id&limit=1000&offset=${offset}`);
+    if (!r.ok) throw new Error(`Не удалось загрузить задачи для уведомлений: ${r.status}`);
+    const page = await r.json();
+    if (!Array.isArray(page)) throw new Error("Некорректный ответ задач");
+    result.push(...page);
+    if (page.length < 1000) return result;
+  }
+}
+// История нужна лишь при изменении исполнителя, а не каждую минуту для всех задач.
+export async function loadJobAssigner(id: string) {
+  const r = await rest(`jobs?id=eq.${encodeURIComponent(id)}&select=log:data->log`);
+  if (!r.ok) throw new Error(`Не удалось проверить автора назначения: ${r.status}`);
+  const rows = await r.json();
+  const log = rows?.[0]?.log;
+  return Array.isArray(log) ? [...log].reverse().find((event) => event?.kind === "assignee")?.by || null : null;
+}
+export function notificationStateJson(state: unknown) {
+  return JSON.stringify(state, (_key, item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+    return Object.keys(item).sort().reduce((out: Record<string, unknown>, key) => { out[key] = item[key]; return out; }, Object.create(null));
+  });
+}

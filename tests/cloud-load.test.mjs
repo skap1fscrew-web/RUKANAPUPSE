@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {fileURLToPath} from 'node:url';
+import {build} from 'esbuild';
+let calls=[],missingJobs=false,emptyJobs=false;
+const query=(table)=>{let fields,filter,exclude,single=false;const q={select(s){fields=s;return q;},neq(k,v){exclude=v;return q;},eq(k,v){filter=v;return q;},maybeSingle(){single=true;return q;},then(resolve){calls.push({table,fields,filter,exclude});if(table.endsWith('products'))return Promise.resolve({data:[{data:{id:'p'}}]}).then(resolve);if(table.endsWith('jobs'))return Promise.resolve(missingJobs?{error:{message:'missing'}}:{data:emptyJobs?[]:[{data:{id:'j'}}]}).then(resolve);return Promise.resolve(single?{data:filter==='jobs'?{value:[{id:'old'}]}:{value:[]}}:{data:[{key:'agents',value:[]}]}).then(resolve);}};return q;};
+globalThis.supabaseStub={from:query};
+const bundled=await build({entryPoints:[fileURLToPath(new URL('../src/lib/cloud.js',import.meta.url))],bundle:true,write:false,format:'esm',plugins:[{name:'client',setup(b){b.onResolve({filter:/^\.\/supabase$/},()=>({path:'client',namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},()=>({contents:'export const supabase=globalThis.supabaseStub;',loader:'js'}));}}]});
+const {createProjectCloud}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+test('Актуальные задачи не дублируются старым blob',async()=>{calls=[];const result=await createProjectCloud().fetchAll();assert.equal(result.jobs[0].id,'j');assert.equal(result.settings.jobs,undefined);assert.ok(calls.some(x=>x.table==='settings'&&x.exclude==='jobs'));assert.ok(!calls.some(x=>x.filter==='jobs'));});
+test('Старая база без таблицы jobs по-прежнему загружается',async()=>{calls=[];missingJobs=true;const result=await createProjectCloud().fetchAll();assert.equal(result.jobs,null);assert.equal(result.settings.jobs[0].id,'old');missingJobs=false;});
+test('Пустая таблица поддерживает прежний fallback',async()=>{calls=[];emptyJobs=true;const result=await createProjectCloud().fetchAll();assert.equal(result.settings.jobs[0].id,'old');emptyJobs=false;});
+test('Дропрайс загружает свои таблицы и общие профили',async()=>{calls=[];await createProjectCloud('droprise').fetchAll();assert.ok(calls.some(x=>x.table==='droprise_settings'&&x.exclude==='jobs'));assert.ok(calls.some(x=>x.table==='settings'&&x.filter==='profiles'));});

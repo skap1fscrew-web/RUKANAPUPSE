@@ -5,7 +5,7 @@
 // Деплой: supabase functions deploy tg-tick --no-verify-jwt
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import { SECRET, getSetting, setSetting, tg, esc, jobAssignees, mskNow, addDays, fmtDM, profLabel, loadJobs } from "../_shared/tg.ts";
+import { SECRET, getSetting, setSetting, tg, esc, jobAssignees, mskNow, addDays, fmtDM, profLabel, loadNotificationJobs, loadJobAssigner, notificationStateJson } from "../_shared/tg.ts";
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -17,11 +17,11 @@ serve(async (req) => {
   try {
     const links: Record<string, number> = (await getSetting("tgLinks")) || {};
     const profiles: Any[] = (await getSetting("profiles")) || [];
-    const jobs: Any[] = await loadJobs();
+    const jobs: Any[] = await loadNotificationJobs();
     const stored = await getSetting("tgState");
     const first = !stored;
     const state: { seen: Record<string, string[]>; due: Record<string, string[]> } = { seen: {}, due: {}, ...(stored || {}) };
-    const before = JSON.stringify(state);
+    const before = notificationStateJson(state);
     const { date: today, hour } = mskNow();
     const tomorrow = addDays(today, 1);
     let sends = 0;
@@ -46,9 +46,9 @@ serve(async (req) => {
       const seen = state.seen[j.id];
       // новые исполнители
       if (!first && open && seen) {
-        for (const pid of asg.filter((x) => !seen.includes(x))) {
-          const ev = [...(Array.isArray(j.log) ? j.log : [])].reverse().find((e: Any) => e && e.kind === "assignee");
-          const by = (ev && ev.by) || j.createdBy || null;
+        const added = asg.filter((x) => !seen.includes(x));
+        const by = added.length ? (await loadJobAssigner(j.id)) || j.createdBy || null : null;
+        for (const pid of added) {
           if (by === pid) continue; // сам себе назначил
           await send(pid, j.title || "Задача", j, "📌 <b>Вам поручена задача</b>");
         }
@@ -72,7 +72,7 @@ serve(async (req) => {
       if (sentKeys.size) newDue[j.id] = [...sentKeys].filter((k) => !k.startsWith("o:") || k === `o:${today}`);
     }
     state.seen = newSeen; state.due = newDue;
-    if (first || JSON.stringify(state) !== before) await setSetting("tgState", state);
+    if (first || notificationStateJson(state) !== before) await setSetting("tgState", state);
     return json({ ok: true, first, sends });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);

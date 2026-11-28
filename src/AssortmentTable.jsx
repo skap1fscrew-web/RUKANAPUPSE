@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo, Fragment } from "react";
 import ReconciliationBoard from "./ReconciliationBoard";
 import { createProjectCloud } from "./lib/cloud";
+import { stableJson } from "./lib/stableJson";
 import ProjectSwitch from "./ProjectSwitch";
 import allplugsLogo from "./logo.png";
 import {
@@ -1367,39 +1368,39 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
         const stamped = norm.map((p, i) => (p.createdAt ? p : { ...p, createdAt: base + i * 1000 }));
         setProducts(stamped);
         norm.forEach((p) => syncedRef.current.products.set(p.id, JSON.stringify(p)));
-        if (Array.isArray(settings.statuses) && settings.statuses.length) { setStatuses(settings.statuses); syncedRef.current.settings.statuses = JSON.stringify(settings.statuses); }
-        if (Array.isArray(settings.warehouses) && settings.warehouses.length) { setWarehouses(settings.warehouses); syncedRef.current.settings.warehouses = JSON.stringify(settings.warehouses); }
-        if (Array.isArray(settings.purchases)) { setPurchases(settings.purchases); syncedRef.current.settings.purchases = JSON.stringify(settings.purchases); }
-        if (Array.isArray(settings.purchaseBatches)) { setPurchaseBatches(settings.purchaseBatches); syncedRef.current.settings.purchaseBatches = JSON.stringify(settings.purchaseBatches); }
+        if (Array.isArray(settings.statuses) && settings.statuses.length) { setStatuses(settings.statuses); syncedRef.current.settings.statuses = stableJson(settings.statuses); }
+        if (Array.isArray(settings.warehouses) && settings.warehouses.length) { setWarehouses(settings.warehouses); syncedRef.current.settings.warehouses = stableJson(settings.warehouses); }
+        if (Array.isArray(settings.purchases)) { setPurchases(settings.purchases); syncedRef.current.settings.purchases = stableJson(settings.purchases); }
+        if (Array.isArray(settings.purchaseBatches)) { setPurchaseBatches(settings.purchaseBatches); syncedRef.current.settings.purchaseBatches = stableJson(settings.purchaseBatches); }
         // Задачи: из таблицы jobs, если там есть строки; иначе фолбэк на старый блоб settings.jobs (до миграции).
         const loadedJobs = (Array.isArray(jobRows) && jobRows.length) ? jobRows : (Array.isArray(settings.jobs) ? settings.jobs : []);
         setJobs(loadedJobs);
         syncedJobsRef.current = {}; loadedJobs.forEach((j) => { if (j && j.id) syncedJobsRef.current[j.id] = JSON.stringify(j); });
-        if (Array.isArray(settings.bloggerDB)) { setBloggerDB(settings.bloggerDB); syncedRef.current.settings.bloggerDB = JSON.stringify(settings.bloggerDB); }
-        if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = JSON.stringify(settings.razdachDB); }
-        if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = JSON.stringify(settings.defaultTasks); }
-        if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = JSON.stringify(settings.taskLabels); }
-        if (Array.isArray(settings.taskTags)) { setTaskTags(settings.taskTags); syncedRef.current.settings.taskTags = JSON.stringify(settings.taskTags); }
-        if (Array.isArray(settings.taskTriggers)) { const tt = normTaskTriggers(settings.taskTriggers); setTaskTriggers(tt); syncedRef.current.settings.taskTriggers = JSON.stringify(tt); }
-        if (Array.isArray(settings.analyticsCriteria) && settings.analyticsCriteria.length) { setAnalyticsCriteria(settings.analyticsCriteria); syncedRef.current.settings.analyticsCriteria = JSON.stringify(settings.analyticsCriteria); }
-        if (Array.isArray(settings.kanbanCols) && settings.kanbanCols.length) { setKanbanCols(settings.kanbanCols); syncedRef.current.settings.kanbanCols = JSON.stringify(settings.kanbanCols); }
-        if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = JSON.stringify(settings.opTypes); }
-        if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = JSON.stringify(settings.opDone); }
-        if (Array.isArray(settings.subjects)) { setSubjects(settings.subjects); syncedRef.current.settings.subjects = JSON.stringify(settings.subjects); }
-        if (settings.dbColumns && typeof settings.dbColumns === "object") { setDbColumns(settings.dbColumns); syncedRef.current.settings.dbColumns = JSON.stringify(settings.dbColumns); }
-        if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = JSON.stringify(settings.customDBs); }
-        if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = JSON.stringify(ns); }
-        if (Array.isArray(settings.agents)) { setAgents(settings.agents); syncedRef.current.settings.agents = JSON.stringify(settings.agents); }
-        if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = JSON.stringify(nd); }
+        if (Array.isArray(settings.bloggerDB)) { setBloggerDB(settings.bloggerDB); syncedRef.current.settings.bloggerDB = stableJson(settings.bloggerDB); }
+        if (Array.isArray(settings.razdachDB)) { setRazdachDB(settings.razdachDB); syncedRef.current.settings.razdachDB = stableJson(settings.razdachDB); }
+        if (Array.isArray(settings.defaultTasks)) { setDefaultTasks(settings.defaultTasks); syncedRef.current.settings.defaultTasks = stableJson(settings.defaultTasks); }
+        if (Array.isArray(settings.taskLabels)) { setTaskLabels(settings.taskLabels); syncedRef.current.settings.taskLabels = stableJson(settings.taskLabels); }
+        if (Array.isArray(settings.taskTags)) { setTaskTags(settings.taskTags); syncedRef.current.settings.taskTags = stableJson(settings.taskTags); }
+        if (Array.isArray(settings.taskTriggers)) { const tt = normTaskTriggers(settings.taskTriggers); setTaskTriggers(tt); syncedRef.current.settings.taskTriggers = stableJson(tt); }
+        if (Array.isArray(settings.analyticsCriteria) && settings.analyticsCriteria.length) { setAnalyticsCriteria(settings.analyticsCriteria); syncedRef.current.settings.analyticsCriteria = stableJson(settings.analyticsCriteria); }
+        if (Array.isArray(settings.kanbanCols) && settings.kanbanCols.length) { setKanbanCols(settings.kanbanCols); syncedRef.current.settings.kanbanCols = stableJson(settings.kanbanCols); }
+        if (Array.isArray(settings.opTypes)) { setOpTypes(settings.opTypes); syncedRef.current.settings.opTypes = stableJson(settings.opTypes); }
+        if (settings.opDone && typeof settings.opDone === "object") { setOpDone(settings.opDone); syncedRef.current.settings.opDone = stableJson(settings.opDone); }
+        if (Array.isArray(settings.subjects)) { setSubjects(settings.subjects); syncedRef.current.settings.subjects = stableJson(settings.subjects); }
+        if (settings.dbColumns && typeof settings.dbColumns === "object") { setDbColumns(settings.dbColumns); syncedRef.current.settings.dbColumns = stableJson(settings.dbColumns); }
+        if (Array.isArray(settings.customDBs)) { setCustomDBs(settings.customDBs); syncedRef.current.settings.customDBs = stableJson(settings.customDBs); }
+        if (settings.strategy && typeof settings.strategy === "object") { const ns = normStrategy(settings.strategy); setStrategy(ns); syncedRef.current.settings.strategy = stableJson(ns); }
+        if (Array.isArray(settings.agents)) { setAgents(settings.agents); syncedRef.current.settings.agents = stableJson(settings.agents); }
+        if (settings.duties && typeof settings.duties === "object") { const nd = normDuties(settings.duties); setDuties(nd); syncedRef.current.settings.duties = stableJson(nd); }
         if (settings.wbWay && typeof settings.wbWay === "object") setWbWay(settings.wbWay);
         if (settings.wbRating && typeof settings.wbRating === "object") setWbRating(settings.wbRating);
         if (settings.tgLinks && typeof settings.tgLinks === "object") setTgLinks(settings.tgLinks);
         if (typeof settings.tgBot === "string") setTgBot(settings.tgBot);
-        if (Array.isArray(settings.profiles)) { const np = normProfiles(settings.profiles); setProfiles(np); syncedRef.current.settings.profiles = JSON.stringify(np); }
-        if (settings.prodCycle && typeof settings.prodCycle === "object") { const nc = normCycle(settings.prodCycle); setProdCycle(nc); syncedRef.current.settings.prodCycle = JSON.stringify(nc); }
+        if (Array.isArray(settings.profiles)) { const np = normProfiles(settings.profiles); setProfiles(np); syncedRef.current.settings.profiles = stableJson(np); }
+        if (settings.prodCycle && typeof settings.prodCycle === "object") { const nc = normCycle(settings.prodCycle); setProdCycle(nc); syncedRef.current.settings.prodCycle = stableJson(nc); }
         // cycleTriggers: загрузка готового списка либо одноразовая миграция из старых автозадач этапов
         if (Array.isArray(settings.cycleTriggers)) {
-          const ct = normCycleTriggers(settings.cycleTriggers); setCycleTriggers(ct); syncedRef.current.settings.cycleTriggers = JSON.stringify(ct);
+          const ct = normCycleTriggers(settings.cycleTriggers); setCycleTriggers(ct); syncedRef.current.settings.cycleTriggers = stableJson(ct);
         } else {
           const nc = (settings.prodCycle && typeof settings.prodCycle === "object") ? normCycle(settings.prodCycle) : normCycle(null);
           const ct = cycleTriggersFromCycle(nc); setCycleTriggers(ct);
@@ -1417,29 +1418,29 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
             if (touched) setPurchaseBatches(migB);
           }
         }
-        if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = JSON.stringify(settings.unitConst); }
+        if (settings.unitConst && typeof settings.unitConst === "object") { setUnitConst((c) => ({ ...c, ...settings.unitConst })); syncedRef.current.settings.unitConst = stableJson(settings.unitConst); }
         if (settings.rnp) {
           if (settings.rnp.startDate) setRnpStartDate(settings.rnp.startDate);
           if (settings.rnp.days) setRnpDays(settings.rnp.days);
-          syncedRef.current.settings.rnp = JSON.stringify(settings.rnp);
+          syncedRef.current.settings.rnp = stableJson(settings.rnp);
         }
-        if (settings.focusLines && typeof settings.focusLines === "object") { setFocusLines(settings.focusLines); syncedRef.current.settings.focusLines = JSON.stringify(settings.focusLines); }
-        if (typeof settings.focusLine === "string") { setFocusLine(settings.focusLine); syncedRef.current.settings.focusLine = JSON.stringify(settings.focusLine); }
-        if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = JSON.stringify(settings.wbApiKey); }
-        if (settings.wbOrders && typeof settings.wbOrders === "object") { setWbOrders(settings.wbOrders); syncedRef.current.settings.wbOrders = JSON.stringify(settings.wbOrders); }
-        if (settings.wbSales && typeof settings.wbSales === "object") { setWbSales(settings.wbSales); syncedRef.current.settings.wbSales = JSON.stringify(settings.wbSales); }
-        if (settings.wbOrdSum && typeof settings.wbOrdSum === "object") { setWbOrdSum(settings.wbOrdSum); syncedRef.current.settings.wbOrdSum = JSON.stringify(settings.wbOrdSum); }
-        if (settings.wbOrdSumMeta && typeof settings.wbOrdSumMeta === "object") { setWbOrdSumMeta(settings.wbOrdSumMeta); syncedRef.current.settings.wbOrdSumMeta = JSON.stringify(settings.wbOrdSumMeta); }
-        if (settings.wbSalesMeta && typeof settings.wbSalesMeta === "object") { setWbSalesMeta(settings.wbSalesMeta); syncedRef.current.settings.wbSalesMeta = JSON.stringify(settings.wbSalesMeta); }
-        if (settings.ozCfg && typeof settings.ozCfg === "object") { setOzCfg(settings.ozCfg); syncedRef.current.settings.ozCfg = JSON.stringify(settings.ozCfg); }
+        if (settings.focusLines && typeof settings.focusLines === "object") { setFocusLines(settings.focusLines); syncedRef.current.settings.focusLines = stableJson(settings.focusLines); }
+        if (typeof settings.focusLine === "string") { setFocusLine(settings.focusLine); syncedRef.current.settings.focusLine = stableJson(settings.focusLine); }
+        if (settings.wbApiKey) { setWbApiKey(settings.wbApiKey); syncedRef.current.settings.wbApiKey = stableJson(settings.wbApiKey); }
+        if (settings.wbOrders && typeof settings.wbOrders === "object") { setWbOrders(settings.wbOrders); syncedRef.current.settings.wbOrders = stableJson(settings.wbOrders); }
+        if (settings.wbSales && typeof settings.wbSales === "object") { setWbSales(settings.wbSales); syncedRef.current.settings.wbSales = stableJson(settings.wbSales); }
+        if (settings.wbOrdSum && typeof settings.wbOrdSum === "object") { setWbOrdSum(settings.wbOrdSum); syncedRef.current.settings.wbOrdSum = stableJson(settings.wbOrdSum); }
+        if (settings.wbOrdSumMeta && typeof settings.wbOrdSumMeta === "object") { setWbOrdSumMeta(settings.wbOrdSumMeta); syncedRef.current.settings.wbOrdSumMeta = stableJson(settings.wbOrdSumMeta); }
+        if (settings.wbSalesMeta && typeof settings.wbSalesMeta === "object") { setWbSalesMeta(settings.wbSalesMeta); syncedRef.current.settings.wbSalesMeta = stableJson(settings.wbSalesMeta); }
+        if (settings.ozCfg && typeof settings.ozCfg === "object") { setOzCfg(settings.ozCfg); syncedRef.current.settings.ozCfg = stableJson(settings.ozCfg); }
         if (settings.ozSum && typeof settings.ozSum === "object") setOzData(settings.ozSum);
-        if (settings.msCfg && typeof settings.msCfg === "object") { setMsCfg(settings.msCfg); syncedRef.current.settings.msCfg = JSON.stringify(settings.msCfg); }
+        if (settings.msCfg && typeof settings.msCfg === "object") { setMsCfg(settings.msCfg); syncedRef.current.settings.msCfg = stableJson(settings.msCfg); }
         if (settings.msStock && typeof settings.msStock === "object") setMsData(settings.msStock);
         if (settings.ozAd && typeof settings.ozAd === "object") setOzAd(settings.ozAd);
-        if (settings.wbAdKey) { setWbAdKey(settings.wbAdKey); syncedRef.current.settings.wbAdKey = JSON.stringify(settings.wbAdKey); }
-        if (settings.wbAdSpend && typeof settings.wbAdSpend === "object") { setWbAdSpend(settings.wbAdSpend); syncedRef.current.settings.wbAdSpend = JSON.stringify(settings.wbAdSpend); }
-        if (settings.wbAdMeta && typeof settings.wbAdMeta === "object") { setWbAdMeta(settings.wbAdMeta); syncedRef.current.settings.wbAdMeta = JSON.stringify(settings.wbAdMeta); }
-        if (settings.wbOrdersMeta && typeof settings.wbOrdersMeta === "object") { setWbOrdersMeta(settings.wbOrdersMeta); syncedRef.current.settings.wbOrdersMeta = JSON.stringify(settings.wbOrdersMeta); }
+        if (settings.wbAdKey) { setWbAdKey(settings.wbAdKey); syncedRef.current.settings.wbAdKey = stableJson(settings.wbAdKey); }
+        if (settings.wbAdSpend && typeof settings.wbAdSpend === "object") { setWbAdSpend(settings.wbAdSpend); syncedRef.current.settings.wbAdSpend = stableJson(settings.wbAdSpend); }
+        if (settings.wbAdMeta && typeof settings.wbAdMeta === "object") { setWbAdMeta(settings.wbAdMeta); syncedRef.current.settings.wbAdMeta = stableJson(settings.wbAdMeta); }
+        if (settings.wbOrdersMeta && typeof settings.wbOrdersMeta === "object") { setWbOrdersMeta(settings.wbOrdersMeta); syncedRef.current.settings.wbOrdersMeta = stableJson(settings.wbOrdersMeta); }
         setLoaded(true); // включаем сохранение ТОЛЬКО после успешной загрузки
       } catch (e) {
         setProjectLoadError(e.message || "Не удалось загрузить проект");
@@ -1554,7 +1555,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
     // realtime-эхо старого значения не затёрло свежую правку до её записи в БД.
     for (const [key, value] of Object.entries(items)) {
       try {
-        const js = JSON.stringify(value);
+        const js = stableJson(value);
         desiredRef.current.settings[key] = js; // фиксируем последнее желаемое значение
         if (syncedRef.current.settings[key] !== js) {
           dirtyRef.current.settings.add(key);
@@ -1565,7 +1566,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
     const t = setTimeout(async () => {
       for (const [key, value] of Object.entries(items)) {
         try {
-          const js = JSON.stringify(value);
+          const js = stableJson(value);
           if (syncedRef.current.settings[key] !== js) {
             // Барьер: не затираем непустое сохранённое значение пустым.
             // Спасает данные, если стейт неожиданно опустел (краш/сбой загрузки).
@@ -1681,7 +1682,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
       },
       onJobDelete: (id) => { if (dirtyJobsRef.current.has(id)) return; delete syncedJobsRef.current[id]; setJobs((prev) => prev.filter((x) => x.id !== id)); },
       onSetting: (key, value) => {
-        const js = JSON.stringify(value);
+        const js = stableJson(value);
         if (syncedRef.current.settings[key] === js) return;
         if (dirtyRef.current.settings.has(key)) return;
         // Защита: не даём входящему пустому/обрезанному значению затереть непустой
@@ -1696,15 +1697,15 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
         // Нормализуемые настройки сверяем и храним в syncedRef в НОРМАЛИЗОВАННОМ виде.
         // Иначе (норм. ≠ сырое) каждая вкладка пере-сохраняет только что полученное,
         // начинается шторм эха между вкладками — правки лагают и затираются.
-        if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = JSON.stringify(ns); setStrategy(ns); } return; }
-        if (key === "agents") { if (Array.isArray(value)) { syncedRef.current.settings.agents = JSON.stringify(value); setAgents(value); } return; }
-        if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = JSON.stringify(nd); setDuties(nd); } return; }
+        if (key === "strategy") { if (value && typeof value === "object") { const ns = normStrategy(value); syncedRef.current.settings.strategy = stableJson(ns); setStrategy(ns); } return; }
+        if (key === "agents") { if (Array.isArray(value)) { syncedRef.current.settings.agents = stableJson(value); setAgents(value); } return; }
+        if (key === "duties") { if (value && typeof value === "object") { const nd = normDuties(value); syncedRef.current.settings.duties = stableJson(nd); setDuties(nd); } return; }
         if (key === "wbWay") { if (value && typeof value === "object") setWbWay(value); return; }
         if (key === "wbRating") { if (value && typeof value === "object") setWbRating(value); return; }
         if (key === "tgLinks") { if (value && typeof value === "object") setTgLinks(value); return; }
         if (key === "tgBot") { if (typeof value === "string") setTgBot(value); return; }
-        if (key === "profiles") { if (Array.isArray(value)) { const np = normProfiles(value); syncedRef.current.settings.profiles = JSON.stringify(np); setProfiles(np); } return; }
-        if (key === "prodCycle") { if (value && typeof value === "object") { const nc = normCycle(value); syncedRef.current.settings.prodCycle = JSON.stringify(nc); setProdCycle(nc); } return; }
+        if (key === "profiles") { if (Array.isArray(value)) { const np = normProfiles(value); syncedRef.current.settings.profiles = stableJson(np); setProfiles(np); } return; }
+        if (key === "prodCycle") { if (value && typeof value === "object") { const nc = normCycle(value); syncedRef.current.settings.prodCycle = stableJson(nc); setProdCycle(nc); } return; }
         syncedRef.current.settings[key] = js;
         if (key === "statuses") setStatuses(value);
         else if (key === "warehouses") setWarehouses(value);
@@ -2059,7 +2060,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
       Object.assign(next, data);
       const meta = { ...wbSalesMeta }; for (const d of allDays) if (d >= dateFrom) meta[d] = todayStr;
       setWbSales(next); setWbSalesMeta(meta);
-      try { await Promise.all([upsertSetting("wbSales", next), upsertSetting("wbSalesMeta", meta)]); syncedRef.current.settings.wbSales = JSON.stringify(next); syncedRef.current.settings.wbSalesMeta = JSON.stringify(meta); } catch (_) {}
+      try { await Promise.all([upsertSetting("wbSales", next), upsertSetting("wbSalesMeta", meta)]); syncedRef.current.settings.wbSales = stableJson(next); syncedRef.current.settings.wbSalesMeta = stableJson(meta); } catch (_) {}
     } catch (e) { console.warn("[WB] выкупы не загрузились:", e); }
   };
 
@@ -2110,7 +2111,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
       Object.assign(next, data);
       const meta = { ...wbOrdSumMeta }; if (funnelOk) meta.__v = 3; /* v3 только если воронка загрузилась */ for (const d of allDays) if (d >= dateFrom) meta[d] = todayStr;
       setWbOrdSum(next); setWbOrdSumMeta(meta);
-      try { await Promise.all([upsertSetting("wbOrdSum", next), upsertSetting("wbOrdSumMeta", meta)]); syncedRef.current.settings.wbOrdSum = JSON.stringify(next); syncedRef.current.settings.wbOrdSumMeta = JSON.stringify(meta); } catch (_) {}
+      try { await Promise.all([upsertSetting("wbOrdSum", next), upsertSetting("wbOrdSumMeta", meta)]); syncedRef.current.settings.wbOrdSum = stableJson(next); syncedRef.current.settings.wbOrdSumMeta = stableJson(meta); } catch (_) {}
     } catch (e) { console.warn("[WB] сумма заказов не загрузилась:", e); }
   };
 
@@ -2217,9 +2218,9 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
         upsertSetting("wbOrdersMeta", meta),
       ]);
       if (r1.error) console.error("[WB] кеш заказов не сохранился:", r1.error.message || r1.error);
-      else syncedRef.current.settings.wbOrders = JSON.stringify(merged);
+      else syncedRef.current.settings.wbOrders = stableJson(merged);
       if (r2.error) console.error("[WB] метки дат не сохранились:", r2.error.message || r2.error);
-      else syncedRef.current.settings.wbOrdersMeta = JSON.stringify(meta);
+      else syncedRef.current.settings.wbOrdersMeta = stableJson(meta);
     } catch (e) {
       console.error("[WB] кеш заказов не сохранился:", e);
     }
@@ -2275,7 +2276,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
         Object.assign(spend, acc); for (const d of dset) meta[d] = todayStr;
         setWbAdSpend({ ...spend }); setWbAdMeta({ ...meta });
       }
-      try { await Promise.all([upsertSetting("wbAdSpend", spend), upsertSetting("wbAdMeta", meta)]); syncedRef.current.settings.wbAdSpend = JSON.stringify(spend); syncedRef.current.settings.wbAdMeta = JSON.stringify(meta); } catch (_) {}
+      try { await Promise.all([upsertSetting("wbAdSpend", spend), upsertSetting("wbAdMeta", meta)]); syncedRef.current.settings.wbAdSpend = stableJson(spend); syncedRef.current.settings.wbAdMeta = stableJson(meta); } catch (_) {}
       setWbAdMsg("✓ Реклама загружена");
     } catch (e) { setWbAdMsg("Ошибка: " + (e.message || e)); }
     setWbAdLoading(false);
