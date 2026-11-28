@@ -10731,7 +10731,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const end = new Date(); end.setHours(0, 0, 0, 0); end.setDate(end.getDate() + endOff);
   const start = new Date(end); start.setDate(start.getDate() - (SPAN - 1));
   const dayList = buildDays(iso(start), SPAN);
-  const fmtRange = (a, b) => { const f = (d) => d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" }); return f(a) + " – " + f(b) + " " + b.getFullYear(); };
+  const fmtRange = (a, b) => { const f = (d) => d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }); return f(a) + " – " + f(b); };
   const dow = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
   const statusColor = (name) => (statuses.find((x) => x.name === name) || {}).color || "#a3a3a3";
   const shownTasks = RNP_TASKS.filter((t) => rows.includes(t.id));
@@ -10748,19 +10748,19 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
   const rub = (n) => Math.round(n).toLocaleString("ru-RU");
   const cellTxt = (t, v) => { if (!v) return ""; if (t.kind === "wbOrders") return rnpWbFmt(t, v.count); if (t.kind === "checkbox" || t.kind === "rangeTask") return t.kind === "checkbox" ? "✓" : ""; return v.cost > 0 ? (v.cost >= 10000 ? (Math.round(v.cost / 100) / 10).toLocaleString("ru-RU") + " т" : rub(v.cost)) : (v.count ? String(v.count) : ""); };
   // итого по дням (по показанным товарам)
-  const W_P = 240, W_F = 96, W_L = 156;
+  const W_P = 200, W_F = 140, W_L = 160;
   const stk = (left, w, bg, z = 3) => ({ position: "sticky", left, width: w, minWidth: w, maxWidth: w, background: bg, zIndex: z });
   const chip = "rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition ";
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-3.5">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="mr-1.5 text-base font-semibold text-neutral-900">РНП</h2>
-        <div className="inline-flex items-center rounded-lg bg-neutral-100 p-0.5">
-          <button onClick={() => setEndOff((o) => o - 7)} title="Неделей раньше" className="flex h-7 w-8 items-center justify-center rounded-md text-neutral-400 transition hover:bg-white hover:text-neutral-700"><ChevronLeft size={16} /></button>
-          <span className="flex h-7 items-center rounded-md bg-white px-3 text-xs font-bold text-neutral-800 shadow-sm">{fmtRange(start, end)}</span>
-          <button onClick={() => setEndOff((o) => o + 7)} title="Неделей позже" className="flex h-7 w-8 items-center justify-center rounded-md text-neutral-400 transition hover:bg-white hover:text-neutral-700"><ChevronRight size={16} /></button>
+    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white text-[#1E2023]">
+      <div className="flex flex-wrap items-center gap-2 px-5 py-4">
+        <h2 className="mr-4 text-base font-semibold text-[#1E2023]">РНП</h2>
+        <div className="inline-flex items-center gap-1 rounded-lg bg-[#EDF0F4] p-0.5">
+          <button onClick={() => setEndOff((o) => o - 7)} title="Неделей раньше" className="flex h-7 w-8 items-center justify-center rounded-md bg-white text-[#1E2023] transition hover:bg-neutral-50"><ChevronLeft size={16} /></button>
+          <span className="flex h-7 items-center rounded-md px-2 text-sm font-semibold text-[#1E2023]">{fmtRange(start, end)}</span>
+          <button onClick={() => setEndOff((o) => o + 7)} title="Неделей позже" className="flex h-7 w-8 items-center justify-center rounded-md bg-white text-[#1E2023] transition hover:bg-neutral-50"><ChevronRight size={16} /></button>
         </div>
-        <button onClick={() => setEndOff(0)} className="inline-flex h-8 items-center rounded-lg border border-neutral-200 px-2.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">Сегодня</button>
+        <button onClick={() => setEndOff(0)} className="inline-flex h-8 items-center rounded-lg bg-[#EDF0F4] px-3 text-sm font-semibold text-[#1E2023] hover:bg-neutral-200">Сегодня</button>
         {fundPop && (() => {
           const p = products.find((x) => x.id === fundPop.pid); if (!p) return null;
           const funds = p.rnp.funds || [];
@@ -10839,12 +10839,12 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
         </div>
       </div>
       {list.length === 0 ? <div className="py-12 text-center text-sm text-neutral-400">Нет товаров с данными РНП. Выключите «Только с данными», чтобы вносить записи по любым товарам</div> : (
-        <div className="overflow-auto rounded-xl border border-neutral-100" style={{ maxHeight: "calc(100vh / " + 0.8 + " - 190px)" }}>
+        <div className="overflow-auto border-t border-[#CBCFD8]" style={{ maxHeight: "calc(100vh / " + 0.8 + " - 190px)" }}>
           <table className="border-separate text-[11.5px]" style={{ borderSpacing: 0, minWidth: "100%" }}>
             <thead>
               <tr>
-                <th style={{ ...stk(0, W_P + W_F + W_L, "#fff", 5), position: "sticky", top: 0, textAlign: "left", padding: "6px 10px", color: "#a3a3a3", fontWeight: 600, borderBottom: "1px solid #e5e5e5" }} colSpan={3}></th>
-                {dayList.map((d) => { const dt = new Date(d.key + "T00:00:00"); const tdy = d.key === todayISO; return <th key={d.key} style={{ position: "sticky", top: 0, zIndex: 4, background: tdy ? "#fff7ed" : "#fff", minWidth: 50, padding: "4px 0", textAlign: "center", borderBottom: "1px solid #e5e5e5", color: tdy ? "#c2410c" : "#a3a3a3", fontWeight: 600 }}><div style={{ fontSize: 12, fontWeight: 800, color: tdy ? "#c2410c" : "#525252" }}>{dt.getDate()}</div><div style={{ fontSize: 10 }}>{dow[dt.getDay()]}</div></th>; })}
+                {[["ТОВАР", 0, W_P], ["ФОНД", W_P, W_F], ["МЕТРИКИ", W_P + W_F, W_L]].map(([label, left, width]) => <th key={label} style={{ ...stk(left, width, "#F6F7F9", 5), top: 0, textAlign: "left", padding: "14px 16px", color: "#646C7C", fontSize: 12, fontWeight: 600, borderBottom: "1px solid #CBCFD8" }}>{label}</th>)}
+                {dayList.map((d) => { const dt = new Date(d.key + "T00:00:00"); const tdy = d.key === todayISO; return <th key={d.key} style={{ position: "sticky", top: 0, zIndex: 4, background: tdy ? "#1E2023" : "#F6F7F9", minWidth: 60, padding: "10px 0", borderLeft: tdy ? "1px solid #1E2023" : undefined, borderRight: tdy ? "1px solid #1E2023" : undefined, textAlign: "center", borderBottom: "1px solid #CBCFD8", color: tdy ? "#CBCFD8" : "#959DAD", fontWeight: 600 }}><div style={{ fontSize: 12, fontWeight: 800, color: tdy ? "#fff" : "#1E2023" }}>{dt.getDate()}</div><div style={{ fontSize: 11 }}>{dow[dt.getDay()]}</div></th>; })}
               </tr>
             </thead>
             <tbody>
@@ -10855,16 +10855,15 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                   <tr key={p.id + ":" + (t ? t.id : "none")} className={focusId && focusId !== p.id && list.some((x) => x.id === focusId) ? "rnp-dim" : ""}>
                     {ti === 0 && (
                       <>
-                        <td rowSpan={trs.length} style={{ ...stk(0, W_P, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: 0 }}>
+                        <td rowSpan={trs.length} style={{ ...stk(0, W_P, "#fff", 2), borderBottom: "1px solid #E0E3EA", borderRight: "1px solid #E0E3EA", verticalAlign: "middle", padding: 0 }}>
                           <div className="group/foc relative">
                           <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-center gap-2.5 px-2 py-2 text-left hover:bg-neutral-50" title="Открыть карточку">
-                            {p.image ? <img src={p.image} alt="" className="h-[72px] w-[54px] shrink-0 rounded-lg object-cover" /> : <span className="h-[72px] w-[54px] shrink-0 rounded-lg bg-neutral-100" />}
-                            <span className="flex h-[72px] min-w-0 flex-col justify-center gap-[2px]"><span className="text-[10px] font-extrabold leading-none text-neutral-400">{p.code || "—"}</span><span className="line-clamp-2 text-[12px] font-bold leading-tight text-neutral-800">{p.name || "Без названия"}</span>{p.status ? <span title={p.status} className="mt-[3px] max-w-full self-start truncate whitespace-nowrap rounded-full px-1.5 text-[10px] font-extrabold leading-[14px]" style={{ background: statusColor(p.status) + "22", color: statusColor(p.status) }}>{shortStatus(p.status)}</span> : <span />}</span>
+                            <span className="flex min-w-0 flex-col gap-1 px-2 py-3"><span className="text-xs font-semibold text-[#959DAD]">{p.code || "—"}</span><span className="line-clamp-3 text-sm font-semibold leading-tight text-[#1E2023]">{p.name || "Без названия"}</span></span>
                           </button>
                           <button onClick={() => setFocusId((f) => (f === p.id ? null : p.id))} title={focusId === p.id ? "Выйти из фокуса" : "Фокус на этом товаре"} className={"absolute right-1.5 top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] transition " + (focusId === p.id ? "bg-neutral-900 text-white opacity-100" : "text-neutral-400 opacity-0 hover:text-neutral-800 group-hover/foc:opacity-100")}><Focus size={14} /></button>
                           </div>
                         </td>
-                        <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "2px solid #e5e5e5", borderRight: "1px solid #f1f1f1", verticalAlign: "middle", padding: "0 10px" }}>
+                        <td rowSpan={trs.length} style={{ ...stk(W_P, W_F, "#fff", 2), borderBottom: "1px solid #E0E3EA", borderRight: "1px solid #E0E3EA", verticalAlign: "middle", padding: "0 10px" }}>
                           <div className="relative flex flex-col leading-[1.15]">
                             {b.fund ? (
                               <>
@@ -10883,20 +10882,22 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                         </td>
                       </>
                     )}
-                    <td style={{ ...stk(W_P + W_F, W_L, "#fff", 2), padding: 0, fontWeight: 700, color: "#525252", whiteSpace: "nowrap", borderRight: "1px solid #f1f1f1", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" }}>{t ? ((t.kind === "twoRow" || t.kind === "rangeTask") ? <button onClick={() => onOpenDB && onOpenDB(p.id, t)} title="Все записи по строке" className="h-full w-full px-2.5 text-left font-bold hover:bg-neutral-50 hover:text-neutral-900">{t.label}</button> : <span className="px-2.5">{t.label}</span>) : ""}</td>
+                    <td style={{ ...stk(W_P + W_F, W_L, "#fff", 2), padding: 0, fontWeight: 400, color: "#1E2023", fontSize: 13, whiteSpace: "nowrap", borderRight: "1px solid #E0E3EA", borderBottom: ti === trs.length - 1 ? "1px solid #E0E3EA" : "1px solid #E0E3EA" }}>{t ? ((t.kind === "twoRow" || t.kind === "rangeTask") ? <button onClick={() => onOpenDB && onOpenDB(p.id, t)} title="Все записи по строке" className="h-full w-full px-3 text-left font-normal hover:bg-neutral-50 hover:text-neutral-900">{t.label}</button> : <span className="px-2.5">{t.label}</span>) : ""}</td>
                     {t ? dayList.map((d) => {
-                      const v = rnpDayActivity(t, p, d.key, wbOrders); const fill = (p.rnp.fills || {})[`${t.id}:${d.key}`]; const col = RNP_COLORS[t.id] || "#64748b";
+                      const v = rnpDayActivity(t, p, d.key, wbOrders); const fill = (p.rnp.fills || {})[`${t.id}:${d.key}`]; const col = t.id === "drr" ? "#2864A2" : t.id === "bloggers" ? "#7A3B94" : RNP_COLORS[t.id] || "#64748b";
                       const isTd = d.key === todayISO;
                       const arr = t.kind === "twoRow" ? ((p.rnp.entries || {})[`${t.id}:${d.key}`] || []) : [];
                       const allDone = arr.length > 0 && arr.every((e) => e.done);
-                      const bg = fill || (v ? (t.kind === "wbOrders" ? "#f0fdf4" : t.kind === "twoRow" ? (allDone ? col + "22" : "#e5e5e5") : col + "22") : (isTd ? "#fff7ed" : "transparent"));
-                      const base = { background: bg, color: t.kind === "wbOrders" ? (t.src === "drr" ? (v && v.count > 20 ? "#b91c1c" : v && v.count > 10 ? "#b45309" : "#15803d") : "#15803d") : col, textAlign: "center", fontWeight: 700, height: 27, padding: 0, borderLeft: "1px solid #f7f7f7", borderBottom: ti === trs.length - 1 ? "2px solid #e5e5e5" : "1px solid #f1f1f1" };
+                      const metricColor = t.id === "drr" ? "#2864A2" : t.kind === "wbOrders" ? "#007B55" : col;
+                      const metricFill = t.id === "drr" ? "#DEEBFC" : t.kind === "wbOrders" ? (isTd ? "#9AF9D2" : "#D9FFF0") : t.id === "bloggers" ? "#F1DFF9" : col + "22";
+                      const bg = fill || (v ? (t.kind === "twoRow" && !allDone ? "#EDF0F4" : metricFill) : "#fff");
+                      const base = { background: bg, color: metricColor, textAlign: "center", fontWeight: 600, fontSize: 13, height: 36, padding: 0, borderLeft: "1px solid " + (isTd ? "#1E2023" : "#E0E3EA"), borderRight: isTd ? "1px solid #1E2023" : undefined, borderBottom: "1px solid #E0E3EA" };
                       if (t.kind === "wbOrders") return <td key={d.key} title={rnpWbTip(t, p, d.key) || t.label} style={base}>{cellTxt(t, v)}</td>;
                       if (t.kind === "singleCost") {
                         const ad = rnpAdDay(p, d.key);
-                        if (t.id === "internal" && ad !== undefined) return <td key={d.key} title="Факт из WB (внутренняя реклама)" style={{ ...base, background: fill || (ad > 0 ? col + "22" : (isTd ? "#fff7ed" : "transparent")), color: col }}>{ad > 0 ? Math.round(ad).toLocaleString("ru-RU") : ""}</td>;
+                        if (t.id === "internal" && ad !== undefined) return <td key={d.key} title="Факт из WB (внутренняя реклама)" style={{ ...base, background: fill || (ad > 0 ? col + "22" : "#fff"), color: col }}>{ad > 0 ? Math.round(ad).toLocaleString("ru-RU") : ""}</td>;
                         const key = `${t.id}:cost:${d.key}`; const val = (p.rnp.cells || {})[key] ?? ""; const has = val !== "" && parseFloat(String(val).replace(",", ".")) > 0;
-                        return <td key={d.key} title={t.label} style={{ ...base, background: fill || (has ? col + "22" : (isTd ? "#fff7ed" : "transparent")) }}><input value={val} onChange={(e) => onSetCell && onSetCell(p.id, key, e.target.value)} inputMode="decimal" className="h-full w-full bg-transparent px-1 text-center text-[11.5px] font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ color: col }} /></td>;
+                        return <td key={d.key} title={t.label} style={{ ...base, background: fill || (has ? col + "22" : "#fff") }}><input value={val} onChange={(e) => onSetCell && onSetCell(p.id, key, e.target.value)} inputMode="decimal" className="h-full w-full bg-transparent px-1 text-center text-[11.5px] font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-200" style={{ color: col }} /></td>;
                       }
                       if (t.kind === "checkbox") {
                         const key = `${t.id}:${d.key}`; const on = !!(p.rnp.flags || {})[key];
@@ -10905,7 +10906,7 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                       // записи (блогеры, раздачи, выкупы, Wibes) и диапазоны (баллы, А/Б) — то же окно, что в карточке
                       const open = () => (t.kind === "rangeTask" ? (onOpenDB && onOpenDB(p.id, t)) : (onOpenPopup && onOpenPopup(p.id, t, d.key)));
                       return <td key={d.key} onClick={open} title={t.label + (arr.length ? " · записей: " + arr.length : "") + " — клик: открыть записи"} className="group cursor-pointer" style={base}>{cellTxt(t, v)}{!v && <span className="text-[13px] font-bold text-neutral-300 opacity-0 transition group-hover:opacity-100">+</span>}</td>;
-                    }) : <td colSpan={dayList.length} style={{ borderBottom: "2px solid #e5e5e5", color: "#a3a3a3", padding: "0 12px" }}>Включите строки РНП выше</td>}
+                    }) : <td colSpan={dayList.length} style={{ borderBottom: "1px solid #E0E3EA", color: "#a3a3a3", padding: "0 12px" }}>Включите строки РНП выше</td>}
                   </tr>
                 ));
               })}
