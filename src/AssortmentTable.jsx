@@ -2540,7 +2540,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
   return (
     <div
       style={{ fontFamily: '"Manrope", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', minHeight: (100 / uiZoom) + "vh" }}
-      className="w-full bg-neutral-100 text-neutral-900"
+      className="w-full bg-[#EDF0F4] text-neutral-900"
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       {(!loaded || switchingProject) && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-white/95">
@@ -2555,7 +2555,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
         {/* Шапка */}
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-3">
-            <img src={allplugsLogo} alt="AllPlugs" width={42} height={42} className="h-[42px] w-[42px] shrink-0 object-contain" />
+            <span role="img" aria-label="AllPlugs" className="h-[42px] w-[42px] shrink-0 bg-[#1E2023]" style={{ maskImage: `url(${allplugsLogo})`, WebkitMaskImage: `url(${allplugsLogo})`, maskSize: "contain", WebkitMaskSize: "contain", maskPosition: "center", WebkitMaskPosition: "center", maskRepeat: "no-repeat", WebkitMaskRepeat: "no-repeat" }} />
             <div className="rounded-xl inline-flex border border-neutral-200 bg-white p-1">
               {navShown.map((t) => {
                 const on = activeTab === t.id;
@@ -2564,7 +2564,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
                     key={t.id}
                     onClick={() => setActiveTab(t.id)}
                     className="rounded-lg px-4 py-1.5 text-sm font-semibold transition"
-                    style={on ? { background: "#171717", color: "#fff" } : { color: "#737373" }}
+                    style={on ? { background: "#1E2023", color: "#fff" } : { color: "#737373" }}
                   >
                     {t.label}
                   </button>
@@ -9085,7 +9085,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
           onDragLeave={() => setOverCol((o) => (o === col.key ? null : o))}
           onDrop={(e) => { e.preventDefault(); moveJob(dragRef.current, col); dragRef.current = null; setOverCol(null); }}
           className={"flex shrink-0 flex-col rounded-2xl border p-2.5 transition " + (collapsed ? "w-auto self-start" : (wideCol ? "w-[30rem]" : "w-72"))}
-          style={{ borderColor: overCol === col.key ? "#fdba74" : "#ececef", background: overCol === col.key ? "#fff7ed" : "#fafafa" }}>
+          style={{ borderColor: overCol === col.key ? "#fdba74" : "#ececef", background: overCol === col.key ? "#fff7ed" : "#F6F7F9" }}>
           <div className={"flex items-center gap-2 px-1 " + (collapsed ? "" : "mb-2")}>
             {isDoneCol && <button onClick={() => setColsCollapsed((o) => ({ ...o, [col.key]: !collapsed }))} title={collapsed ? "Раскрыть" : "Свернуть"} className="-ml-0.5 shrink-0 text-neutral-400 transition hover:text-neutral-700"><ChevronRight size={15} className={"transition " + (collapsed ? "" : "rotate-90")} /></button>}
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: col.color }} />
