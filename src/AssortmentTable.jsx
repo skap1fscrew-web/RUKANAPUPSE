@@ -10858,7 +10858,8 @@ function RnpOverview({ products = [], statuses = [], wbOrders = {}, purchaseBatc
                       <>
                         <td rowSpan={trs.length} style={{ ...stk(0, W_P, "#fff", 2), borderBottom: "1px solid #E0E3EA", borderRight: "1px solid #E0E3EA", verticalAlign: "middle", padding: 0 }}>
                           <div className="group/foc relative">
-                          <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-center gap-2.5 px-2 py-2 text-left hover:bg-neutral-50" title="Открыть карточку">
+                          <button onClick={() => onOpen && onOpen(p.id)} className="flex w-full items-center gap-2 px-2 py-2 text-left hover:bg-neutral-50" title="Открыть карточку">
+                            {p.image && <img src={p.image} alt="" className="h-[56px] w-[40px] shrink-0 rounded-md object-cover" />}
                             <span className="flex min-w-0 flex-col gap-1 px-0.5 py-2"><span className="text-xs font-semibold text-[#959DAD]">{p.code || "—"}</span><span className="line-clamp-3 text-[13px] font-semibold leading-tight text-[#1E2023]">{p.name || "Без названия"}</span></span>
                           </button>
                           <button onClick={() => setFocusId((f) => (f === p.id ? null : p.id))} title={focusId === p.id ? "Выйти из фокуса" : "Фокус на этом товаре"} className={"absolute right-1.5 top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] transition " + (focusId === p.id ? "bg-neutral-900 text-white opacity-100" : "text-neutral-400 opacity-0 hover:text-neutral-800 group-hover/foc:opacity-100")}><Focus size={14} /></button>
