@@ -2555,7 +2555,8 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
         {/* Шапка */}
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-3">
-            <span role="img" aria-label="AllPlugs" className="h-[42px] w-[42px] shrink-0 bg-[#1E2023]" style={{ maskImage: `url(${allplugsLogo})`, WebkitMaskImage: `url(${allplugsLogo})`, maskSize: "contain", WebkitMaskSize: "contain", maskPosition: "center", WebkitMaskPosition: "center", maskRepeat: "no-repeat", WebkitMaskRepeat: "no-repeat" }} />
+            {/* Убираем прозрачные поля PNG: видимый знак заполняет квадрат 42×42, равный высоте меню. */}
+            <span role="img" aria-label="AllPlugs" className="h-[42px] w-[42px] shrink-0 bg-[#1E2023]" style={{ maskImage: `url(${allplugsLogo})`, WebkitMaskImage: `url(${allplugsLogo})`, maskSize: "106.6225% 105.9603%", WebkitMaskSize: "106.6225% 105.9603%", maskPosition: "50% 44.4444%", WebkitMaskPosition: "50% 44.4444%", maskRepeat: "no-repeat", WebkitMaskRepeat: "no-repeat" }} />
             <div className="rounded-xl inline-flex border border-neutral-200 bg-white p-1">
               {navShown.map((t) => {
                 const on = activeTab === t.id;
