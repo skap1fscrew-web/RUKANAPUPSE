@@ -8279,22 +8279,22 @@ function TasksView({ focusLine = "", onFocusLine, jobs, taskLabels, taskTags = [
   return (
     <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm sm:p-4" style={{ maxHeight: `calc(${zvh(100)} - 128px)` }}>
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 pl-1">
-        <h2 className="text-base font-semibold text-neutral-900">ЗАДАЧИ</h2>
+        <h2 className="text-base font-semibold text-[#1E2023]">ЗАДАЧИ</h2>
         <div className="ml-3 inline-flex rounded-lg bg-[#EDF0F4] p-0.5" title="Быстрый фильтр по типу задачи">
-          {TASK_TYPE_META.map(({ key, label, Icon, tint }) => { const on = fltType === key && !focusMode; return (
-            <button key={key} title={label} onClick={() => { setFocusMode(false); setFltType(key); }} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: tint, boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#9ca3af" }}><Icon size={15} /></button>
+          {TASK_TYPE_META.map(({ key, label, Icon }) => { const on = fltType === key && !focusMode; return (
+            <button key={key} title={label} onClick={() => { setFocusMode(false); setFltType(key); }} className="flex h-7 w-8 items-center justify-center rounded-md transition" style={on ? { background: "#fff", color: "#1E2023", boxShadow: "0 1px 2px rgba(0,0,0,.08)" } : { color: "#1E2023" }}><Icon size={15} /></button>
           ); })}
         </div>
         {!focusMode && <div className="inline-flex rounded-lg bg-[#EDF0F4] p-0.5">
           {viewOptions.map(([id, Icon, title]) => (
-              <button key={id} onClick={() => setView(id)} title={title} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (view === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-400 hover:text-neutral-600")}><Icon size={16} /></button>
+              <button key={id} onClick={() => setView(id)} title={title} className={"flex h-7 w-8 items-center justify-center rounded-md transition " + (view === id ? "bg-white text-[#1E2023] shadow-sm" : "text-[#1E2023]")}><Icon size={16} /></button>
           ))}
         </div>}
         <div className="inline-flex rounded-lg bg-[#EDF0F4] p-0.5">
-          <button onClick={() => setFocusMode((value) => !value)} title="Фокус — повестка на сегодня" aria-pressed={focusMode} className={"inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm font-semibold transition " + (focusMode ? "bg-white text-neutral-800 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}><Target size={15} className={focusMode ? "text-neutral-600" : "text-neutral-400"} />Фокус</button>
+          <button onClick={() => setFocusMode((value) => !value)} title="Фокус — повестка на сегодня" aria-pressed={focusMode} className={"inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm font-semibold transition " + (focusMode ? "bg-white text-[#1E2023] shadow-sm" : "text-[#1E2023]")}><Target size={15}  />Фокус</button>
         </div>
         <div className="inline-flex rounded-lg bg-[#EDF0F4] p-0.5">
-          <button onClick={() => setReportsOpen((value) => !value)} title="Итоги — отчёт по выполненным задачам" aria-label="Итоги" aria-expanded={reportsOpen} className={"inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm font-semibold transition " + (reportsOpen ? "bg-white text-neutral-800 shadow-sm" : "text-neutral-500 hover:text-neutral-700")}><ClipboardCheck size={15} className={reportsOpen ? "text-neutral-600" : "text-neutral-400"} />Итоги</button>
+          <button onClick={() => setReportsOpen((value) => !value)} title="Итоги — отчёт по выполненным задачам" aria-label="Итоги" aria-expanded={reportsOpen} className={"inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm font-semibold transition " + (reportsOpen ? "bg-white text-[#1E2023] shadow-sm" : "text-[#1E2023]")}><ClipboardCheck size={15}  />Итоги</button>
         </div>
         {reportsOpen && <DaySummary jobs={jobs} opTypes={opTypes} opDone={opDone} people={people} products={products} batches={batches} onClose={() => setReportsOpen(false)} />}
         {!focusMode && <div className="ml-auto flex flex-wrap items-center gap-2">
