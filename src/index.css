@@ -19,3 +19,6 @@ body { margin: 0; }
 .rnp-dim > td { pointer-events: none; }
 .rnp-dim > td:not([style*="sticky"]) { position: relative; }
 .rnp-dim > td::after { content: ""; position: absolute; inset: 0; background: rgba(255,255,255,.93); z-index: 1; }
+
+/* Единый нейтральный контур AllPlugs; состояния hover/focus задаются своими классами. */
+:where(.allplugs-app) .border-neutral-200 { border-color: #CBCFD8; }

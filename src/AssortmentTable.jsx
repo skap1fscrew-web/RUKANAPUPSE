@@ -2540,7 +2540,7 @@ export default function AssortmentTable({ userEmail = null, onSignOut, project =
   return (
     <div
       style={{ fontFamily: '"Manrope", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', minHeight: (100 / uiZoom) + "vh" }}
-      className="w-full bg-[#EDF0F4] text-neutral-900"
+      className="allplugs-app w-full bg-[#EDF0F4] text-neutral-900"
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       {(!loaded || switchingProject) && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-white/95">
@@ -3716,7 +3716,7 @@ function AgentsBoard({ agents, onChange, onCreateTask, onOpenTask }) {
           {AGENT_STAGES.map(([key, name, color]) => {
             const items = shown.filter((agent) => agent.stage === key);
             return (
-              <section key={key} className="min-w-0 rounded-2xl border border-[#ececef] bg-[#fafafa] p-2.5">
+              <section key={key} className="min-w-0 rounded-2xl border border-[#CBCFD8] bg-[#fafafa] p-2.5">
                 <div className="flex items-center gap-2 px-1">
                   <button aria-expanded={!collapsed[key]} onClick={() => setCollapsed((old) => ({ ...old, [key]: !old[key] }))} className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase tracking-wide text-neutral-600">
                     <ChevronRight size={15} className={collapsed[key] ? "" : "rotate-90"} />
@@ -9086,7 +9086,7 @@ function KanbanBoard({ jobs, groupBy, sortBy = "created", wide = false, tags, ta
           onDragLeave={() => setOverCol((o) => (o === col.key ? null : o))}
           onDrop={(e) => { e.preventDefault(); moveJob(dragRef.current, col); dragRef.current = null; setOverCol(null); }}
           className={"flex shrink-0 flex-col rounded-2xl border p-2.5 transition " + (collapsed ? "w-auto self-start" : (wideCol ? "w-[30rem]" : "w-72"))}
-          style={{ borderColor: overCol === col.key ? "#fdba74" : "#ececef", background: overCol === col.key ? "#fff7ed" : "#F6F7F9" }}>
+          style={{ borderColor: overCol === col.key ? "#fdba74" : "#CBCFD8", background: overCol === col.key ? "#fff7ed" : "#F6F7F9" }}>
           <div className={"flex items-center gap-2 px-1 " + (collapsed ? "" : "mb-2")}>
             {isDoneCol && <button onClick={() => setColsCollapsed((o) => ({ ...o, [col.key]: !collapsed }))} title={collapsed ? "Раскрыть" : "Свернуть"} className="-ml-0.5 shrink-0 text-neutral-400 transition hover:text-neutral-700"><ChevronRight size={15} className={"transition " + (collapsed ? "" : "rotate-90")} /></button>}
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: col.color }} />
